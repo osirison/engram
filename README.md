@@ -1,0 +1,312 @@
+# ENGRAM - Extended Neural Graph for Recall and Memory
+
+**A Modular Agentic Memory MCP Server**
+
+## 🎯 Vision
+
+ENGRAM is a production-grade Model Context Protocol (MCP) server that provides sophisticated memory management capabilities for AI agents and LLM applications. It implements a neural-temporal approach to context management, enabling short-term and long-term memory, semantic search, memory reconciliation, and intelligent insight generation.
+
+## 🧠 What We're Building
+
+ENGRAM serves as the cognitive backbone for AI systems, providing:
+
+- **Contextual Memory Management**: Store, retrieve, and manage conversation context across sessions
+- **Semantic Search**: Vector-based search for relevant historical context
+- **Temporal Understanding**: Track and relate information across time
+- **Memory Reconciliation**: Automatically detect and resolve conflicting information
+- **Insight Generation**: Process memories to extract patterns and actionable insights
+- **Multi-tenant Support**: Isolated memory spaces for different users/applications
+- **OAuth Integration**: Secure authentication and authorization
+- **Analytics Dashboard**: Monitor memory usage, patterns, and system health
+
+## 🏗️ Architecture
+
+### High-Level Design
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        MCP Clients                           │
+│            (Claude Desktop, IDEs, Applications)              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ MCP Protocol
+┌──────────────────────▼──────────────────────────────────────┐
+│                    ENGRAM Core Server                        │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │ MCP Handler  │  │  Auth Module │  │  API Gateway │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+┌───────▼──────┐ ┌────▼─────┐ ┌─────▼──────┐
+│ Short-Term   │ │Long-Term │ │ Analytics  │
+│ Memory       │ │Memory    │ │ Engine     │
+└───────┬──────┘ └────┬─────┘ └─────┬──────┘
+        │              │              │
+┌───────▼──────────────▼──────────────▼──────┐
+│           Data Layer                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+│  │PostgreSQL│  │  Qdrant  │  │  Redis   │ │
+│  │(Prisma)  │  │(Vectors) │  │(Cache)   │ │
+│  └──────────┘  └──────────┘  └──────────┘ │
+└─────────────────────────────────────────────┘
+```
+
+### Module Architecture
+
+ENGRAM follows a modular monorepo structure using Turborepo:
+
+```
+engram/
+├── apps/
+│   ├── mcp-server/        # Main MCP server application
+│   └── api/               # REST/tRPC API (future UI backend)
+├── packages/
+│   ├── core/              # Core MCP implementation & types
+│   ├── auth/              # OAuth & authentication module
+│   ├── memory-stm/        # Short-term memory (Redis-based)
+│   ├── memory-ltm/        # Long-term memory (PostgreSQL + Qdrant)
+│   ├── analytics/         # Analytics & monitoring
+│   ├── reconciliation/    # Memory conflict resolution
+│   ├── insights/          # Insight processing engine
+│   └── ui/                # React/Next.js frontend (future)
+├── shared/
+│   ├── types/             # Shared TypeScript types
+│   ├── utils/             # Common utilities
+│   └── config/            # Configuration schemas
+└── tools/
+    ├── scripts/           # Build & deployment scripts
+    └── docker/            # Docker configurations
+```
+
+## 🛠️ Technology Stack
+
+### Core Technologies
+
+**Runtime & Language:**
+- **TypeScript** - Type safety across the entire stack
+- **Node.js 20+** - Runtime environment
+
+**Framework:**
+- **NestJS** - Modular architecture with built-in DI, perfect for complex systems
+- **@modelcontextprotocol/sdk** - Official MCP TypeScript SDK
+
+**Databases:**
+- **PostgreSQL 16+** - Primary relational database
+- **Qdrant** - Vector database for semantic search
+- **Redis** - Caching, sessions, job queues
+
+**ORM & Data:**
+- **Prisma** - Type-safe database access
+- **BullMQ** - Job queue for async processing
+
+**API Layer:**
+- **tRPC** - End-to-end type safety for future UI
+- **Zod** - Runtime validation
+
+**Development:**
+- **Turborepo** - Monorepo build system
+- **Vitest** - Fast unit testing
+- **Playwright** - E2E testing
+- **ESLint + Prettier** - Code quality
+
+**DevOps:**
+- **Docker + Docker Compose** - Containerization
+- **GitHub Actions** - CI/CD
+- **Conventional Commits** - Changelog generation
+
+### Technology Decisions
+
+#### Why NestJS over Fastify/Express?
+- Built-in module system aligns with our modular architecture
+- Dependency injection simplifies testing and modularity
+- Extensive ecosystem (validation, testing, config)
+- Enterprise-grade patterns for complex applications
+
+#### Why Qdrant over Pinecone/Weaviate?
+- Self-hostable (no vendor lock-in)
+- Excellent TypeScript client
+- High performance with low resource footprint
+- Production-ready with clustering support
+
+#### Why Prisma over TypeORM/Sequelize?
+- Superior type safety and DX
+- Automatic migrations
+- Excellent schema management
+- Active development and community
+
+#### Why Turborepo over Nx/Lerna?
+- Simpler learning curve
+- Fast incremental builds
+- Great caching strategy
+- Vercel backing ensures longevity
+
+## 📋 Project Management Structure
+
+### Epic → Story → Task → Issue Hierarchy
+
+**Epics** (High-level initiatives):
+- Epic 1: Core MCP Server
+- Epic 2: Memory System
+- Epic 3: Authentication & Security
+- Epic 4: Analytics & Insights
+- Epic 5: UI & Developer Experience
+
+**Stories** (User-facing features):
+- As a developer, I want to store conversation context
+- As a user, I want to retrieve relevant historical memories
+- As an admin, I want to monitor system health
+
+**Tasks** (Implementation units):
+- Set up NestJS project structure
+- Implement Prisma schema
+- Create Redis connection module
+
+**Issues** (GitHub tracked work):
+- Each task = 1 GitHub Issue
+- Labels: `epic:*`, `story:*`, `type:*`, `priority:*`
+- All work referenced by issue number
+
+### GitHub Project Structure
+
+```
+Labels:
+- epic:core-server
+- epic:memory-system
+- epic:auth
+- epic:analytics
+- epic:ui
+- story:context-storage
+- story:semantic-search
+- type:feature
+- type:bug
+- type:docs
+- type:ci-cd
+- priority:critical
+- priority:high
+- priority:medium
+- priority:low
+- status:blocked
+```
+
+## 🚀 Project Lifecycle Phases
+
+### Phase 0: Initialization ✅
+- [x] Project structure setup
+- [ ] Monorepo configuration
+- [ ] Development environment setup
+- [ ] CI/CD pipeline skeleton
+
+### Phase 1: Core Infrastructure
+- [ ] NestJS server foundation
+- [ ] Database connections (PostgreSQL, Redis, Qdrant)
+- [ ] Prisma schema & migrations
+- [ ] Basic MCP protocol implementation
+- [ ] Docker development environment
+
+### Phase 2: Memory Core
+- [ ] Short-term memory (Redis-based)
+- [ ] Long-term memory (PostgreSQL)
+- [ ] Vector embeddings integration
+- [ ] Semantic search implementation
+- [ ] Memory CRUD operations via MCP
+
+### Phase 3: Authentication
+- [ ] OAuth 2.0 flow
+- [ ] JWT token management
+- [ ] Multi-tenant isolation
+- [ ] Permission system
+
+### Phase 4: Advanced Features
+- [ ] Memory reconciliation engine
+- [ ] Insight processing
+- [ ] Analytics collection
+- [ ] BullMQ job processing
+
+### Phase 5: API & UI
+- [ ] tRPC API layer
+- [ ] Next.js frontend
+- [ ] Analytics dashboard
+- [ ] Memory visualization
+
+### Phase 6: Production Readiness
+- [ ] Performance optimization
+- [ ] Security audit
+- [ ] Load testing
+- [ ] Documentation
+- [ ] Deployment guides
+
+## 🔧 Developer Setup
+
+### Prerequisites
+```bash
+- Node.js 20+
+- Docker & Docker Compose
+- pnpm 8+
+- Git
+```
+
+### Quick Start
+```bash
+# Clone repository
+git clone https://github.com/your-org/engram.git
+cd engram
+
+# Install dependencies
+pnpm install
+
+# Start infrastructure
+docker-compose up -d
+
+# Run migrations
+pnpm db:migrate
+
+# Start development server
+pnpm dev
+
+# Run tests
+pnpm test
+```
+
+### Environment Variables
+```env
+DATABASE_URL="postgresql://user:pass@localhost:5432/engram"
+REDIS_URL="redis://localhost:6379"
+QDRANT_URL="http://localhost:6333"
+JWT_SECRET="your-secret-key"
+OAUTH_CLIENT_ID="your-client-id"
+OAUTH_CLIENT_SECRET="your-client-secret"
+```
+
+## 📊 Success Metrics
+
+- **Performance**: < 100ms p95 latency for memory retrieval
+- **Reliability**: 99.9% uptime
+- **Scalability**: Handle 10k+ concurrent users
+- **Memory Accuracy**: > 95% relevance in semantic search
+- **Test Coverage**: > 80% unit test coverage
+
+## 🤝 Contributing
+
+All contributions must:
+1. Reference a GitHub issue number
+2. Follow conventional commit format
+3. Include tests for new features
+4. Update documentation
+5. Pass CI/CD checks
+
+## 📄 License
+
+MIT License - see LICENSE file
+
+## 🔗 Links
+
+- [Documentation](./docs)
+- [Architecture Decision Records](./docs/adr)
+- [API Reference](./docs/api)
+- [Contributing Guide](./CONTRIBUTING.md)
+- [Agents Guide](./AGENTS.md)
+
+---
+
+**Status**: 🚧 In Development | **Version**: 0.1.0-alpha | **Last Updated**: 2025-09-30
