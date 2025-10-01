@@ -193,8 +193,8 @@ Labels:
 
 ### Phase 0: Initialization ✅
 - [x] Project structure setup
-- [ ] Monorepo configuration
-- [ ] Development environment setup
+- [x] Monorepo configuration (Turborepo)
+- [x] Development environment setup (Docker Compose)
 - [ ] CI/CD pipeline skeleton
 
 ### Phase 1: Core Infrastructure
@@ -249,16 +249,23 @@ Labels:
 ### Quick Start
 ```bash
 # Clone repository
-git clone https://github.com/your-org/engram.git
+git clone https://github.com/osirison/engram.git
 cd engram
 
 # Install dependencies
 pnpm install
 
-# Start infrastructure
-docker-compose up -d
+# Copy environment variables
+cp .env.example .env
+# Edit .env if you need to customize database credentials
 
-# Run migrations
+# Start infrastructure (PostgreSQL, Redis, Qdrant)
+pnpm docker:up
+
+# Wait for services to be healthy (check with: pnpm docker:ps)
+# All services should show status as "healthy"
+
+# Run database migrations (once services are ready)
 pnpm db:migrate
 
 # Start development server
@@ -266,6 +273,61 @@ pnpm dev
 
 # Run tests
 pnpm test
+```
+
+### Docker Commands
+
+ENGRAM uses Docker Compose to manage local development infrastructure:
+
+```bash
+# Start all services in detached mode
+pnpm docker:up
+
+# Check service status and health
+pnpm docker:ps
+
+# View logs from all services
+pnpm docker:logs
+
+# Restart all services
+pnpm docker:restart
+
+# Stop all services (keeps data)
+pnpm docker:down
+
+# Stop all services and remove volumes (deletes data)
+pnpm docker:clean
+```
+
+**Services Running:**
+- **PostgreSQL** (port 5432) - Main database
+- **Redis** (port 6379) - Cache and job queue
+- **Qdrant** (ports 6333/6334) - Vector database for semantic search
+
+**Data Persistence:**
+- All data is stored in named Docker volumes
+- Data persists across container restarts
+- Use `pnpm docker:clean` to reset all data
+
+**Health Checks:**
+All services include health checks that automatically verify:
+- PostgreSQL: Database is accepting connections
+- Redis: Server responds to PING
+- Qdrant: Health endpoint returns OK
+
+**Troubleshooting:**
+```bash
+# If services fail to start, check logs
+pnpm docker:logs
+
+# Connect to PostgreSQL directly
+docker exec -it engram-postgres psql -U engram -d engram
+
+# Connect to Redis CLI
+docker exec -it engram-redis redis-cli
+
+# Check Qdrant health
+curl http://localhost:6333/health
 ```
 
 ### Monorepo Commands
@@ -314,14 +376,37 @@ cd packages/core && pnpm add lodash
 ```
 
 ### Environment Variables
-```env
-DATABASE_URL="postgresql://user:pass@localhost:5432/engram"
-REDIS_URL="redis://localhost:6379"
-QDRANT_URL="http://localhost:6333"
-JWT_SECRET="your-secret-key"
-OAUTH_CLIENT_ID="your-client-id"
-OAUTH_CLIENT_SECRET="your-client-secret"
+
+Copy `.env.example` to `.env` and configure as needed:
+
+```bash
+cp .env.example .env
 ```
+
+**Key Variables:**
+```env
+# Database (matches docker-compose.yml defaults)
+DATABASE_URL="postgresql://engram:dev_password@localhost:5432/engram"
+POSTGRES_USER=engram
+POSTGRES_PASSWORD=dev_password
+POSTGRES_DB=engram
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# Qdrant Vector Database
+QDRANT_URL="http://localhost:6333"
+
+# Authentication (change in production!)
+JWT_SECRET="your-secret-key-change-in-production-min-32-chars"
+JWT_EXPIRES_IN="7d"
+
+# Application
+NODE_ENV=development
+PORT=3000
+```
+
+**Note:** The default credentials in `.env.example` match the Docker Compose configuration for seamless local development. **Always change these values in production!**
 
 ## 📊 Success Metrics
 
