@@ -3,6 +3,74 @@
 ## Project Overview
 ENGRAM is a modular MCP (Model Context Protocol) server built with NestJS and TypeScript for AI agent memory management.
 
+## CRITICAL: Issue-Driven Development
+
+**Every code change MUST reference a GitHub issue.** ENGRAM uses structured issue templates that provide complete context for AI agents.
+
+### Issue Templates (`.github/ISSUE_TEMPLATE/`)
+
+**1. Feature Request** - For new features
+- Epic assignment (which high-level feature)
+- Priority level (critical/high/medium/low)
+- Complete context (why needed, user story)
+- Technical scope (files to modify, dependencies)
+- Acceptance criteria (testable checklist)
+- Implementation notes (patterns to follow)
+- Tests required (unit/integration/e2e)
+
+**2. Bug Report** - For bugs
+- Severity level
+- Reproduction steps
+- Expected vs actual behavior
+- Affected files with line numbers
+- Error logs and stack traces
+- Suggested fixes
+
+**3. Epic** - For high-level initiatives
+- Vision & business goals
+- Technical scope (packages involved)
+- User stories (to break into issues)
+- Success criteria
+- Milestones/phases
+- Risks & dependencies
+
+### AI Agent Workflow
+
+**Phase 1: Before Coding**
+1. Search for existing issue
+2. If exists: Read it (all context is there!)
+3. If not: Create using appropriate template
+4. Verify all required fields are filled
+5. Check acceptance criteria to understand success
+
+**Phase 2: Implementation**
+1. Read issue's "Technical Scope" - files to modify are listed
+2. Follow "Implementation Notes" - patterns specified
+3. Reference issue in commits: `feat(scope): description (#123)` - SINGLE LINE ONLY
+4. Update issue with progress/blockers
+
+**Phase 3: Verification**
+1. Check all "Acceptance Criteria" boxes
+2. Run tests specified in "Tests Required"
+3. Create PR with "Closes #123" in description
+4. Issue auto-closes on merge
+
+### Benefits for AI Agents
+
+✅ **No Context Hunting**: All info in one place (issue template)
+✅ **Clear Success Criteria**: Acceptance criteria define "done"
+✅ **Proper Patterns**: Implementation notes guide approach
+✅ **Testable**: Tests specified upfront
+✅ **Traceable**: Full epic → issue → commit → PR chain
+
+### Key Points
+
+- Issues contain EVERYTHING you need (files, patterns, tests, criteria)
+- Always reference issue # in commits: `type(scope): msg (#123)` - SINGLE LINE ONLY
+- Follow Technical Scope for which files to modify
+- Verify Acceptance Criteria before creating PR
+- If unclear, read the issue again - context is there
+
 ## Code Style & Standards
 
 ### TypeScript Rules
@@ -251,13 +319,11 @@ describe('MemoryController (e2e)', () => {
 
 ## Git Commit Format
 
+**CRITICAL: Single-line commits ONLY. No multi-line messages, no body, no footer.**
+
 ### Commit Message Structure
 ```
 type(scope): subject (#issue-number)
-
-body (optional)
-
-footer (optional)
 ```
 
 ### Types
@@ -269,7 +335,7 @@ footer (optional)
 - `test`: Adding tests
 - `chore`: Maintenance tasks
 
-### Examples
+### Examples (all single line)
 ```bash
 feat(memory): implement semantic search (#42)
 fix(auth): resolve JWT expiration issue (#67)
@@ -356,11 +422,26 @@ export const validationSchema = z.object({
 - Rotate secrets regularly
 
 ## Issue Tracking
-- Always reference GitHub issue # in commits
-- Update issue status when starting work
-- Link PRs to issues
-- Comment on issues with progress
-- Close issues only when merged to main
+
+**ENGRAM uses structured issue templates** - see "CRITICAL: Issue-Driven Development" section above.
+
+### Quick Checklist
+- [ ] Search for existing issue before creating new one
+- [ ] Use issue templates (Feature Request, Bug Report, or Epic)
+- [ ] Read entire issue - all context is in the template
+- [ ] Reference issue # in ALL commits: `type(scope): msg (#123)` - SINGLE LINE ONLY
+- [ ] Follow "Technical Scope" for files to modify
+- [ ] Verify "Acceptance Criteria" before creating PR
+- [ ] Link PR with "Closes #123" in description
+- [ ] Issues auto-close when PR merges to main
+
+### Issue Template Benefits
+- **Technical Scope**: Lists exact files to modify
+- **Acceptance Criteria**: Defines success (testable)
+- **Implementation Notes**: Specifies patterns to use
+- **Tests Required**: Lists test types needed
+
+**Remember**: If you're unclear on what to do, re-read the issue. All context is there!
 
 ## Documentation
 - Update README when adding features

@@ -1,0 +1,115 @@
+name: Feature Request
+description: Propose a new feature for ENGRAM
+title: "feat(scope): "
+labels: ["type:feature", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature Request
+        Provide complete context so AI agents can implement this efficiently.
+
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      description: Which epic does this belong to?
+      placeholder: "epic:core-memory or epic:vector-search"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature?
+      options:
+        - priority:critical
+        - priority:high
+        - priority:medium
+        - priority:low
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this needed? What problem does it solve?
+      placeholder: |
+        - User story: As a [user], I want [feature] so that [benefit]
+        - Current limitation: [describe current state]
+        - Expected improvement: [describe desired state]
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical-scope
+    attributes:
+      label: Technical Scope
+      description: What needs to be modified? Be specific for AI context.
+      placeholder: |
+        **Files to Create/Modify:**
+        - src/modules/memory/memory.service.ts
+        - src/modules/memory/dto/create-memory.dto.ts
+
+        **Dependencies:**
+        - May require: @nestjs/bullmq, zod
+        - Related issues: #123, #124
+
+        **Database Changes:**
+        - [ ] Prisma schema update needed
+        - [ ] Migration required
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Specific, testable outcomes. AI will verify these.
+      placeholder: |
+        - [ ] Function `MemoryService.create()` accepts new `tags` parameter
+        - [ ] Tags are validated (max 20, alphanumeric)
+        - [ ] Tags are stored in database
+        - [ ] Unit tests added for tag validation
+        - [ ] Integration test for memory creation with tags
+        - [ ] API endpoint `/memories` returns tags in response
+      value: |
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-notes
+    attributes:
+      label: Implementation Notes
+      description: Any specific patterns, libraries, or approaches to use
+      placeholder: |
+        - Use Zod for tag validation
+        - Follow NestJS service pattern from CLAUDE.md
+        - Reference existing pattern in UserService.create()
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tests-required
+    attributes:
+      label: Tests Required
+      description: What type of tests should be written?
+      multiple: true
+      options:
+        - Unit tests
+        - Integration tests
+        - E2E tests
+    validations:
+      required: true
+
+  - type: input
+    id: blocked-by
+    attributes:
+      label: Blocked By
+      description: Does this depend on other issues? (e.g., #123, #124)
+      placeholder: "#123, #124"
+    validations:
+      required: false

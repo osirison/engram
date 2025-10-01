@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/osirison/engram/discussions
+    about: Ask questions, share ideas, or discuss the project
+  - name: 📚 Documentation
+    url: https://github.com/osirison/engram/blob/main/README.md
+    about: Read the project documentation
+  - name: 🤖 MCP Protocol Docs
+    url: https://modelcontextprotocol.io
+    about: Learn about the Model Context Protocol

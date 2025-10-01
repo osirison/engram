@@ -1,0 +1,160 @@
+name: Epic
+description: Create a high-level feature epic
+title: "epic: "
+labels: ["type:epic", "status:planning"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Epic
+        Define a high-level feature that will be broken down into smaller tasks.
+
+  - type: input
+    id: epic-name
+    attributes:
+      label: Epic Name
+      description: Short name for this epic (will be used as label)
+      placeholder: "core-memory, vector-search, auth-system"
+    validations:
+      required: true
+
+  - type: textarea
+    id: vision
+    attributes:
+      label: Vision & Goals
+      description: What is the overall goal of this epic?
+      placeholder: |
+        **Vision:** Enable AI agents to store and retrieve contextual memories efficiently
+
+        **Business Goals:**
+        - Support 1M+ memories per user
+        - Sub-100ms retrieval time
+        - 99.9% uptime
+
+        **User Impact:**
+        - Users can ask questions about past conversations
+        - AI provides more contextually aware responses
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Technical Scope
+      description: What major components/packages are involved?
+      placeholder: |
+        **Packages/Modules:**
+        - @engram/memory-core
+        - @engram/vector-store
+        - @engram/api
+
+        **Infrastructure:**
+        - PostgreSQL for metadata
+        - Qdrant for vector storage
+        - Redis for caching
+
+        **External Dependencies:**
+        - OpenAI embeddings API
+        - BullMQ for async processing
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-stories
+    attributes:
+      label: Key User Stories
+      description: What are the main user stories? (These will become separate issues)
+      placeholder: |
+        1. As a user, I want to store conversation context so that future sessions are aware of past interactions
+        2. As a user, I want to search my memories semantically so that I can find relevant information
+        3. As a developer, I want to batch-insert memories so that I can import historical data efficiently
+        4. As an admin, I want to monitor memory storage usage so that I can manage costs
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical-requirements
+    attributes:
+      label: Technical Requirements
+      description: Key technical requirements and constraints
+      placeholder: |
+        **Performance:**
+        - Insert: < 50ms (p95)
+        - Search: < 100ms (p95)
+        - Support 1M vectors per user
+
+        **Scale:**
+        - 10k concurrent users
+        - 100k requests/min
+
+        **Data:**
+        - Vector dimensions: 1536 (OpenAI ada-002)
+        - Metadata: JSON, max 10KB per memory
+        - Retention: Configurable (default: 1 year)
+    validations:
+      required: false
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: How will we know this epic is complete?
+      placeholder: |
+        - [ ] All user stories implemented and tested
+        - [ ] Performance benchmarks met
+        - [ ] Documentation complete
+        - [ ] E2E tests passing
+        - [ ] Security audit passed
+        - [ ] Production deployment successful
+    validations:
+      required: true
+
+  - type: textarea
+    id: milestones
+    attributes:
+      label: Milestones
+      description: Break epic into phases/milestones
+      placeholder: |
+        **Phase 1: Core Storage (Week 1-2)**
+        - Basic CRUD operations
+        - Prisma schema
+        - Unit tests
+
+        **Phase 2: Vector Search (Week 3-4)**
+        - Qdrant integration
+        - Semantic search
+        - Performance tuning
+
+        **Phase 3: Production Ready (Week 5-6)**
+        - Caching layer
+        - Monitoring/observability
+        - Security hardening
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks & Dependencies
+      description: What could block or delay this epic?
+      placeholder: |
+        **Risks:**
+        - Vector DB performance at scale unknown
+        - OpenAI API rate limits
+        - Cost of embedding generation
+
+        **Dependencies:**
+        - Qdrant cloud account setup
+        - OpenAI API key
+        - PostgreSQL 15+ with pgvector extension
+    validations:
+      required: false
+
+  - type: input
+    id: owner
+    attributes:
+      label: Epic Owner
+      description: Who is leading this epic?
+      placeholder: "@username"
+    validations:
+      required: false

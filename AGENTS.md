@@ -148,8 +148,31 @@ pnpm test packages/core # Specific package
 
 ## GitHub Integration
 
+### Issue Templates - Quick Reference
+
+**ENGRAM uses structured templates for all issues. This provides AI agents with complete context.**
+
+**Templates** (`.github/ISSUE_TEMPLATE/`):
+1. **Feature Request** - Epic, priority, technical scope, acceptance criteria, tests
+2. **Bug Report** - Severity, reproduction steps, affected files, error logs
+3. **Epic** - Vision, user stories, milestones, success criteria
+
+**Agent Workflow**:
+```bash
+1. Read issue - All context is provided (files, patterns, criteria)
+2. Implement - Follow specifications in issue
+3. Verify - Check against acceptance criteria
+4. Complete - Create PR with "Closes #issue"
+```
+
+**Benefits**:
+- ✅ No context hunting - everything in the issue
+- ✅ Clear success criteria - know when done
+- ✅ Proper patterns - implementation guidance included
+- ✅ Traceable - epic → issue → commit → PR
+
 ### VS Code GitHub Tools
-- Create issues via GitHub MCP
+- Create issues via GitHub MCP (use templates!)
 - Link commits to issues
 - Update issue status
 - Create PRs with issue reference
@@ -157,14 +180,19 @@ pnpm test packages/core # Specific package
 ### Issue Management
 ```bash
 # Agent workflow
-1. Search for related issues
-2. Create new issue if needed
-3. Update issue with progress
-4. Link commits to issue
-5. Close issue when complete
+1. Search for existing issues
+2. If exists: Read it (all context there!)
+3. If not: Create using appropriate template
+4. Verify all required fields filled
+5. Update issue with progress/blockers
+6. Link commits to issue
+7. Close issue when complete (via PR)
 ```
 
 ### Commit Format
+
+**CRITICAL: Single-line commits ONLY. No multi-line, no body.**
+
 ```
 type(scope): description (#issue-number)
 
@@ -174,6 +202,11 @@ docs(readme): update setup guide (#23)
 ```
 
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+**IMPORTANT**:
+- Single line only
+- Always reference issue #
+- Always reference files specified in issue's "Technical Scope"
 
 ## Key Libraries Reference
 

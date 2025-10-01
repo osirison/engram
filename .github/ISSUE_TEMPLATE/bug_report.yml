@@ -1,0 +1,126 @@
+name: Bug Report
+description: Report a bug in ENGRAM
+title: "fix(scope): "
+labels: ["type:bug", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug Report
+        Provide detailed context so AI agents can diagnose and fix efficiently.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How critical is this bug?
+      options:
+        - priority:critical (system crash, data loss)
+        - priority:high (major feature broken)
+        - priority:medium (feature partially broken)
+        - priority:low (minor issue, workaround exists)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Clear description of the bug
+      placeholder: "When I call MemoryService.create() with empty content, it should throw BadRequestException but instead returns 500 error"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps to reproduce the bug
+      placeholder: |
+        1. Start the server: `pnpm dev`
+        2. Send POST request to `/memories` with body: `{ "content": "" }`
+        3. Observe 500 error instead of 400 error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      placeholder: "Should return 400 Bad Request with validation error message"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happens?
+      placeholder: |
+        Returns 500 Internal Server Error
+        Error log shows: `PrismaClientValidationError: Validation error`
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected-files
+    attributes:
+      label: Affected Files/Components
+      description: Which files/services are involved?
+      placeholder: |
+        - src/modules/memory/memory.service.ts:45
+        - src/modules/memory/dto/create-memory.dto.ts
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs/Stack Trace
+      description: Paste relevant error logs
+      render: shell
+      placeholder: |
+        [Nest] 12345 - 01/01/2025, 10:00:00 AM ERROR [MemoryService] Failed to create memory
+        PrismaClientValidationError: Validation error
+            at MemoryService.create (memory.service.ts:45)
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your environment details
+      placeholder: |
+        - Node version: 20.x
+        - PNPM version: 8.x
+        - OS: Windows/Mac/Linux
+        - Database: PostgreSQL 15
+    validations:
+      required: false
+
+  - type: textarea
+    id: fix-suggestions
+    attributes:
+      label: Suggested Fix (Optional)
+      description: If you know how to fix it, describe here
+      placeholder: |
+        Add validation in CreateMemoryDto using class-validator:
+        ```typescript
+        @IsString()
+        @MinLength(1)
+        content: string;
+        ```
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: tests-needed
+    attributes:
+      label: Tests to Add
+      description: What tests should prevent this regression?
+      options:
+        - label: Unit test for validation
+        - label: Integration test for error handling
+        - label: E2E test for API response

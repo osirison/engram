@@ -288,12 +288,119 @@ OAUTH_CLIENT_SECRET="your-client-secret"
 
 ## 🤝 Contributing
 
+ENGRAM uses a structured, AI-optimized workflow for contributions. This ensures clarity, consistency, and efficient collaboration between humans and AI agents.
+
+### Issue-Driven Development
+
+**Every code change requires a GitHub issue.** We use structured templates that provide complete context, eliminating confusion and reducing back-and-forth.
+
+#### Step 1: Create or Find an Issue
+
+**Use GitHub Issue Templates** (located in `.github/ISSUE_TEMPLATE/`):
+
+1. **Feature Request** - For new features
+   - Includes: Epic assignment, priority, technical scope, acceptance criteria
+   - AI agents get all context needed without hunting through docs
+
+2. **Bug Report** - For bugs
+   - Includes: Severity, reproduction steps, affected files, error logs
+   - Provides exact location and context for fixes
+
+3. **Epic** - For high-level initiatives
+   - Includes: Vision, user stories, milestones, success criteria
+   - Used to plan major features that spawn multiple issues
+
+**Search first!** Before creating a new issue, search existing issues to avoid duplicates.
+
+#### Step 2: Work on the Issue
+
+```bash
+# Create feature branch
+git checkout -b feat/feature-name-#123
+
+# Make changes following issue specifications
+# - Files to modify are listed in "Technical Scope"
+# - Patterns to follow are in "Implementation Notes"
+# - Success defined by "Acceptance Criteria"
+
+# Commit with issue reference
+git commit -m "feat(scope): description (#123)"
+```
+
+#### Step 3: Submit Pull Request
+
+```bash
+# Push your branch
+git push origin feat/feature-name-#123
+
+# Create PR with issue reference
+# PR description MUST include: "Closes #123"
+# This auto-closes the issue when merged
+```
+
+### Contribution Requirements
+
 All contributions must:
-1. Reference a GitHub issue number
-2. Follow conventional commit format
-3. Include tests for new features
-4. Update documentation
-5. Pass CI/CD checks
+1. ✅ **Reference a GitHub issue** - Use issue templates
+2. ✅ **Follow conventional commit format** - `type(scope): description (#issue)`
+3. ✅ **Include tests** - Unit tests for services, integration for APIs
+4. ✅ **Update documentation** - README, package docs, code comments
+5. ✅ **Pass CI/CD checks** - Linting, type checking, tests
+6. ✅ **Meet acceptance criteria** - Verify against issue checklist
+
+### Commit Message Format
+
+**IMPORTANT: Single-line commits only. No multi-line messages, no body.**
+
+```
+type(scope): description (#issue-number)
+
+Types:
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation changes
+- test: Test additions/changes
+- refactor: Code refactoring
+- chore: Maintenance tasks
+
+Examples (all single line):
+feat(memory): add semantic search capability (#45)
+fix(auth): resolve token refresh bug (#67)
+docs(readme): update installation steps (#23)
+test(memory): add unit tests for retrieval (#55)
+```
+
+### Why This Workflow?
+
+**For Humans:**
+- Clear task definitions
+- Visible project progress
+- Easy onboarding for new contributors
+
+**For AI Agents:**
+- No context hunting - all info in the issue
+- Clear success criteria - know when done
+- Proper guidance - patterns and files specified
+- Full traceability - epic → issue → commit → PR
+
+### Getting Started
+
+```bash
+# 1. Fork the repository
+# 2. Clone your fork
+git clone https://github.com/YOUR_USERNAME/engram.git
+
+# 3. Install dependencies
+pnpm install
+
+# 4. Create a branch for your issue
+git checkout -b feat/your-feature-#issue-number
+
+# 5. Make changes, commit, push
+# 6. Create PR referencing issue
+```
+
+See [CLAUDE.md](./CLAUDE.md) for detailed AI agent instructions and coding patterns.
 
 ## 📄 License
 
