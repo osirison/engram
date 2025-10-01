@@ -53,9 +53,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      interval: 10s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
     networks:
       - engram-network
