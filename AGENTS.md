@@ -178,15 +178,30 @@ pnpm test packages/core # Specific package
 - Create PRs with issue reference
 
 ### Issue Management
+
+**Complete Workflow:**
+
 ```bash
-# Agent workflow
-1. Search for existing issues
-2. If exists: Read it (all context there!)
-3. If not: Create using appropriate template
-4. Verify all required fields filled
-5. Update issue with progress/blockers
-6. Link commits to issue
-7. Close issue when complete (via PR)
+# Before Starting
+1. List open issues: Use GitHub MCP list_issues
+2. Review issue: Read complete template (context, scope, criteria)
+3. Create branch: type/description-#issue (e.g., feat/turborepo-#2)
+4. Assign to self and update status to in-progress
+5. Comment: "Starting work on this issue"
+
+# During Work
+6. Post progress updates regularly to issue
+7. Update epic with milestone completions
+8. Commit with issue #: type(scope): msg (#123)
+9. If blocked: Comment on issue, change label to status:blocked
+
+# After Completion
+10. Verify ALL acceptance criteria met
+11. Add completion comment with summary
+12. Create PR: "Closes #issue-number" in description
+13. Update epic: Comment "Issue #X completed"
+14. Issue auto-closes when PR merges
+15. Move to next issue from open issues list
 ```
 
 ### Commit Format

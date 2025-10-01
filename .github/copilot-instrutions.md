@@ -37,23 +37,32 @@ ENGRAM is a modular MCP (Model Context Protocol) server built with NestJS and Ty
 ### AI Agent Workflow
 
 **Phase 1: Before Coding**
-1. Search for existing issue
-2. If exists: Read it (all context is there!)
-3. If not: Create using appropriate template
-4. Verify all required fields are filled
-5. Check acceptance criteria to understand success
+1. List open issues (GitHub issues tab or MCP)
+2. Review available issues - check epic labels
+3. Read complete issue (context, scope, criteria all provided)
+4. If no suitable issue: Create using appropriate template
+5. Assign issue to yourself
+6. Create branch: type/description-#issue
+7. Update status: todo → in-progress
+8. Comment: "Starting work on this issue"
 
 **Phase 2: Implementation**
 1. Read issue's "Technical Scope" - files to modify are listed
 2. Follow "Implementation Notes" - patterns specified
-3. Reference issue in commits: `feat(scope): description (#123)` - SINGLE LINE ONLY
-4. Update issue with progress/blockers
+3. Post progress updates to issue regularly
+4. Update epic when completing milestones
+5. Commit with issue #: `feat(scope): description (#123)` - SINGLE LINE ONLY
+6. If blocked: Comment on issue, change to status:blocked
 
-**Phase 3: Verification**
-1. Check all "Acceptance Criteria" boxes
-2. Run tests specified in "Tests Required"
-3. Create PR with "Closes #123" in description
-4. Issue auto-closes on merge
+**Phase 3: Verification & Completion**
+1. Verify ALL "Acceptance Criteria" are met
+2. Run ALL tests specified in "Tests Required"
+3. Add completion summary to issue
+4. Create PR: "Closes #123" in description
+5. Link to epic: "Part of #epic-number"
+6. Update epic: Comment "Issue #123 completed"
+7. Issue auto-closes when PR merges
+8. Move to next open issue
 
 ### Benefits for AI Agents
 
@@ -65,10 +74,15 @@ ENGRAM is a modular MCP (Model Context Protocol) server built with NestJS and Ty
 
 ### Key Points
 
+- **Start by listing open issues** - Review available work first
 - Issues contain EVERYTHING you need (files, patterns, tests, criteria)
+- **Create branch** for each issue: `type/description-#issue`
+- **Update progress** regularly on issue and epic
 - Always reference issue # in commits: `type(scope): msg (#123)` - SINGLE LINE ONLY
 - Follow Technical Scope for which files to modify
-- Verify Acceptance Criteria before creating PR
+- **Verify ALL Acceptance Criteria** before creating PR
+- **Add completion summary** to issue before PR
+- **Update epic** when issue completes
 - If unclear, read the issue again - context is there
 
 ## Code Style & Standards
@@ -426,14 +440,29 @@ export const validationSchema = z.object({
 **ENGRAM uses structured issue templates** - see "CRITICAL: Issue-Driven Development" section above.
 
 ### Quick Checklist
-- [ ] Search for existing issue before creating new one
-- [ ] Use issue templates (Feature Request, Bug Report, or Epic)
-- [ ] Read entire issue - all context is in the template
+
+**Before Starting:**
+- [ ] List open issues to see available work
+- [ ] Read complete issue (context, scope, criteria)
+- [ ] Create branch: `type/description-#issue`
+- [ ] Assign issue and update status to in-progress
+- [ ] Comment: "Starting work on this issue"
+
+**During Work:**
+- [ ] Post progress updates to issue
+- [ ] Update epic with milestone completions
 - [ ] Reference issue # in ALL commits: `type(scope): msg (#123)` - SINGLE LINE ONLY
 - [ ] Follow "Technical Scope" for files to modify
-- [ ] Verify "Acceptance Criteria" before creating PR
-- [ ] Link PR with "Closes #123" in description
-- [ ] Issues auto-close when PR merges to main
+- [ ] If blocked: Comment and change to status:blocked
+
+**After Completion:**
+- [ ] Verify ALL "Acceptance Criteria" met
+- [ ] Add completion summary comment to issue
+- [ ] Create PR with "Closes #123" in description
+- [ ] Link to epic: "Part of #epic-number"
+- [ ] Update epic: "Issue #123 completed"
+- [ ] Issue auto-closes when PR merges
+- [ ] Move to next open issue
 
 ### Issue Template Benefits
 - **Technical Scope**: Lists exact files to modify

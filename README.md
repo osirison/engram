@@ -294,7 +294,15 @@ ENGRAM uses a structured, AI-optimized workflow for contributions. This ensures 
 
 **Every code change requires a GitHub issue.** We use structured templates that provide complete context, eliminating confusion and reducing back-and-forth.
 
-#### Step 1: Create or Find an Issue
+#### Step 1: Find or Create an Issue
+
+**IMPORTANT: Always start by reviewing open issues**
+
+```bash
+# List open issues to see available work
+# Check for issues labeled with epic:* that match your skills
+# Read the complete issue template before starting
+```
 
 **Use GitHub Issue Templates** (located in `.github/ISSUE_TEMPLATE/`):
 
@@ -315,7 +323,11 @@ ENGRAM uses a structured, AI-optimized workflow for contributions. This ensures 
 #### Step 2: Work on the Issue
 
 ```bash
-# Create feature branch
+# Assign issue to yourself and update status
+# Comment: "Starting work on this issue"
+# Change label: status:todo → status:in-progress
+
+# Create feature branch with issue number
 git checkout -b feat/feature-name-#123
 
 # Make changes following issue specifications
@@ -323,19 +335,36 @@ git checkout -b feat/feature-name-#123
 # - Patterns to follow are in "Implementation Notes"
 # - Success defined by "Acceptance Criteria"
 
-# Commit with issue reference
+# Post progress updates to the issue
+# - Comment when completing milestones
+# - Report blockers immediately
+# - Update epic with progress
+
+# Commit with issue reference (single line only!)
 git commit -m "feat(scope): description (#123)"
 ```
 
 #### Step 3: Submit Pull Request
 
 ```bash
+# Verify ALL acceptance criteria met
+# Add completion summary to issue
+# List all commits made for this issue
+
 # Push your branch
 git push origin feat/feature-name-#123
 
-# Create PR with issue reference
-# PR description MUST include: "Closes #123"
-# This auto-closes the issue when merged
+# Create PR with proper format
+# - PR title: Same as issue title
+# - PR description MUST include: "Closes #123"
+# - Link to epic if applicable: "Part of #epic-number"
+# - Include testing notes
+
+# Update epic with completion
+# Comment on epic: "Issue #123 completed"
+
+# Issue auto-closes when PR merges to main
+# Move to next open issue
 ```
 
 ### Contribution Requirements
