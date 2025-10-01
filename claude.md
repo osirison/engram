@@ -449,34 +449,183 @@ export type Config = z.infer<typeof configSchema>;
 
 ## GitHub Issue Integration
 
+### Issue Templates - AI-Optimized Workflow
+
+**CRITICAL**: ENGRAM uses structured issue templates to provide complete context for AI agents. This eliminates context hunting and ensures consistent, efficient task execution.
+
+#### Available Templates
+
+**1. Feature Request (`.github/ISSUE_TEMPLATE/feature_request.yml`)**
+- Epic assignment (which high-level feature)
+- Priority level (critical/high/medium/low)
+- Complete context (why needed, user story)
+- Technical scope (files to modify, dependencies)
+- Acceptance criteria (testable outcomes)
+- Implementation notes (patterns to follow)
+- Tests required (unit/integration/e2e)
+
+**2. Bug Report (`.github/ISSUE_TEMPLATE/bug_report.yml`)**
+- Severity level
+- Reproduction steps
+- Expected vs actual behavior
+- Affected files with line numbers
+- Error logs and stack traces
+- Suggested fixes
+
+**3. Epic (`.github/ISSUE_TEMPLATE/epic.yml`)**
+- Vision & business goals
+- Technical scope (packages involved)
+- User stories (to break into issues)
+- Success criteria
+- Milestones/phases
+- Risks & dependencies
+
+#### Workflow for AI Agents
+
+**Phase 1: Planning (Done Once)**
+1. Create epic using Epic template
+2. Break epic into feature issues using Feature Request template
+3. Prioritize and label all issues
+4. Link related issues
+
+**Phase 2: Execution (Per Task)**
+1. **Read Issue** - All context is in the issue (no hunting!)
+   - Files to modify are specified
+   - Acceptance criteria are clear
+   - Dependencies are listed
+   - Patterns to follow are documented
+
+2. **Implement** - Follow the issue specifications
+   - Reference issue in commits: `feat(scope): description (#123)`
+   - Update issue with progress/blockers
+
+3. **Verify** - Check against acceptance criteria
+   - Run tests specified in issue
+   - Verify all criteria met
+
+4. **Complete** - Create PR and close
+   - PR description: "Closes #123"
+   - Link to epic/story
+   - Issue auto-closes on merge
+
+#### Benefits for AI Agents
+
+✅ **No Context Hunting**: All info in one place
+✅ **Clear Success Criteria**: Know when done
+✅ **Proper Patterns**: Implementation guidance included
+✅ **Testable**: Tests specified upfront
+✅ **Traceable**: Full history from epic → issue → commit → PR
+
 ### Before Starting Work
+
+**CRITICAL WORKFLOW:**
+
 ```typescript
-// 1. Search for related issues using GitHub MCP
-// 2. If no issue exists, create one with proper labels:
-//    - epic:* (which epic does this belong to)
-//    - story:* (which user story)
-//    - type:* (feature, bug, docs, etc)
-//    - priority:* (critical, high, medium, low)
-// 3. Assign issue to yourself
-// 4. Update issue status to "In Progress"
+// 1. List and review open issues
+//    - Use GitHub MCP: list_issues to see available work
+//    - Check epic:* labels to find issues in your area
+//    - Read issue completely - all context is provided
+
+// 2. If issue exists: Read it and prepare to work
+//    - Read entire issue template (context, scope, acceptance criteria)
+//    - Check "Blocked By" section for dependencies
+//    - Verify you have all required knowledge/access
+
+// 3. If no issue exists: Create using appropriate template
+//    - Use Feature Request for new features
+//    - Use Bug Report for bugs
+//    - Use Epic for high-level initiatives
+//    - Fill ALL required fields completely
+
+// 4. Assign issue to yourself
+//    - Update assignee via GitHub MCP
+
+// 5. Create a branch for the issue
+//    - Branch format: type/description-#issue-number
+//    - Examples:
+//      feat/turborepo-config-#2
+//      fix/auth-token-bug-#67
+//      docs/update-readme-#23
+
+// 6. Update issue status
+//    - Add comment: "Starting work on this issue"
+//    - Change label from status:todo to status:in-progress
 ```
 
 ### During Development
+
+**Update Progress Regularly:**
+
 ```typescript
-// Commit format: type(scope): description (#issue-number)
-// Examples:
-// feat(memory): add semantic search capability (#45)
-// fix(auth): resolve token refresh bug (#67)
-// docs(readme): update installation steps (#23)
-// test(memory): add unit tests for retrieval (#55)
+// 1. Post progress updates to the issue
+//    - Add comments when you hit milestones
+//    - Report blockers immediately
+//    - Ask questions if unclear
+//    Example: "Completed Turborepo configuration. Starting on ESLint setup."
+
+// 2. Update epic with progress (if applicable)
+//    - Epic issues track overall progress
+//    - Comment on epic when completing milestones
+//    Example: "Milestone 1 (Monorepo Config) complete. Moving to Milestone 2."
+
+// 3. Commit with issue reference (ALWAYS)
+//    - Commit format: type(scope): description (#issue-number)
+//    - IMPORTANT: SINGLE LINE ONLY - No body, no multiline messages
+//    - Examples:
+//      feat(memory): add semantic search capability (#45)
+//      fix(auth): resolve token refresh bug (#67)
+//      docs(readme): update installation steps (#23)
+//      test(memory): add unit tests for retrieval (#55)
+
+// 4. Follow issue specifications
+//    - Reference files specified in "Technical Scope"
+//    - Follow patterns mentioned in "Implementation Notes"
+//    - Verify against "Acceptance Criteria" before committing
+
+// 5. If blocked or need clarification
+//    - Add comment to issue with @mention if needed
+//    - Update label to status:blocked
+//    - Wait for response before proceeding
 ```
 
 ### After Completion
+
+**Close the Loop:**
+
 ```typescript
-// 1. Create PR with "Closes #issue-number" in description
-// 2. Ensure all tests pass
-// 3. Request review
-// 4. Issue auto-closes on merge
+// 1. Verify ALL acceptance criteria met
+//    - Go through issue checklist
+//    - Check every box is complete
+//    - Run all tests specified in "Tests Required"
+
+// 2. Update issue with completion summary
+//    - Add final comment summarizing work done
+//    - List all commits related to this issue
+//    - Note any deviations from original plan
+//    Example: "Completed all acceptance criteria. Created turbo.json, configured
+//             pnpm workspaces, and set up build pipeline. All tests passing."
+
+// 3. Create PR with proper format
+//    - PR title: Same as issue title
+//    - PR description MUST include: "Closes #issue-number"
+//    - Link to epic if applicable: "Part of #epic-number"
+//    - Include testing notes
+//    - Request review
+
+// 4. Update epic progress
+//    - Add comment to epic: "Issue #X completed"
+//    - Check if epic milestone is complete
+//    - If all issues in epic are done, update epic status
+
+// 5. Issue closes automatically
+//    - When PR merges to main, issue auto-closes
+//    - Epic stays open until all child issues complete
+//    - Verify closure after merge
+
+// 6. Move to next issue
+//    - Review open issues for next task
+//    - Check epic for remaining work
+//    - Start workflow again from "Before Starting Work"
 ```
 
 ## Common Workflows
