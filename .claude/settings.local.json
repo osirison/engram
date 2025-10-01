@@ -3,7 +3,12 @@
     "allow": [
       "mcp__github__create_issue",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "mcp__github__list_issues",
+      "mcp__github__add_issue_comment",
+      "Bash(pnpm build:*)",
+      "Bash(git checkout:*)",
+      "Bash(git clean:*)"
     ],
     "deny": [],
     "ask": []
