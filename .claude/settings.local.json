@@ -8,7 +8,8 @@
       "mcp__github__add_issue_comment",
       "Bash(pnpm build:*)",
       "Bash(git checkout:*)",
-      "Bash(git clean:*)"
+      "Bash(git clean:*)",
+      "Bash(git add .github/copilot-instrutions.md AGENTS.md CLAUDE.md)"
     ],
     "deny": [],
     "ask": []

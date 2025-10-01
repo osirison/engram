@@ -5,6 +5,76 @@ You are working on ENGRAM (Extended Neural Graph for Recall and Memory), a produ
 
 ## Core Principles
 
+### 0. Use Framework CLIs - NEVER Create Files From Scratch
+
+**CRITICAL RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
+
+#### NestJS CLI (MANDATORY)
+```bash
+# Generate complete resource (PREFERRED for new features)
+nest g resource <name>
+
+# Generate components individually
+nest g module <name>
+nest g service <name>
+nest g controller <name>
+nest g guard <name>
+nest g interceptor <name>
+nest g pipe <name>
+nest g filter <name>
+nest g decorator <name>
+
+# Examples
+nest g resource memory --no-spec
+nest g service auth/jwt
+nest g guard auth/roles
+```
+
+#### Prisma CLI (MANDATORY)
+```bash
+# After editing schema.prisma
+npx prisma format                      # Format schema
+pnpm db:generate                       # Generate client types
+pnpm db:migrate dev --name <name>      # Create migration
+
+# Other commands
+npx prisma studio                      # Open database GUI
+npx prisma init                        # Initialize (new projects only)
+```
+
+#### Package Initialization (MANDATORY)
+```bash
+# Create package
+pnpm create-package packages/<name>
+# or if no script exists
+npm init -y
+
+# Initialize TypeScript
+npx tsc --init
+```
+
+#### CLI vs Manual Decision Matrix
+
+**ALWAYS Use CLI:**
+- ✅ NestJS modules, services, controllers, guards, pipes, interceptors, filters
+- ✅ Prisma migrations and client generation
+- ✅ Package initialization (npm init)
+- ✅ TypeScript config (tsc --init)
+- ✅ Test scaffolding (nest g includes tests)
+
+**Rare Manual (Only if NO CLI exists):**
+- ⚠️ Zod schemas (no CLI available)
+- ⚠️ Type definitions
+- ⚠️ Utility functions
+- ⚠️ Constants and enums
+
+**NEVER Create Manually:**
+- ❌ NestJS components (use nest g)
+- ❌ Prisma Client code (auto-generated)
+- ❌ Database migrations (use prisma migrate)
+- ❌ package.json (use npm init)
+- ❌ Test boilerplate (use nest g --spec)
+
 ### 1. Use Existing Libraries - ALWAYS
 Never write custom implementations when battle-tested libraries exist:
 - ✅ Use Zod for validation
@@ -12,9 +82,11 @@ Never write custom implementations when battle-tested libraries exist:
 - ✅ Use BullMQ for job queues
 - ✅ Use date-fns for date operations
 - ✅ Use NestJS built-in decorators and utilities
+- ✅ Use NestJS CLI for code generation
 - ❌ Never write custom validators
 - ❌ Never write raw SQL (use Prisma)
 - ❌ Never implement custom queue systems
+- ❌ Never manually create NestJS files
 
 ### 2. Type Safety First
 - Every function must have explicit return types
