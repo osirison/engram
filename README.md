@@ -1,5 +1,7 @@
 # ENGRAM - Extended Neural Graph for Recall and Memory
 
+[![CI](https://github.com/osirison/engram/actions/workflows/ci.yml/badge.svg)](https://github.com/osirison/engram/actions/workflows/ci.yml)
+
 **A Modular Agentic Memory MCP Server**
 
 ## 🎯 Vision
