@@ -1,0 +1,31 @@
+{
+  "name": "@engram/config",
+  "version": "0.1.0",
+  "description": "Environment configuration and validation for ENGRAM",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "engram",
+    "config",
+    "validation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "eslint": "^9.16.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

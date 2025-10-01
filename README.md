@@ -385,6 +385,19 @@ Copy `.env.example` to `.env` and configure as needed:
 cp .env.example .env
 ```
 
+**Environment Validation:**
+
+ENGRAM uses Zod schemas to validate environment variables on startup. This ensures configuration errors are caught early and provides type-safe access to configuration throughout the application.
+
+**Required Variables** (validated on startup):
+- `NODE_ENV` - Environment mode (development, production, test)
+- `PORT` - Application port (default: 3000)
+- `DATABASE_URL` - PostgreSQL connection string
+- `REDIS_URL` - Redis connection string
+- `QDRANT_URL` - Qdrant vector database URL
+
+The application will **fail fast on startup** if required variables are missing or invalid.
+
 **Key Variables:**
 ```env
 # Database (matches docker-compose.yml defaults)
@@ -406,6 +419,25 @@ JWT_EXPIRES_IN="7d"
 # Application
 NODE_ENV=development
 PORT=3000
+```
+
+**Type-Safe Configuration Access:**
+
+Use NestJS ConfigService to access validated environment variables:
+
+```typescript
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '@engram/config';
+
+@Injectable()
+export class MyService {
+  constructor(private config: ConfigService<Env>) {}
+
+  getDatabaseUrl(): string {
+    // Type-safe and guaranteed to exist
+    return this.config.get('DATABASE_URL', { infer: true });
+  }
+}
 ```
 
 **Note:** The default credentials in `.env.example` match the Docker Compose configuration for seamless local development. **Always change these values in production!**
