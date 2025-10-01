@@ -3,6 +3,129 @@
 ## Project Context
 ENGRAM = Extended Neural Graph for Recall and Memory. Modular MCP server for AI agent memory management.
 
+## CRITICAL: Use Framework CLIs - NEVER Create Files From Scratch
+
+**MANDATORY RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
+
+### NestJS CLI Commands (REQUIRED)
+```bash
+# Generate complete resource (module + service + controller + DTOs + tests)
+nest g resource <name>  # USE THIS for new features
+
+# Generate individual components
+nest g module <name>       # Create module
+nest g service <name>      # Create service with test file
+nest g controller <name>   # Create controller with test file
+nest g guard <name>        # Create auth guard
+nest g interceptor <name>  # Create interceptor
+nest g filter <name>       # Create exception filter
+nest g pipe <name>         # Create validation pipe
+nest g decorator <name>    # Create custom decorator
+nest g class <name>        # Create class
+nest g interface <name>    # Create interface
+
+# Examples
+nest g resource memory --no-spec  # Create full memory module
+nest g service auth/jwt            # Create JWT service in auth module
+nest g guard auth/roles            # Create roles guard
+```
+
+### Prisma CLI Commands (REQUIRED)
+```bash
+# Initialize Prisma (only for new projects)
+npx prisma init
+
+# Generate Prisma Client after schema changes
+pnpm db:generate
+# or
+npx prisma generate
+
+# Create and apply migrations
+pnpm db:migrate dev --name <descriptive_name>
+# or
+npx prisma migrate dev --name add_user_table
+
+# Development only - push schema without migration
+pnpm db:push
+# or
+npx prisma db push
+
+# Seed database
+pnpm db:seed
+# or
+npx prisma db seed
+
+# Open Prisma Studio (database GUI)
+npx prisma studio
+```
+
+### Package Creation Commands (REQUIRED)
+```bash
+# Create new package in monorepo
+pnpm create-package packages/<name>
+
+# If no custom script exists, use npm init
+cd packages/<name>
+npm init -y
+# Then configure package.json for TypeScript
+
+# Initialize TypeScript in package
+npx tsc --init
+```
+
+### Testing Initialization (REQUIRED)
+```bash
+# Vitest is configured at root level
+# For new package, copy vitest.config.ts from existing package
+
+# Initialize test coverage config (if needed)
+npx vitest init
+```
+
+### Database Migration Workflow
+```bash
+# 1. Edit prisma/schema.prisma manually
+# 2. Generate types
+pnpm db:generate
+
+# 3. Create migration
+pnpm db:migrate dev --name descriptive_migration_name
+
+# 4. In production
+pnpm db:migrate deploy
+```
+
+### When to Use CLI vs Manual Creation
+
+**ALWAYS Use CLI:**
+- ✅ NestJS modules, services, controllers, guards, pipes, etc.
+- ✅ Prisma migrations and client generation
+- ✅ Package initialization
+- ✅ TypeScript configuration (tsc --init)
+- ✅ Test file scaffolding
+
+**Rare Manual Creation (Only if no CLI exists):**
+- ⚠️ Zod schemas (no CLI available)
+- ⚠️ Custom type definitions
+- ⚠️ Configuration files (after checking for init commands)
+- ⚠️ Documentation files (when explicitly requested)
+
+**NEVER Manually Create:**
+- ❌ NestJS modules, services, controllers, etc.
+- ❌ Prisma client code
+- ❌ Database migrations (use prisma migrate)
+- ❌ Test boilerplate (use nest g with --spec)
+- ❌ Package.json from scratch (use npm init)
+
+### Verification Checklist
+Before creating any framework file manually, ask:
+1. ❓ Does this framework have a CLI? (NestJS, Prisma, etc.)
+2. ❓ Can I use `nest g` or `prisma` commands?
+3. ❓ Is there a package initialization command?
+4. ❓ Does the monorepo have helper scripts in package.json?
+
+**If ANY answer is YES, use the CLI command instead of manual file creation.**
+
 ## Tech Stack
 - TypeScript + Node.js 20+
 - NestJS framework

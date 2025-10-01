@@ -3,6 +3,176 @@
 ## Project Overview
 ENGRAM is a modular MCP (Model Context Protocol) server built with NestJS and TypeScript for AI agent memory management.
 
+## CRITICAL: Use Framework CLIs - NEVER Create Files From Scratch
+
+**MANDATORY RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
+
+### NestJS CLI Commands (REQUIRED)
+```bash
+# Generate complete resource (module + service + controller + DTOs + tests)
+nest g resource <name>  # PREFERRED - Creates everything you need
+
+# Generate individual components
+nest g module <name>       # Create module
+nest g service <name>      # Create service with test file
+nest g controller <name>   # Create controller with test file
+nest g guard <name>        # Create auth guard
+nest g interceptor <name>  # Create interceptor
+nest g filter <name>       # Create exception filter
+nest g pipe <name>         # Create validation pipe
+nest g decorator <name>    # Create custom decorator
+nest g class <name>        # Create class
+nest g interface <name>    # Create interface
+
+# Examples
+nest g resource memory --no-spec  # Create full memory module
+nest g service auth/jwt            # Create JWT service in auth module
+nest g guard auth/roles            # Create roles guard in auth module
+nest g pipe validation/zod         # Create Zod validation pipe
+```
+
+### Prisma CLI Commands (REQUIRED)
+```bash
+# Initialize Prisma (only for new projects)
+npx prisma init
+
+# Generate Prisma Client after schema changes (ALWAYS after editing schema)
+pnpm db:generate
+# or
+npx prisma generate
+
+# Create and apply migrations (REQUIRED for schema changes)
+pnpm db:migrate dev --name <descriptive_name>
+# or
+npx prisma migrate dev --name add_user_table
+
+# Development only - push schema without migration
+pnpm db:push
+# or
+npx prisma db push
+
+# Seed database
+pnpm db:seed
+# or
+npx prisma db seed
+
+# Open Prisma Studio (database GUI)
+npx prisma studio
+
+# Format Prisma schema
+npx prisma format
+```
+
+### Package Creation Commands (REQUIRED)
+```bash
+# Create new package in monorepo (if script exists)
+pnpm create-package packages/<name>
+
+# If no custom script exists, use npm init
+cd packages/<name>
+npm init -y
+# Then manually configure package.json for TypeScript
+
+# Initialize TypeScript in package
+npx tsc --init
+
+# Add dependencies to specific package
+cd packages/<name>
+pnpm add <dependency>
+```
+
+### Testing Initialization (REQUIRED)
+```bash
+# Vitest is configured at root level
+# For new package, copy vitest.config.ts from existing package
+
+# Initialize test coverage config (if needed)
+npx vitest init
+
+# Run tests
+pnpm test                    # All tests
+pnpm test:watch              # Watch mode
+pnpm test packages/<name>    # Specific package
+```
+
+### Database Migration Workflow (REQUIRED)
+```bash
+# 1. Edit prisma/schema.prisma manually (this is the ONLY manual step)
+
+# 2. Format the schema
+npx prisma format
+
+# 3. Generate Prisma Client types
+pnpm db:generate
+
+# 4. Create migration with descriptive name
+pnpm db:migrate dev --name add_memory_tags_column
+
+# 5. Verify migration in prisma/migrations/
+
+# 6. In production, deploy migrations
+pnpm db:migrate deploy
+```
+
+### Monorepo/Turborepo Commands
+```bash
+# Build all packages
+pnpm build
+
+# Build specific package
+pnpm build --filter=<package-name>
+
+# Add workspace dependency
+pnpm add <package> --filter=<workspace>
+
+# Run scripts in all workspaces
+pnpm -r <script>
+```
+
+### When to Use CLI vs Manual Creation
+
+**ALWAYS Use CLI:**
+- ✅ NestJS modules, services, controllers, guards, pipes, interceptors, filters
+- ✅ Prisma migrations and client generation
+- ✅ Package initialization (npm init, pnpm create-package)
+- ✅ TypeScript configuration (tsc --init)
+- ✅ Test file scaffolding (nest g includes test files)
+- ✅ Database schema changes (via Prisma migrate)
+
+**Rare Manual Creation (Only if NO CLI exists):**
+- ⚠️ Zod validation schemas (no CLI - must write manually)
+- ⚠️ Custom TypeScript type definitions
+- ⚠️ Configuration files (after checking for init commands first)
+- ⚠️ Documentation files (when explicitly requested)
+- ⚠️ Utility functions and helpers
+- ⚠️ Constants and enums
+
+**NEVER Manually Create:**
+- ❌ NestJS components (modules, services, controllers, etc.)
+- ❌ Prisma Client code (auto-generated)
+- ❌ Database migrations (use `prisma migrate`)
+- ❌ Test boilerplate (use `nest g` with `--spec` flag)
+- ❌ Package.json from scratch (use `npm init`)
+- ❌ tsconfig.json from scratch (use `tsc --init`)
+
+### Verification Checklist
+Before creating ANY framework file manually, STOP and ask:
+1. ❓ Does this framework have a CLI command? (Check NestJS, Prisma, npm, etc.)
+2. ❓ Can I use `nest generate` for this?
+3. ❓ Is this a Prisma schema change? (Use `prisma migrate`)
+4. ❓ Is this a new package? (Use `npm init` or custom script)
+5. ❓ Does the monorepo have helper scripts in package.json?
+
+**If ANY answer is YES → Use the CLI/command. Do NOT create files manually.**
+
+### Common Mistakes to Avoid
+- ❌ Creating `*.module.ts` manually → Use `nest g module`
+- ❌ Creating `*.service.ts` manually → Use `nest g service`
+- ❌ Creating `*.controller.ts` manually → Use `nest g controller`
+- ❌ Editing Prisma Client code → It's auto-generated, edit schema instead
+- ❌ Creating migration files manually → Use `prisma migrate`
+- ❌ Skipping `prisma generate` after schema changes → Client will be out of sync
+
 ## CRITICAL: Issue-Driven Development
 
 **Every code change MUST reference a GitHub issue.** ENGRAM uses structured issue templates that provide complete context for AI agents.
