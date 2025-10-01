@@ -12,5 +12,11 @@
     "test": "echo \"No tests yet\""
   },
   "keywords": ["engram", "memory", "ai"],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "eslint": "^9.16.0",
+    "typescript": "^5.9.2"
+  }
 }
