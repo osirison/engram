@@ -10,7 +10,9 @@
       "Bash(git checkout:*)",
       "Bash(git clean:*)",
       "Bash(git add .github/copilot-instrutions.md AGENTS.md CLAUDE.md)",
-      "Bash(pnpm dlx turbo:*)"
+      "Bash(pnpm dlx turbo:*)",
+      "mcp__github__get_me",
+      "mcp__github__get_issue"
     ],
     "deny": [],
     "ask": []
