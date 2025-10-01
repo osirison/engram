@@ -268,6 +268,51 @@ pnpm dev
 pnpm test
 ```
 
+### Monorepo Commands
+
+ENGRAM uses Turborepo for fast, efficient builds across all packages. Here are the key commands:
+
+```bash
+# Build all packages
+pnpm build
+
+# Start development mode (with hot reload)
+pnpm dev
+
+# Run linting across all packages
+pnpm lint
+
+# Type-check all TypeScript code
+pnpm typecheck
+
+# Run all tests
+pnpm test
+
+# Format code with Prettier
+pnpm format
+
+# Clean all build outputs and node_modules
+pnpm clean
+```
+
+**Turborepo Features:**
+- ✅ **Incremental Builds** - Only rebuilds changed packages
+- ✅ **Smart Caching** - Second build is instant (cache hit)
+- ✅ **Parallel Execution** - Runs tasks concurrently when possible
+- ✅ **Dependency Awareness** - Builds dependencies first (via `^build`)
+
+**Working with Specific Packages:**
+```bash
+# Build only a specific package
+cd packages/core && pnpm build
+
+# Run tests in a specific package
+cd packages/auth && pnpm test
+
+# Add dependency to a specific package
+cd packages/core && pnpm add lodash
+```
+
 ### Environment Variables
 ```env
 DATABASE_URL="postgresql://user:pass@localhost:5432/engram"

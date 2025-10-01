@@ -1,0 +1,16 @@
+{
+  "name": "@engram/core",
+  "version": "0.1.0",
+  "description": "Core utilities for ENGRAM memory system",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": ["engram", "memory", "ai"],
+  "license": "MIT"
+}
