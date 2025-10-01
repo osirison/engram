@@ -157,10 +157,11 @@ shared/types        → Shared types
 ## Workflow Requirements
 
 ### Before Starting Work
-1. **Check for GitHub issue** - All work must have issue #
-2. **Verify epic/story hierarchy** - Issue must link to story → epic
-3. **Check dependencies** - Review package.json for existing libs
-4. **Read module README** - Each package has implementation guide
+1. **Pull latest main branch** - Always run `git checkout main && git pull` before creating new branch
+2. **Check for GitHub issue** - All work must have issue #
+3. **Verify epic/story hierarchy** - Issue must link to story → epic
+4. **Check dependencies** - Review package.json for existing libs
+5. **Read module README** - Each package has implementation guide
 
 ### During Development
 1. **Reference issue #** - Include in commit: `feat(core): add X (#123)`
@@ -428,6 +429,7 @@ export class MyService {
 8. **Validate inputs with Zod**
 9. **Use Prisma for all DB access**
 10. **Never commit secrets or env vars**
+11. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
 
 ## Resources
 - [NestJS Docs](https://docs.nestjs.com)
