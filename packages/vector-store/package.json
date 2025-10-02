@@ -27,6 +27,7 @@
     "tslib": "^2.8.1"
   },
   "devDependencies": {
+    "@nestjs/testing": "^10.4.15",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.10.7",
