@@ -554,6 +554,64 @@ export type Config = z.infer<typeof configSchema>;
 
 ## GitHub Issue Integration
 
+### GitHub MCP Usage - CRITICAL VERIFICATION
+
+**🚨 ABSOLUTE RULE: ALWAYS VERIFY USER AND REPOSITORY BEFORE ANY GITHUB MCP CALL**
+
+Before making ANY GitHub MCP tool call, you MUST:
+
+1. **Verify GitHub User Identity**
+   ```typescript
+   // FIRST: Get authenticated user details
+   const user = await mcp__github__get_me();
+   // Verify: user.login matches expected owner
+   ```
+
+2. **Verify Repository Context**
+   ```typescript
+   // ALWAYS use verified owner and repo in calls
+   const owner = user.login; // From get_me()
+   const repo = 'engram';     // This project's repo
+
+   // ✅ CORRECT - Using verified values
+   await mcp__github__list_issues({ owner, repo });
+
+   // ❌ WRONG - Using hardcoded/assumed values
+   await mcp__github__list_issues({ owner: 'someuser', repo: 'engram' });
+   ```
+
+3. **Required Workflow**
+   - **Step 1**: Call `mcp__github__get_me()` to get authenticated user
+   - **Step 2**: Extract `owner` from response (`user.login`)
+   - **Step 3**: Use verified `owner` and correct `repo` in all subsequent GitHub MCP calls
+   - **Step 4**: Proceed with GitHub operations
+
+**Why This is Critical:**
+- Prevents accidental operations on wrong repository
+- Ensures proper authentication context
+- Avoids permission errors
+- Maintains security and data integrity
+- Protects against cross-repository contamination
+
+**Example Complete Flow:**
+```typescript
+// 1. ALWAYS START: Verify user identity
+const user = await mcp__github__get_me();
+const owner = user.login;
+const repo = 'engram';
+
+// 2. NOW SAFE: Use verified credentials
+const issues = await mcp__github__list_issues({ owner, repo });
+const issue = await mcp__github__get_issue({ owner, repo, issue_number: 123 });
+await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Content' });
+```
+
+**NEVER:**
+- ❌ Skip user verification
+- ❌ Hardcode owner values
+- ❌ Assume repository context
+- ❌ Make GitHub MCP calls without verified owner/repo
+
 ### Issue Templates - AI-Optimized Workflow
 
 **CRITICAL**: ENGRAM uses structured issue templates to provide complete context for AI agents. This eliminates context hunting and ensures consistent, efficient task execution.
@@ -645,6 +703,8 @@ export type Config = z.infer<typeof configSchema>;
 //      git checkout -b docs/update-readme-#23
 
 // 2. List and review open issues
+//    - 🚨 FIRST: Verify GitHub user with get_me() (see "GitHub MCP Usage" section)
+//    - Use verified owner and repo in all GitHub MCP calls
 //    - Use GitHub MCP: list_issues to see available work
 //    - Check epic:* labels to find issues in your area
 //    - Read issue completely - all context is provided
