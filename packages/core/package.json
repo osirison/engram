@@ -1,6 +1,7 @@
 {
   "name": "@engram/core",
   "version": "0.1.0",
+  "type": "module",
   "description": "Core utilities for ENGRAM memory system",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 @Module({
   imports: [
     ConfigModule.forRoot({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       validate: validateEnv,
       isGlobal: true,
     }),

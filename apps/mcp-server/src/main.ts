@@ -13,6 +13,9 @@ async function bootstrap() {
 
   // Log startup message
   const logger = app.get(Logger);
-  logger.log(`Application is running on: http://localhost:${port}`, 'Bootstrap');
+  logger.log(
+    `Application is running on: http://localhost:${port}`,
+    'Bootstrap',
+  );
 }
-bootstrap();
+void bootstrap();
