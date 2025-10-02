@@ -1,8 +1,10 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 
 @Injectable()
 export class RedisService {
+  private readonly logger = new Logger(RedisService.name);
+
   constructor(
     @Inject('REDIS_CLIENT') private readonly redis: Redis
   ) {}
@@ -16,7 +18,7 @@ export class RedisService {
     try {
       return await this.redis.get(key);
     } catch (error) {
-      console.error('Redis GET error:', error);
+      this.logger.error('Redis GET error:', error);
       throw error;
     }
   }
@@ -35,7 +37,7 @@ export class RedisService {
         await this.redis.set(key, value);
       }
     } catch (error) {
-      console.error('Redis SET error:', error);
+      this.logger.error('Redis SET error:', error);
       throw error;
     }
   }
@@ -49,7 +51,7 @@ export class RedisService {
     try {
       return await this.redis.del(key);
     } catch (error) {
-      console.error('Redis DEL error:', error);
+      this.logger.error('Redis DEL error:', error);
       throw error;
     }
   }
@@ -64,7 +66,7 @@ export class RedisService {
       const result = await this.redis.exists(key);
       return result === 1;
     } catch (error) {
-      console.error('Redis EXISTS error:', error);
+      this.logger.error('Redis EXISTS error:', error);
       throw error;
     }
   }
@@ -80,7 +82,7 @@ export class RedisService {
       const result = await this.redis.expire(key, ttl);
       return result === 1;
     } catch (error) {
-      console.error('Redis EXPIRE error:', error);
+      this.logger.error('Redis EXPIRE error:', error);
       throw error;
     }
   }
@@ -94,7 +96,7 @@ export class RedisService {
     try {
       return await this.redis.ttl(key);
     } catch (error) {
-      console.error('Redis TTL error:', error);
+      this.logger.error('Redis TTL error:', error);
       throw error;
     }
   }
@@ -113,7 +115,7 @@ export class RedisService {
         return await this.redis.incrby(key, value);
       }
     } catch (error) {
-      console.error('Redis INCR error:', error);
+      this.logger.error('Redis INCR error:', error);
       throw error;
     }
   }
@@ -127,7 +129,7 @@ export class RedisService {
       const result = await this.redis.ping();
       return result === 'PONG';
     } catch (error) {
-      console.error('Redis health check failed:', error);
+      this.logger.error('Redis health check failed:', error);
       return false;
     }
   }
@@ -147,7 +149,7 @@ export class RedisService {
     try {
       await this.redis.disconnect();
     } catch (error) {
-      console.error('Redis disconnect error:', error);
+      this.logger.error('Redis disconnect error:', error);
       throw error;
     }
   }
