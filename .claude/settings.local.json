@@ -34,7 +34,10 @@
       "Bash(npx tsc:*)",
       "Bash(npx nest generate controller:*)",
       "Bash(git rebase:*)",
-      "Bash(gh issue comment:*)"
+      "Bash(gh issue comment:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": [],
     "ask": []
