@@ -17,7 +17,18 @@
       "Bash(mkdir:*)",
       "Bash(npm init:*)",
       "Bash(pnpm install:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(pnpm start:dev:*)",
+      "Bash(test:*)",
+      "mcp__github__create_pull_request",
+      "mcp__github__list_workflows",
+      "mcp__github__list_workflow_runs",
+      "mcp__github__list_workflow_jobs",
+      "mcp__github__get_job_logs",
+      "Bash(pnpm lint:*)",
+      "mcp__github__get_pull_request",
+      "mcp__github__get_pull_request_status",
+      "mcp__github__merge_pull_request"
     ],
     "deny": [],
     "ask": []
