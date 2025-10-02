@@ -28,7 +28,16 @@
       "Bash(pnpm lint:*)",
       "mcp__github__get_pull_request",
       "mcp__github__get_pull_request_status",
-      "mcp__github__merge_pull_request"
+      "mcp__github__merge_pull_request",
+      "Bash(gh api:*)",
+      "Bash(gh issue view:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx nest generate controller:*)",
+      "Bash(git rebase:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": [],
     "ask": []
