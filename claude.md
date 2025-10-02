@@ -75,6 +75,39 @@ npx tsc --init
 - ❌ package.json (use npm init)
 - ❌ Test boilerplate (use nest g --spec)
 
+### 0.5. Git Branch Workflow - NEVER Work on Main
+
+**ABSOLUTE RULE**: NEVER make code changes directly on the main branch. ALL changes MUST go through feature branches and pull requests.
+
+```bash
+# ❌ FORBIDDEN - Never commit directly to main
+git checkout main
+git add .
+git commit -m "changes"
+git push origin main
+
+# ✅ REQUIRED - Always use feature branches
+git checkout main
+git pull origin main
+git checkout -b feat/feature-name-#123
+git add .
+git commit -m "feat(scope): description (#123)"
+git push origin feat/feature-name-#123
+# Then create PR via GitHub
+```
+
+**Why this is critical:**
+- Protects main branch from breaking changes
+- Ensures code review process
+- Enables CI/CD checks before merge
+- Maintains clean, revertable git history
+- Industry standard for team development
+
+**Before ANY code change:**
+1. Run `git branch` to verify current branch
+2. If on main, immediately create feature branch: `git checkout -b type/description-#issue`
+3. NEVER proceed with changes while on main
+
 ### 1. Use Existing Libraries - ALWAYS
 Never write custom implementations when battle-tested libraries exist:
 - ✅ Use Zod for validation
@@ -593,35 +626,50 @@ export type Config = z.infer<typeof configSchema>;
 **CRITICAL WORKFLOW:**
 
 ```typescript
-// 1. List and review open issues
+// 🚨 ABSOLUTE RULE: NEVER WORK DIRECTLY ON MAIN BRANCH
+// All code changes MUST be made in feature branches
+// If you're on main, STOP and create a feature branch immediately
+
+// 0. VERIFY NOT ON MAIN BRANCH (CRITICAL FIRST STEP)
+//    - Run: git branch
+//    - Current branch should NOT be main
+//    - If on main: Immediately create feature branch before any changes
+
+// 1. Pull latest main and create feature branch
+//    - Checkout main: git checkout main
+//    - Pull latest: git pull origin main
+//    - Create feature branch: git checkout -b type/description-#issue-number
+//    - Examples:
+//      git checkout -b feat/turborepo-config-#2
+//      git checkout -b fix/auth-token-bug-#67
+//      git checkout -b docs/update-readme-#23
+
+// 2. List and review open issues
 //    - Use GitHub MCP: list_issues to see available work
 //    - Check epic:* labels to find issues in your area
 //    - Read issue completely - all context is provided
 
-// 2. If issue exists: Read it and prepare to work
+// 3. If issue exists: Read it and prepare to work
 //    - Read entire issue template (context, scope, acceptance criteria)
 //    - Check "Blocked By" section for dependencies
 //    - Verify you have all required knowledge/access
 
-// 3. If no issue exists: Create using appropriate template
+// 4. If no issue exists: Create using appropriate template
 //    - Use Feature Request for new features
 //    - Use Bug Report for bugs
 //    - Use Epic for high-level initiatives
 //    - Fill ALL required fields completely
 
-// 4. Assign issue to yourself
+// 5. Assign issue to yourself
 //    - Update assignee via GitHub MCP
-
-// 5. Create a branch for the issue
-//    - Branch format: type/description-#issue-number
-//    - Examples:
-//      feat/turborepo-config-#2
-//      fix/auth-token-bug-#67
-//      docs/update-readme-#23
 
 // 6. Update issue status
 //    - Add comment: "Starting work on this issue"
 //    - Change label from status:todo to status:in-progress
+
+// 7. VERIFY AGAIN: Ensure you're on feature branch, NOT main
+//    - Run: git branch
+//    - Confirm you see: * feat/feature-name-#123 (NOT * main)
 ```
 
 ### During Development
@@ -665,36 +713,54 @@ export type Config = z.infer<typeof configSchema>;
 **Close the Loop:**
 
 ```typescript
-// 1. Verify ALL acceptance criteria met
+// 🚨 CRITICAL: NEVER push directly to main. ALL changes go through PR process.
+
+// 1. VERIFY YOU'RE ON FEATURE BRANCH (NOT MAIN)
+//    - Run: git branch
+//    - Must see: * feat/feature-name-#123 (NOT * main)
+//    - If on main: You did something wrong - ask for help
+
+// 2. Verify ALL acceptance criteria met
 //    - Go through issue checklist
 //    - Check every box is complete
 //    - Run all tests specified in "Tests Required"
 
-// 2. Update issue with completion summary
+// 3. Update issue with completion summary
 //    - Add final comment summarizing work done
 //    - List all commits related to this issue
 //    - Note any deviations from original plan
 //    Example: "Completed all acceptance criteria. Created turbo.json, configured
 //             pnpm workspaces, and set up build pipeline. All tests passing."
 
-// 3. Create PR with proper format
+// 4. Push feature branch to remote (NOT main)
+//    - Run: git push origin feat/feature-name-#123
+//    - NEVER run: git push origin main (FORBIDDEN)
+
+// 5. Create PR with proper format
 //    - PR title: Same as issue title
 //    - PR description MUST include: "Closes #issue-number"
+//    - Base branch: main
+//    - Compare branch: feat/feature-name-#123
 //    - Link to epic if applicable: "Part of #epic-number"
 //    - Include testing notes
 //    - Request review
 
-// 4. Update epic progress
-//    - Add comment to epic: "Issue #X completed"
+// 6. Update epic progress
+//    - Add comment to epic: "Issue #X completed - PR #Y created"
 //    - Check if epic milestone is complete
 //    - If all issues in epic are done, update epic status
 
-// 5. Issue closes automatically
-//    - When PR merges to main, issue auto-closes
-//    - Epic stays open until all child issues complete
-//    - Verify closure after merge
+// 7. Wait for PR approval and merge
+//    - DO NOT merge without review (unless explicitly allowed)
+//    - DO NOT push to main directly
+//    - Issue auto-closes when PR merges to main
 
-// 6. Move to next issue
+// 8. After PR merges: Pull latest main
+//    - Checkout main: git checkout main
+//    - Pull latest: git pull origin main
+//    - Your feature branch changes are now in main via PR
+
+// 9. Move to next issue
 //    - Review open issues for next task
 //    - Check epic for remaining work
 //    - Start workflow again from "Before Starting Work"
