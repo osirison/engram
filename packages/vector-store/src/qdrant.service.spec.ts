@@ -1,19 +1,23 @@
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { QdrantService } from './qdrant.service';
 import type { QdrantClient } from '@qdrant/js-client-rest';
 
+// Mock Qdrant client
+const mockClient = {
+  getCollections: vi.fn(),
+  createCollection: vi.fn(),
+  deleteCollection: vi.fn(),
+  upsert: vi.fn(),
+  search: vi.fn(),
+} as unknown as QdrantClient;
+
 describe('QdrantService', () => {
   let service: QdrantService;
-  let mockClient: jest.Mocked<QdrantClient>;
 
   beforeEach(async () => {
-    mockClient = {
-      getCollections: jest.fn(),
-      createCollection: jest.fn(),
-      deleteCollection: jest.fn(),
-      upsert: jest.fn(),
-      search: jest.fn(),
-    } as unknown as jest.Mocked<QdrantClient>;
+    // Reset all mocks before each test
+    vi.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -34,7 +38,7 @@ describe('QdrantService', () => {
 
   describe('healthCheck', () => {
     it('should return true when connection is healthy', async () => {
-      mockClient.getCollections.mockResolvedValue({
+      mockClient.getCollections = vi.fn().mockResolvedValue({
         collections: [],
       } as never);
 
@@ -45,7 +49,7 @@ describe('QdrantService', () => {
     });
 
     it('should return false when connection fails', async () => {
-      mockClient.getCollections.mockRejectedValue(new Error('Connection failed'));
+      mockClient.getCollections = vi.fn().mockRejectedValue(new Error('Connection failed'));
 
       const result = await service.healthCheck();
 
@@ -55,7 +59,7 @@ describe('QdrantService', () => {
 
   describe('createCollection', () => {
     it('should create a collection with default distance metric', async () => {
-      mockClient.createCollection.mockResolvedValue(true as never);
+      mockClient.createCollection = vi.fn().mockResolvedValue(true as never);
 
       await service.createCollection('test-collection', 1536);
 
@@ -65,7 +69,7 @@ describe('QdrantService', () => {
     });
 
     it('should create a collection with custom distance metric', async () => {
-      mockClient.createCollection.mockResolvedValue(true as never);
+      mockClient.createCollection = vi.fn().mockResolvedValue(true as never);
 
       await service.createCollection('test-collection', 768, 'Euclid');
 
@@ -77,7 +81,7 @@ describe('QdrantService', () => {
 
   describe('listCollections', () => {
     it('should return list of collection names', async () => {
-      mockClient.getCollections.mockResolvedValue({
+      mockClient.getCollections = vi.fn().mockResolvedValue({
         collections: [
           { name: 'collection1' },
           { name: 'collection2' },
@@ -92,7 +96,7 @@ describe('QdrantService', () => {
 
   describe('collectionExists', () => {
     it('should return true if collection exists', async () => {
-      mockClient.getCollections.mockResolvedValue({
+      mockClient.getCollections = vi.fn().mockResolvedValue({
         collections: [
           { name: 'existing-collection' },
         ],
@@ -104,7 +108,7 @@ describe('QdrantService', () => {
     });
 
     it('should return false if collection does not exist', async () => {
-      mockClient.getCollections.mockResolvedValue({
+      mockClient.getCollections = vi.fn().mockResolvedValue({
         collections: [],
       } as never);
 
@@ -116,7 +120,7 @@ describe('QdrantService', () => {
 
   describe('deleteCollection', () => {
     it('should delete a collection', async () => {
-      mockClient.deleteCollection.mockResolvedValue(true as never);
+      mockClient.deleteCollection = vi.fn().mockResolvedValue(true as never);
 
       await service.deleteCollection('test-collection');
 
@@ -131,7 +135,7 @@ describe('QdrantService', () => {
         { id: '2', vector: [0.3, 0.4], payload: { text: 'test2' } },
       ];
 
-      mockClient.upsert.mockResolvedValue({ status: 'completed' } as never);
+      mockClient.upsert = vi.fn().mockResolvedValue({ status: 'completed' } as never);
 
       await service.upsertPoints('test-collection', points);
 
@@ -149,7 +153,7 @@ describe('QdrantService', () => {
         { id: '2', score: 0.85, payload: { text: 'test2' } },
       ];
 
-      mockClient.search.mockResolvedValue(searchResults as never);
+      mockClient.search = vi.fn().mockResolvedValue(searchResults as never);
 
       const result = await service.search('test-collection', [0.1, 0.2], 5);
 
@@ -161,7 +165,7 @@ describe('QdrantService', () => {
     });
 
     it('should use default limit when not provided', async () => {
-      mockClient.search.mockResolvedValue([] as never);
+      mockClient.search = vi.fn().mockResolvedValue([] as never);
 
       await service.search('test-collection', [0.1, 0.2]);
 
