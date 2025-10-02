@@ -367,11 +367,16 @@ pnpm test packages/core # Specific package
     - Title: Same as issue title
     - Description: "Closes #issue-number"
     - Base: main, Compare: feat/feature-name-#123
-18. Update epic: Comment "Issue #X completed - PR #Y created"
-19. Wait for PR approval and merge (DO NOT push to main directly)
-20. After PR merges: Issue auto-closes
-21. Checkout main and pull: git checkout main && git pull origin main
-22. Move to next issue from open issues list
+18. **IMPORTANT: Monitor PR health before requesting review**
+    - After creating PR, monitor it for CI/CD failures
+    - Wait for all GitHub checks to complete successfully
+    - Only ask user to review when PR is healthy and ready
+    - PR must have all green checks before review request
+19. Update epic: Comment "Issue #X completed - PR #Y created"
+20. Wait for PR approval and merge (DO NOT push to main directly)
+21. After PR merges: Issue auto-closes
+22. Checkout main and pull: git checkout main && git pull origin main
+23. Move to next issue from open issues list
 ```
 
 **⚠️ CRITICAL REMINDERS:**
