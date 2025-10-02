@@ -805,7 +805,14 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 //    - Include testing notes
 //    - Request review
 
-// 6. Update epic progress
+// 6. IMPORTANT: Monitor PR health before requesting user review
+//    - After creating PR, monitor it for CI/CD failures
+//    - Wait for all GitHub checks to complete successfully
+//    - Only ask user to review when PR is healthy and ready
+//    - PR must have all green checks before review request
+//    - Use GitHub MCP to check PR status and workflow runs
+
+// 7. Update epic progress
 //    - Add comment to epic: "Issue #X completed - PR #Y created"
 //    - Check if epic milestone is complete
 //    - If all issues in epic are done, update epic status
