@@ -498,9 +498,109 @@ export class MyService {
 - [MCP Protocol](https://modelcontextprotocol.io)
 - [Project README](./README.md)
 
-## Status Tracking
-When reporting status, use format:
+## Git Worktrees (Standard Process on Windows)
+
+Use Git worktrees to create isolated working directories per issue without constantly switching branches in your main repo. This keeps context clean and enables parallel development.
+
+### Conventions
+
+- Worktree root: `C:\projects\worktree\engram\{name}-{issue}`
+- Branch name: `type/kebab-name-#<issue>` (examples below)
+- Base ref: `origin/main`
+
+### Preflight
+
+```powershell
+git -C "C:\projects\engram" fetch origin --prune
+git -C "C:\projects\engram" worktree prune
+New-Item -ItemType Directory -Force -Path "C:\projects\worktree\engram" | Out-Null
 ```
+
+### Create Worktree (General)
+
+```powershell
+$issue = 123
+$name = "short-kebab-name"
+$branch = "feat/$name-#$issue"
+$path = "C:\projects\worktree\engram\$name-$issue"
+
+git -C "C:\projects\engram" worktree add -b $branch $path origin/main
+```
+
+### Examples
+
+- Issue #23 (MCP SDK handler):
+
+```powershell
+$issue = 23
+$name = "mcp-sdk-handler"
+$branch = "feat/$name-#$issue"   # feat/mcp-sdk-handler-#23
+$path = "C:\projects\worktree\engram\$name-$issue"  # C:\projects\worktree\engram\mcp-sdk-handler-23
+git -C "C:\projects\engram" worktree add -b $branch $path origin/main
+```
+
+- Issue #24 (MCP tools):
+
+```powershell
+$issue = 24
+$name = "mcp-tools"
+$branch = "feat/$name-#$issue"   # feat/mcp-tools-#24
+$path = "C:\projects\worktree\engram\$name-$issue"  # C:\projects\worktree\engram\mcp-tools-24
+git -C "C:\projects\engram" worktree add -b $branch $path origin/main
+```
+
+### Develop, Commit, and Push
+
+```powershell
+# Inside the worktree directory
+Set-Location $path
+git status
+
+# Commit using single-line conventional commits with issue number
+git add .
+git commit -m "feat(scope): implement X (#$issue)"
+git push -u origin $branch
+```
+
+### Open PR
+
+Create a PR from `$branch` to `main` with description:
+
+```text
+Closes #<issue>
+```
+
+### List Worktrees
+
+```powershell
+git -C "C:\projects\engram" worktree list
+```
+
+### Cleanup After Merge
+
+After your PR is merged:
+
+```powershell
+# Remove the worktree folder
+Remove-Item -Recurse -Force "C:\projects\worktree\engram\$name-$issue"
+
+# Prune and delete branch
+git -C "C:\projects\engram" worktree prune
+git -C "C:\projects\engram" branch -D $branch
+git -C "C:\projects\engram" push origin --delete $branch
+```
+
+Notes:
+
+- Always start worktrees from `origin/main` to ensure latest base.
+- Keep branch names short and descriptive.
+- Ensure commits are single-line and include the issue number.
+
+## Status Tracking
+
+When reporting status, use format:
+
+```text
 Task: [Task name] (#issue-number)
 Epic: [Epic name]
 Status: [In Progress|Blocked|Complete]
