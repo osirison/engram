@@ -675,8 +675,8 @@ git push -u origin "feat/mcp-tools-#24"
 ```powershell
 # After PR merges
 git -C "C:\projects\engram" fetch origin --prune
-git branch -D feat/mcp-sdk-handler-#23
-git push origin --delete feat/mcp-sdk-handler-#23
+git branch -D "feat/mcp-sdk-handler-#23"
+git push origin --delete "feat/mcp-sdk-handler-#23"
 
 # Worktrees remain in place for future issues; no need to recreate
 ```
