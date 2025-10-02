@@ -607,3 +607,84 @@ Status: [In Progress|Blocked|Complete]
 Blockers: [None|Description]
 Next: [Next action item]
 ```
+
+## Track-Based Worktrees (Persistent Tracks)  
+
+Enables multiple agents to work in parallel with minimal churn by keeping long-lived worktrees per track (e.g., mcp, db, devex, health) and creating short-lived feature branches per issue inside those worktrees. (Closes #39)
+
+### Why
+
+- Stable, dedicated folders for each focus area reduce context switching
+- Clear isolation between tracks while preserving one-issue-per-PR discipline
+- Faster iteration: no repeated create/remove cycles for worktrees
+
+### Conventions (Tracks)
+
+- Worktree root: `C:\projects\worktree\engram\{track}`
+- Parking branch (empty, rarely used directly): `track/{track}`
+- Base ref for new work: `origin/main`
+- Feature branch per issue: `type/kebab-name-#<issue>`
+
+Tracks (initial set): `mcp`, `db`, `devex`, `health`.
+
+### Create Track Worktrees (one-time)
+
+```powershell
+# Preflight
+git -C "C:\projects\engram" fetch origin --prune
+git -C "C:\projects\engram" worktree prune
+New-Item -ItemType Directory -Force -Path "C:\projects\worktree\engram" | Out-Null
+
+# Create persistent worktrees from origin/main
+git -C "C:\projects\engram" worktree add -b "track/mcp"    "C:\projects\worktree\engram\mcp"    origin/main
+git -C "C:\projects\engram" worktree add -b "track/db"     "C:\projects\worktree\engram\db"     origin/main
+git -C "C:\projects\engram" worktree add -b "track/devex"  "C:\projects\worktree\engram\devex"  origin/main
+git -C "C:\projects\engram" worktree add -b "track/health" "C:\projects\worktree\engram\health" origin/main
+```
+
+### Per-Issue Workflow Inside a Track
+
+```powershell
+# Inside e.g. the MCP track worktree
+Set-Location "C:\projects\worktree\engram\mcp"
+
+# Always branch from origin/main for new work
+git fetch origin --prune
+git checkout -b "feat/mcp-sdk-handler-#23" origin/main
+
+# Do the work, commit with single-line conventional commit message referencing the issue
+git add .
+git commit -m "feat(mcp): scaffold MCP SDK handler (#23)"
+
+# Push and open PR to main
+git push -u origin "feat/mcp-sdk-handler-#23"
+# Create PR in GitHub with description: "Closes #23"
+```
+
+Additional example for another issue in the same track:
+
+```powershell
+git fetch origin --prune
+git checkout -b "feat/mcp-tools-#24" origin/main
+git commit -m "feat(mcp): add MCP tools skeleton (#24)"
+git push -u origin "feat/mcp-tools-#24"
+```
+
+### Cleanup After PR Merge (Tracks)
+
+```powershell
+# After PR merges
+git -C "C:\projects\engram" fetch origin --prune
+git branch -D "feat/mcp-sdk-handler-#23"
+git push origin --delete "feat/mcp-sdk-handler-#23"
+
+# Worktrees remain in place for future issues; no need to recreate
+```
+
+### Guardrails and Tips
+
+- NEVER work directly on `main`. Always create a feature branch from `origin/main`.
+- Keep commits single-line, conventional, and include the issue number: `type(scope): description (#123)`
+- Prefer small, focused PRs. Each issue → one PR to `main`.
+- If a track is idle, leave the worktree in place; it costs nothing and saves time later.
+
