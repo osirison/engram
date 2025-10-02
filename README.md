@@ -4,6 +4,8 @@
 
 **A Modular Agentic Memory MCP Server**
 
+> Quick link: See the project roadmap in [docs/roadmap.md](docs/roadmap.md)
+
 ## 🎯 Vision
 
 ENGRAM is a production-grade Model Context Protocol (MCP) server that provides sophisticated memory management capabilities for AI agents and LLM applications. It implements a neural-temporal approach to context management, enabling short-term and long-term memory, semantic search, memory reconciliation, and intelligent insight generation.
