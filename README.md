@@ -328,8 +328,14 @@ docker exec -it engram-postgres psql -U engram -d engram
 # Connect to Redis CLI
 docker exec -it engram-redis redis-cli
 
-# Check Qdrant health
+# Check Qdrant health directly
 curl http://localhost:6333/health
+
+# Check MCP server health (includes all services)
+curl http://localhost:3000/health
+
+# Check only Qdrant connection via MCP server
+curl http://localhost:3000/health/qdrant
 ```
 
 ### Monorepo Commands
