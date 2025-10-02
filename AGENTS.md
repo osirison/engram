@@ -156,12 +156,44 @@ shared/types        → Shared types
 
 ## Workflow Requirements
 
+### ⚠️ CRITICAL: NEVER WORK DIRECTLY ON MAIN BRANCH
+
+**ABSOLUTE RULE: ALL code changes MUST be made in feature branches. NEVER commit directly to main.**
+
+```bash
+# ❌ FORBIDDEN - Never do this
+git checkout main
+# ... make changes ...
+git commit -m "some changes"
+git push origin main
+
+# ✅ REQUIRED - Always do this
+git checkout main
+git pull origin main
+git checkout -b feat/feature-name-#123
+# ... make changes ...
+git commit -m "feat(scope): description (#123)"
+git push origin feat/feature-name-#123
+# ... create PR ...
+```
+
+**Why This Rule Exists:**
+- Protects main branch from direct modifications
+- Ensures all changes go through PR review process
+- Maintains clean git history
+- Enables CI/CD checks before merge
+- Allows easy rollback if issues arise
+
+**If you're on main branch, STOP and create a feature branch immediately.**
+
 ### Before Starting Work
-1. **Pull latest main branch** - Always run `git checkout main && git pull` before creating new branch
-2. **Check for GitHub issue** - All work must have issue #
-3. **Verify epic/story hierarchy** - Issue must link to story → epic
-4. **Check dependencies** - Review package.json for existing libs
-5. **Read module README** - Each package has implementation guide
+1. **Ensure you're NOT on main** - Run `git branch` to verify current branch
+2. **Pull latest main branch** - Always run `git checkout main && git pull origin main`
+3. **Create feature branch** - Run `git checkout -b type/description-#issue` (e.g., `feat/add-auth-#25`)
+4. **Check for GitHub issue** - All work must have issue #
+5. **Verify epic/story hierarchy** - Issue must link to story → epic
+6. **Check dependencies** - Review package.json for existing libs
+7. **Read module README** - Each package has implementation guide
 
 ### During Development
 1. **Reference issue #** - Include in commit: `feat(core): add X (#123)`
@@ -306,27 +338,47 @@ pnpm test packages/core # Specific package
 **Complete Workflow:**
 
 ```bash
-# Before Starting
-1. List open issues: Use GitHub MCP list_issues
-2. Review issue: Read complete template (context, scope, criteria)
-3. Create branch: type/description-#issue (e.g., feat/turborepo-#2)
-4. Assign to self and update status to in-progress
-5. Comment: "Starting work on this issue"
+# Before Starting (CRITICAL: Must be on feature branch, NOT main)
+1. Checkout main: git checkout main && git pull origin main
+2. List open issues: Use GitHub MCP list_issues
+3. Review issue: Read complete template (context, scope, criteria)
+4. VERIFY NOT ON MAIN: git branch (should NOT show * main)
+5. Create feature branch: git checkout -b type/description-#issue
+   Examples:
+   - git checkout -b feat/add-auth-#25
+   - git checkout -b fix/token-bug-#67
+   - git checkout -b docs/update-readme-#23
+6. Assign issue to self and update status to in-progress
+7. Comment: "Starting work on this issue"
 
-# During Work
-6. Post progress updates regularly to issue
-7. Update epic with milestone completions
-8. Commit with issue #: type(scope): msg (#123)
-9. If blocked: Comment on issue, change label to status:blocked
+# During Work (all changes in feature branch)
+8. VERIFY BRANCH: git branch (confirm you're on feature branch, NOT main)
+9. Post progress updates regularly to issue
+10. Update epic with milestone completions
+11. Commit with issue #: git commit -m "type(scope): msg (#123)"
+12. If blocked: Comment on issue, change label to status:blocked
 
-# After Completion
-10. Verify ALL acceptance criteria met
-11. Add completion comment with summary
-12. Create PR: "Closes #issue-number" in description
-13. Update epic: Comment "Issue #X completed"
-14. Issue auto-closes when PR merges
-15. Move to next issue from open issues list
+# After Completion (push feature branch, create PR)
+13. VERIFY BRANCH: git branch (must NOT be on main)
+14. Verify ALL acceptance criteria met
+15. Add completion comment with summary to issue
+16. Push feature branch: git push origin feat/feature-name-#123
+17. Create PR via GitHub:
+    - Title: Same as issue title
+    - Description: "Closes #issue-number"
+    - Base: main, Compare: feat/feature-name-#123
+18. Update epic: Comment "Issue #X completed - PR #Y created"
+19. Wait for PR approval and merge (DO NOT push to main directly)
+20. After PR merges: Issue auto-closes
+21. Checkout main and pull: git checkout main && git pull origin main
+22. Move to next issue from open issues list
 ```
+
+**⚠️ CRITICAL REMINDERS:**
+- NEVER commit directly to main branch
+- ALWAYS work in feature branches
+- ALWAYS create PR for code review
+- Main branch is protected - direct pushes are FORBIDDEN
 
 ### Commit Format
 
@@ -419,17 +471,20 @@ export class MyService {
 
 ## Agent Directives
 
-1. **Always search GitHub for existing issues before creating new ones**
-2. **Use GitHub MCP to track all work**
-3. **Prefer existing libraries over custom code**
-4. **Follow NestJS patterns strictly**
-5. **Write tests alongside features**
-6. **Keep commits focused and small**
-7. **Update documentation with code changes**
-8. **Validate inputs with Zod**
-9. **Use Prisma for all DB access**
-10. **Never commit secrets or env vars**
-11. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
+1. **🚨 NEVER WORK DIRECTLY ON MAIN BRANCH** - All changes MUST be in feature branches. Always verify current branch with `git branch` before making changes
+2. **Always create feature branch first** - Format: `type/description-#issue` (e.g., `feat/add-auth-#25`)
+3. **Always create PR for code review** - Never push directly to main, even for small changes
+4. **Always search GitHub for existing issues before creating new ones**
+5. **Use GitHub MCP to track all work**
+6. **Prefer existing libraries over custom code**
+7. **Follow NestJS patterns strictly**
+8. **Write tests alongside features**
+9. **Keep commits focused and small**
+10. **Update documentation with code changes**
+11. **Validate inputs with Zod**
+12. **Use Prisma for all DB access**
+13. **Never commit secrets or env vars**
+14. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
 
 ## Resources
 - [NestJS Docs](https://docs.nestjs.com)
