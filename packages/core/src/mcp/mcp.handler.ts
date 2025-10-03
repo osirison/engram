@@ -7,6 +7,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { McpServerConfig, McpServer } from './types.js';
+import { registerTools } from './tools/index.js';
 
 /**
  * MCP Protocol Handler
@@ -54,6 +55,9 @@ export class McpHandler implements OnModuleDestroy {
         this.logger.log('MCP server connection closed');
         this.isConnected = false;
       };
+
+      // Register MCP tools
+      registerTools(this.server);
 
       this.logger.log('MCP server initialized successfully');
     } catch (error) {
