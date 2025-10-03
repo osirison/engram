@@ -49,6 +49,44 @@ References: Epic #6, Issues #23, #24, #25, #20, #19, #5. Future epics: #7–#12.
 - Branch names: `feat/mcp-handler-#23`, `feat/prisma-setup-#20`, `feat/dev-hooks-#5`, `feat/health-endpoint-#19`, `feat/mcp-tools-#24`, `feat/claude-setup-#25`
 - Single-line commits referencing issue #. Wait for green checks before requesting review.
 
+## Track-Based Worktrees (Summary)
+
+We use persistent Git worktrees per focus area to enable parallel work with minimal churn. Tracks: `mcp`, `db`, `devex`, `health`.
+
+- One-time setup: create worktrees from `origin/main` with parking branches `track/{track}`
+- Per issue: from the track directory, branch off `origin/main` → implement → single-line commit with `(#issue)` → PR to `main`
+- Cleanup: delete the feature branch after merge; keep worktrees for reuse
+
+See full instructions with copyable PowerShell commands in `AGENTS.md` → Track-Based Worktrees: AGENTS.md#track-based-worktrees-persistent-tracks
+
+## Reflecting Tracks in GitHub
+
+To make tracks visible and actionable on GitHub:
+
+1. Push parking branches so tracks are discoverable
+
+```powershell
+git push -u origin track/mcp
+git push -u origin track/db
+git push -u origin track/devex
+git push -u origin track/health
+```
+
+2. Labels: create `track:mcp`, `track:db`, `track:devex`, `track:health`
+
+- Apply to issues/PRs to indicate ownership; add saved views per label
+
+3. Branch/PR discipline
+
+- One issue → one PR to `main`
+- Branch name: `type/kebab-name-#<issue>` (e.g., `feat/mcp-sdk-handler-#23`)
+- Commit format: `type(scope): description (#123)`
+
+4. Optional: Project board per track
+
+- Columns: MCP, DB, DevEx, Health; filter cards by `track:*` labels
+- Saved views: per-track, “Wave 1/2/3” filters using labels/milestones
+
 ## Next Actions
 
 - Kick off Wave 1 branches and post progress updates per issue.
