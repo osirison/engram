@@ -72,17 +72,17 @@ git push -u origin track/devex
 git push -u origin track/health
 ```
 
-1. Labels: create `track:mcp`, `track:db`, `track:devex`, `track:health`
+2. Labels: create `track:mcp`, `track:db`, `track:devex`, `track:health`
 
 - Apply to issues/PRs to indicate ownership; add saved views per label
 
-1. Branch/PR discipline
+3. Branch/PR discipline
 
 - One issue → one PR to `main`
 - Branch name: `type/kebab-name-#<issue>` (e.g., `feat/mcp-sdk-handler-#23`)
 - Commit format: `type(scope): description (#123)`
 
-1. Optional: Project board per track
+4. Optional: Project board per track
 
 - Columns: MCP, DB, DevEx, Health; filter cards by `track:*` labels
 - Saved views: per-track, “Wave 1/2/3” filters using labels/milestones
