@@ -57,7 +57,7 @@ We use persistent Git worktrees per focus area to enable parallel work with mini
 - Per issue: from the track directory, branch off `origin/main` → implement → single-line commit with `(#issue)` → PR to `main`
 - Cleanup: delete the feature branch after merge; keep worktrees for reuse
 
-See full instructions with copyable PowerShell commands in `AGENTS.md` → Track-Based Worktrees: ./../AGENTS.md#track-based-worktrees-persistent-tracks
+See full instructions with copyable PowerShell commands in `AGENTS.md` → Track-Based Worktrees: AGENTS.md#track-based-worktrees-persistent-tracks
 
 ## Reflecting Tracks in GitHub
 
