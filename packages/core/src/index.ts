@@ -11,3 +11,8 @@ export function getVersion(): string {
 
 // Logging
 export { LoggingModule } from './logging/logging.module';
+
+// MCP Protocol
+export { McpModule } from './mcp/mcp.module';
+export { McpHandler } from './mcp/mcp.handler';
+export type { McpServerConfig, McpServer, ServerInfo } from './mcp/types';

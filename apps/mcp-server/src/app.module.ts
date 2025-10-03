@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from '@engram/config';
-import { LoggingModule } from '@engram/core';
+import { LoggingModule, McpModule } from '@engram/core';
 import { RedisModule } from '@engram/redis';
 import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
@@ -16,6 +16,7 @@ import { HealthController } from './health.controller';
       envFilePath: '../../.env',
     }),
     LoggingModule,
+    McpModule,
     RedisModule,
     QdrantModule,
   ],
