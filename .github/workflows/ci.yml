@@ -62,6 +62,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup database
+        run: |
+          pnpm db:generate
+          pnpm db:migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+
       - name: Build
         run: pnpm build
 
