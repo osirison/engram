@@ -187,13 +187,16 @@ git push origin feat/feature-name-#123
 **If you're on main branch, STOP and create a feature branch immediately.**
 
 ### Before Starting Work
+
 1. **Ensure you're NOT on main** - Run `git branch` to verify current branch
 2. **Pull latest main branch** - Always run `git checkout main && git pull origin main`
-3. **Create feature branch** - Run `git checkout -b type/description-#issue` (e.g., `feat/add-auth-#25`)
-4. **Check for GitHub issue** - All work must have issue #
-5. **Verify epic/story hierarchy** - Issue must link to story → epic
-6. **Check dependencies** - Review package.json for existing libs
-7. **Read module README** - Each package has implementation guide
+3. **⚠️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:* label (track:mcp, track:db, track:devex, track:health)
+4. **Use the correct track worktree** - Navigate to `C:\projects\worktree\engram\{track}` matching the issue's track label
+5. **Create feature branch** - Run `git checkout -b type/description-#issue` (e.g., `feat/add-auth-#25`)
+6. **Check for GitHub issue** - All work must have issue #
+7. **Verify epic/story hierarchy** - Issue must link to story → epic
+8. **Check dependencies** - Review package.json for existing libs
+9. **Read module README** - Each package has implementation guide
 
 ### During Development
 1. **Reference issue #** - Include in commit: `feat(core): add X (#123)`
@@ -479,17 +482,18 @@ export class MyService {
 1. **🚨 NEVER WORK DIRECTLY ON MAIN BRANCH** - All changes MUST be in feature branches. Always verify current branch with `git branch` before making changes
 2. **Always create feature branch first** - Format: `type/description-#issue` (e.g., `feat/add-auth-#25`)
 3. **Always create PR for code review** - Never push directly to main, even for small changes
-4. **Always search GitHub for existing issues before creating new ones**
-5. **Use GitHub MCP to track all work**
-6. **Prefer existing libraries over custom code**
-7. **Follow NestJS patterns strictly**
-8. **Write tests alongside features**
-9. **Keep commits focused and small**
-10. **Update documentation with code changes**
-11. **Validate inputs with Zod**
-12. **Use Prisma for all DB access**
-13. **Never commit secrets or env vars**
-14. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
+4. **🏷️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:* label before starting work. Use the corresponding track worktree
+5. **Always search GitHub for existing issues before creating new ones**
+6. **Use GitHub MCP to track all work**
+7. **Prefer existing libraries over custom code**
+8. **Follow NestJS patterns strictly**
+9. **Write tests alongside features**
+10. **Keep commits focused and small**
+11. **Update documentation with code changes**
+12. **Validate inputs with Zod**
+13. **Use Prisma for all DB access**
+14. **Never commit secrets or env vars**
+15. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
 
 ## Resources
 - [NestJS Docs](https://docs.nestjs.com)
