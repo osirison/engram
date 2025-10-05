@@ -82,10 +82,7 @@ describe('QdrantService', () => {
   describe('listCollections', () => {
     it('should return list of collection names', async () => {
       mockClient.getCollections = vi.fn().mockResolvedValue({
-        collections: [
-          { name: 'collection1' },
-          { name: 'collection2' },
-        ],
+        collections: [{ name: 'collection1' }, { name: 'collection2' }],
       } as never);
 
       const result = await service.listCollections();
@@ -97,9 +94,7 @@ describe('QdrantService', () => {
   describe('collectionExists', () => {
     it('should return true if collection exists', async () => {
       mockClient.getCollections = vi.fn().mockResolvedValue({
-        collections: [
-          { name: 'existing-collection' },
-        ],
+        collections: [{ name: 'existing-collection' }],
       } as never);
 
       const result = await service.collectionExists('existing-collection');

@@ -22,14 +22,14 @@ describe('Ping Tool', () => {
   describe('pingHandler', () => {
     it('should return pong status', async () => {
       const result = await pingHandler();
-      
+
       expect(result).toHaveProperty('status', 'pong');
       expect(result).toHaveProperty('timestamp');
     });
 
     it('should return valid ISO timestamp', async () => {
       const result = await pingHandler();
-      
+
       // Check if timestamp is a valid ISO date string
       const date = new Date(result.timestamp);
       expect(date.toISOString()).toBe(result.timestamp);

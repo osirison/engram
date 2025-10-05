@@ -71,7 +71,7 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "roots": ["<rootDir>/src", "<rootDir>/test"],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
@@ -82,12 +82,11 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {
-      "^@engram/database$": "<rootDir>/../../../packages/database/src/index.ts",
-      "^@engram/redis/(.*)$": "<rootDir>/../../../packages/redis/src/$1.ts",
-      "^@engram/redis$": "<rootDir>/../../../packages/redis/src/index.ts",
-      "^@engram/vector-store$": "<rootDir>/../../../packages/vector-store/src/index.ts",
-      "^@engram/config$": "<rootDir>/../../../packages/config/src/index.ts",
-      "^@engram/core$": "<rootDir>/../../../packages/core/src/index.ts",
+      "^@engram/database$": "<rootDir>/../../packages/database/src/index.ts",
+      "^@engram/redis$": "<rootDir>/src/__mocks__/@engram/redis.ts",
+      "^@engram/vector-store$": "<rootDir>/../../packages/vector-store/src/index.ts",
+      "^@engram/config$": "<rootDir>/../../packages/config/src/index.ts",
+      "^@engram/core$": "<rootDir>/../../packages/core/src/index.ts",
       "^(.*)\\.js$": "$1"
     }
   }

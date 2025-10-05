@@ -56,7 +56,7 @@ describe('McpHandler', () => {
 
     it('should throw error when connecting without initialization', async () => {
       await expect(handler.connect()).rejects.toThrow(
-        'MCP server not initialized. Call initialize() first.',
+        'MCP server not initialized. Call initialize() first.'
       );
     });
   });

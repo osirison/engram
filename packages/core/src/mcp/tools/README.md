@@ -11,6 +11,7 @@ Test connectivity to the ENGRAM server.
 **Input:** Empty object `{}`
 
 **Output:**
+
 ```json
 {
   "status": "pong",
@@ -34,10 +35,12 @@ Each tool consists of:
 import { z } from 'zod';
 
 // 1. Define input schema with Zod
-export const myToolInputSchema = z.object({
-  message: z.string().min(1).max(1000),
-  count: z.number().int().positive().optional(),
-}).strict();
+export const myToolInputSchema = z
+  .object({
+    message: z.string().min(1).max(1000),
+    count: z.number().int().positive().optional(),
+  })
+  .strict();
 
 // 2. Define output type
 export interface MyToolOutput {
@@ -70,13 +73,16 @@ export const myTool = {
 To add a new tool to the system:
 
 1. **Create the tool file** in `packages/core/src/mcp/tools/`:
+
    ```typescript
    // my-tool.tool.ts
    import { z } from 'zod';
 
-   export const myToolInputSchema = z.object({
-     // Define input parameters
-   }).strict();
+   export const myToolInputSchema = z
+     .object({
+       // Define input parameters
+     })
+     .strict();
 
    export async function myToolHandler(input: unknown): Promise<unknown> {
      // Implement tool logic
@@ -91,6 +97,7 @@ To add a new tool to the system:
    ```
 
 2. **Register in the tools array** in `packages/core/src/mcp/tools/index.ts`:
+
    ```typescript
    import { myTool } from './my-tool.tool.js';
 
@@ -101,20 +108,26 @@ To add a new tool to the system:
    ```
 
 3. **Export from core package** (optional, for external use):
+
    ```typescript
    // packages/core/src/index.ts
    export { myTool } from './mcp/tools/my-tool.tool';
    ```
 
 4. **Create tests** in `packages/core/src/mcp/tools/my-tool.tool.spec.ts`:
+
    ```typescript
    import { describe, expect, it } from 'vitest';
    import { myTool, myToolHandler } from './my-tool.tool';
 
    describe('My Tool', () => {
      it('should handle valid input', async () => {
-       const result = await myToolHandler({ /* test input */ });
-       expect(result).toEqual({ /* expected output */ });
+       const result = await myToolHandler({
+         /* test input */
+       });
+       expect(result).toEqual({
+         /* expected output */
+       });
      });
    });
    ```
@@ -155,6 +168,7 @@ When a client requests available tools (`tools/list`), the registry returns:
 When a client calls a tool (`tools/call`):
 
 **Request:**
+
 ```json
 {
   "method": "tools/call",
@@ -166,6 +180,7 @@ When a client calls a tool (`tools/call`):
 ```
 
 **Response:**
+
 ```json
 {
   "content": [
@@ -178,6 +193,7 @@ When a client calls a tool (`tools/call`):
 ```
 
 **Error Response:**
+
 ```json
 {
   "content": [
@@ -217,6 +233,7 @@ Each tool should have:
 4. **Edge case tests** for error conditions
 
 Run tests:
+
 ```bash
 pnpm test --filter @engram/core
 ```
@@ -224,12 +241,14 @@ pnpm test --filter @engram/core
 ## Examples
 
 See existing tools for reference:
+
 - `ping.tool.ts` - Simple tool with no input parameters
 - `ping.tool.spec.ts` - Example test suite
 
 ## Future Enhancements
 
 Planned improvements:
+
 - Advanced JSON Schema conversion for complex Zod schemas
 - Tool versioning support
 - Tool permission/authentication system

@@ -5,10 +5,7 @@
 
 import { Logger } from '@nestjs/common';
 import { z } from 'zod';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '../types.js';
 import { pingTool } from './ping.tool.js';
 
@@ -103,9 +100,7 @@ export function registerTools(server: McpServer): void {
       }
 
       // Validate input with Zod
-      const validatedInput = tool.inputSchema.parse(
-        request.params.arguments || {},
-      );
+      const validatedInput = tool.inputSchema.parse(request.params.arguments || {});
 
       // Execute tool handler
       const result = await tool.handler(validatedInput);
@@ -123,11 +118,10 @@ export function registerTools(server: McpServer): void {
       };
     } catch (error) {
       logger.error(`Error executing tool ${toolName}:`, error);
-      
+
       // Format error response
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
       return {
         content: [
           {
