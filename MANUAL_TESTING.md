@@ -28,7 +28,7 @@ pnpm dev
 
 ```powershell
 # Using curl
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 
 # Using PowerShell Invoke-RestMethod
 Invoke-RestMethod -Uri "http://localhost:3001/health" -Method GET | ConvertTo-Json -Depth 10
@@ -59,7 +59,7 @@ Invoke-RestMethod -Uri "http://localhost:3001/health" -Method GET | ConvertTo-Js
 docker stop engram-postgres
 
 # Test health endpoint
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 ```
 
 **Expected Response (503 Service Unavailable):**
@@ -86,7 +86,7 @@ curl http://localhost:3000/health
 docker stop engram-redis
 
 # Test health endpoint
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 ```
 
 **Stop Qdrant:**
@@ -94,7 +94,7 @@ curl http://localhost:3000/health
 docker stop engram-qdrant
 
 # Test health endpoint
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 ```
 
 ### 3. Individual Service Tests
@@ -102,19 +102,19 @@ curl http://localhost:3000/health
 #### Test Database Only
 ```powershell
 # Custom endpoint (if available)
-curl http://localhost:3000/health/database
+curl http://localhost:3001/health/database
 ```
 
 #### Test Redis Only
 ```powershell
 # Custom endpoint (if available)
-curl http://localhost:3000/health/redis
+curl http://localhost:3001/health/redis
 ```
 
 #### Test Qdrant Only
 ```powershell
 # Custom endpoint (if available)
-curl http://localhost:3000/health/qdrant
+curl http://localhost:3001/health/qdrant
 ```
 
 ## 🔧 Troubleshooting
@@ -140,7 +140,7 @@ pnpm dev  # Watch the console output
 #### 1. Port Conflicts
 ```powershell
 # Check what's using ports
-netstat -ano | findstr :3000
+netstat -ano | findstr :3001
 netstat -ano | findstr :5432
 netstat -ano | findstr :6379
 netstat -ano | findstr :6333
@@ -207,7 +207,7 @@ docker-compose up -d
 ## 🌐 Browser Testing
 
 Visit in your browser:
-- **Health Check**: http://localhost:3000/health
+- **Health Check**: http://localhost:3001/health
 - **Qdrant UI**: http://localhost:6333/dashboard (if Qdrant has web UI)
 
 ## 📱 Postman Collection
@@ -215,7 +215,7 @@ Visit in your browser:
 Create a Postman collection with these requests:
 
 1. **GET Health Check**
-   - URL: `http://localhost:3000/health`
+   - URL: `http://localhost:3001/health`
    - Expected: 200 OK or 503 Service Unavailable
 
 2. **GET Qdrant Direct**
@@ -229,7 +229,7 @@ Create a Postman collection with these requests:
 # Use curl in a loop
 for ($i=1; $i -le 10; $i++) {
     Write-Host "Request $i"
-    curl http://localhost:3000/health
+    curl http://localhost:3001/health
     Start-Sleep -Seconds 1
 }
 ```
@@ -237,14 +237,14 @@ for ($i=1; $i -le 10; $i++) {
 ### Timing Tests
 ```powershell
 # Measure response time
-Measure-Command { Invoke-RestMethod -Uri "http://localhost:3000/health" }
+Measure-Command { Invoke-RestMethod -Uri "http://localhost:3001/health" }
 ```
 
 ### Concurrent Tests
 ```powershell
 # Run multiple requests simultaneously
 1..5 | ForEach-Object -Parallel {
-    Invoke-RestMethod -Uri "http://localhost:3000/health"
+    Invoke-RestMethod -Uri "http://localhost:3001/health"
 }
 ```
 
