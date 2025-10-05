@@ -1,0 +1,39 @@
+{
+  "name": "@engram/database",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "description": "Database layer with Prisma ORM for ENGRAM",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "engram",
+    "database",
+    "prisma",
+    "orm"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@prisma/client": "^6.16.3",
+    "reflect-metadata": "^0.2.2",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.6",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "eslint": "^9.16.0",
+    "prisma": "^6.16.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
