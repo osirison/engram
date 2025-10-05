@@ -194,7 +194,7 @@ git push origin feat/feature-name-#123
 4. **Use the correct track worktree** - Navigate to the appropriate path matching the issue's track label:
    - **Windows:** `C:\projects\worktree\engram\{track}`
    - **macOS/Linux:** `~/projects/worktree/engram/{track}`
-5. **Create feature branch** - Run `git checkout -b type/description-#issue` (e.g., `feat/add-auth-#25`)
+5. **Create feature branch** - Run `git checkout -b type/description-#issue origin/main` (e.g., `feat/add-auth-#25`)
 6. **Check for GitHub issue** - All work must have issue #
 7. **Verify epic/story hierarchy** - Issue must link to story → epic
 8. **Check dependencies** - Review package.json for existing libs
