@@ -20,7 +20,7 @@ async function bootstrap() {
   );
 
   // Initialize MCP handler
-  const mcpHandler: McpHandler = app.get(McpHandler);
+  const mcpHandler = app.get(McpHandler);
   try {
     await mcpHandler.start({
       name: 'engram',
