@@ -13,7 +13,7 @@ export class RedisHealthIndicator extends HealthIndicator {
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    const isHealthy = await this.redisService.isHealthy();
+    const isHealthy: boolean = await this.redisService.isHealthy();
     const result = this.getStatus(key, isHealthy);
 
     if (isHealthy) {

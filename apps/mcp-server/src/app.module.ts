@@ -11,7 +11,9 @@ import { HealthModule } from './health/health.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      validate: validateEnv,
+      validate: validateEnv as (
+        config: Record<string, unknown>,
+      ) => Record<string, unknown>,
       isGlobal: true,
       envFilePath: '../../.env',
     }),

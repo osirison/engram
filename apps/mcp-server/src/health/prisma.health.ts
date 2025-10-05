@@ -14,8 +14,7 @@ export class PrismaHealthIndicator extends HealthIndicator {
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-      await this.prismaService.$queryRaw`SELECT 1`;
+      await this.prismaService.$queryRaw<{ 1: number }[]>`SELECT 1`;
       return this.getStatus(key, true);
     } catch {
       throw new HealthCheckError(

@@ -1,22 +1,22 @@
 {
-	"servers": {
-		"github-engram": {
-			"type": "stdio",
-			"command": "docker",
-			"args": [
-				"run",
-				"-i",
-				"--rm",
-				"--name",
-				"engram-github-mcp-copilot",
-				"-e",
-				"GITHUB_PERSONAL_ACCESS_TOKEN",
-				"ghcr.io/github/github-mcp-server"
-			],
-			"env": {
-				"GITHUB_PERSONAL_ACCESS_TOKEN": "${env:ENGRAM_GITHUB_PAT}"
-			}
-		}
-	},
-	"inputs": []
+  "servers": {
+    "github-engram": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--name",
+        "engram-github-mcp-copilot",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:ENGRAM_GITHUB_PAT}"
+      }
+    }
+  },
+  "inputs": []
 }

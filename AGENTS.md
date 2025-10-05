@@ -1,6 +1,7 @@
 # ENGRAM - AI Agent Instructions
 
 ## Project Context
+
 ENGRAM = Extended Neural Graph for Recall and Memory. Modular MCP server for AI agent memory management.
 
 ## CRITICAL: Use Framework CLIs - NEVER Create Files From Scratch
@@ -8,6 +9,7 @@ ENGRAM = Extended Neural Graph for Recall and Memory. Modular MCP server for AI 
 **MANDATORY RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
 
 ### NestJS CLI Commands (REQUIRED)
+
 ```bash
 # Generate complete resource (module + service + controller + DTOs + tests)
 nest g resource <name>  # USE THIS for new features
@@ -31,6 +33,7 @@ nest g guard auth/roles            # Create roles guard
 ```
 
 ### Prisma CLI Commands (REQUIRED)
+
 ```bash
 # Initialize Prisma (only for new projects)
 npx prisma init
@@ -60,6 +63,7 @@ npx prisma studio
 ```
 
 ### Package Creation Commands (REQUIRED)
+
 ```bash
 # Create new package in monorepo
 pnpm create-package packages/<name>
@@ -74,6 +78,7 @@ npx tsc --init
 ```
 
 ### Testing Initialization (REQUIRED)
+
 ```bash
 # Vitest is configured at root level
 # For new package, copy vitest.config.ts from existing package
@@ -83,6 +88,7 @@ npx vitest init
 ```
 
 ### Database Migration Workflow
+
 ```bash
 # 1. Edit prisma/schema.prisma manually
 # 2. Generate types
@@ -98,6 +104,7 @@ pnpm db:migrate deploy
 ### When to Use CLI vs Manual Creation
 
 **ALWAYS Use CLI:**
+
 - ✅ NestJS modules, services, controllers, guards, pipes, etc.
 - ✅ Prisma migrations and client generation
 - ✅ Package initialization
@@ -105,12 +112,14 @@ pnpm db:migrate deploy
 - ✅ Test file scaffolding
 
 **Rare Manual Creation (Only if no CLI exists):**
+
 - ⚠️ Zod schemas (no CLI available)
 - ⚠️ Custom type definitions
 - ⚠️ Configuration files (after checking for init commands)
 - ⚠️ Documentation files (when explicitly requested)
 
 **NEVER Manually Create:**
+
 - ❌ NestJS modules, services, controllers, etc.
 - ❌ Prisma client code
 - ❌ Database migrations (use prisma migrate)
@@ -118,7 +127,9 @@ pnpm db:migrate deploy
 - ❌ Package.json from scratch (use npm init)
 
 ### Verification Checklist
+
 Before creating any framework file manually, ask:
+
 1. ❓ Does this framework have a CLI? (NestJS, Prisma, etc.)
 2. ❓ Can I use `nest g` or `prisma` commands?
 3. ❓ Is there a package initialization command?
@@ -127,6 +138,7 @@ Before creating any framework file manually, ask:
 **If ANY answer is YES, use the CLI command instead of manual file creation.**
 
 ## Tech Stack
+
 - TypeScript + Node.js 20+
 - NestJS framework
 - PostgreSQL (Prisma ORM)
@@ -137,6 +149,7 @@ Before creating any framework file manually, ask:
 - Docker
 
 ## Code Principles
+
 1. **Use existing frameworks** - Never write custom solutions when libraries exist
 2. **Type safety first** - Leverage TypeScript strictly
 3. **Modular design** - Each package is independent
@@ -144,6 +157,7 @@ Before creating any framework file manually, ask:
 5. **Issue-driven** - Every task needs GitHub issue #
 
 ## Project Structure
+
 ```
 apps/mcp-server     → Main MCP server
 apps/api            → Future tRPC API
@@ -178,6 +192,7 @@ git push origin feat/feature-name-#123
 ```
 
 **Why This Rule Exists:**
+
 - Protects main branch from direct modifications
 - Ensures all changes go through PR review process
 - Maintains clean git history
@@ -190,7 +205,7 @@ git push origin feat/feature-name-#123
 
 1. **Ensure you're NOT on main** - Run `git branch` to verify current branch
 2. **Pull latest main branch** - Always run `git checkout main && git pull origin main`
-3. **⚠️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:* label (track:mcp, track:db, track:devex, track:health)
+3. **⚠️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:\* label (track:mcp, track:db, track:devex, track:health)
 4. **Use the correct track worktree** - Navigate to the appropriate path matching the issue's track label:
    - **Windows:** `C:\projects\worktree\engram\{track}`
    - **macOS/Linux:** `~/projects/worktree/engram/{track}`
@@ -201,6 +216,7 @@ git push origin feat/feature-name-#123
 9. **Read module README** - Each package has implementation guide
 
 ### During Development
+
 1. **Reference issue #** - Include in commit: `feat(core): add X (#123)`
 2. **Use existing packages**:
    - Validation → Zod
@@ -219,22 +235,26 @@ git push origin feat/feature-name-#123
 ### Code Patterns
 
 #### NestJS Module Template
+
 ```typescript
 @Module({
-  imports: [/* dependencies */],
+  imports: [
+    /* dependencies */
+  ],
   providers: [MyService],
   controllers: [MyController],
-  exports: [MyService]
+  exports: [MyService],
 })
 export class MyModule {}
 ```
 
 #### Service with Prisma
+
 ```typescript
 @Injectable()
 export class MyService {
   constructor(private prisma: PrismaService) {}
-  
+
   async findAll() {
     return this.prisma.myModel.findMany();
   }
@@ -242,30 +262,32 @@ export class MyService {
 ```
 
 #### Zod Validation
+
 ```typescript
 import { z } from 'zod';
 
 const schema = z.object({
   name: z.string(),
-  age: z.number().positive()
+  age: z.number().positive(),
 });
 
 type MyType = z.infer<typeof schema>;
 ```
 
 ### Testing Pattern
+
 ```typescript
 describe('MyService', () => {
   let service: MyService;
-  
+
   beforeEach(async () => {
     const module = await Test.createTestingModule({
-      providers: [MyService]
+      providers: [MyService],
     }).compile();
-    
+
     service = module.get<MyService>(MyService);
   });
-  
+
   it('should work', () => {
     expect(service.method()).toBe(expected);
   });
@@ -275,6 +297,7 @@ describe('MyService', () => {
 ## Common Tasks
 
 ### Adding New Package
+
 ```bash
 pnpm create-package packages/my-feature
 # Add to turbo.json
@@ -283,6 +306,7 @@ pnpm create-package packages/my-feature
 ```
 
 ### Database Changes
+
 ```bash
 # Edit prisma/schema.prisma
 pnpm db:generate  # Generate types
@@ -291,6 +315,7 @@ pnpm db:push      # Dev only - push without migration
 ```
 
 ### Adding Dependency
+
 ```bash
 # Add to specific package
 cd packages/my-package
@@ -301,6 +326,7 @@ pnpm add -w library-name
 ```
 
 ### Running Tests
+
 ```bash
 pnpm test              # All tests
 pnpm test:watch        # Watch mode
@@ -314,11 +340,13 @@ pnpm test packages/core # Specific package
 **ENGRAM uses structured templates for all issues. This provides AI agents with complete context.**
 
 **Templates** (`.github/ISSUE_TEMPLATE/`):
+
 1. **Feature Request** - Epic, priority, technical scope, acceptance criteria, tests
 2. **Bug Report** - Severity, reproduction steps, affected files, error logs
 3. **Epic** - Vision, user stories, milestones, success criteria
 
 **Agent Workflow**:
+
 ```bash
 1. Read issue - All context is provided (files, patterns, criteria)
 2. Implement - Follow specifications in issue
@@ -327,12 +355,14 @@ pnpm test packages/core # Specific package
 ```
 
 **Benefits**:
+
 - ✅ No context hunting - everything in the issue
 - ✅ Clear success criteria - know when done
 - ✅ Proper patterns - implementation guidance included
 - ✅ Traceable - epic → issue → commit → PR
 
 ### VS Code GitHub Tools
+
 - Create issues via GitHub MCP (use templates!)
 - Link commits to issues
 - Update issue status
@@ -385,6 +415,7 @@ pnpm test packages/core # Specific package
 ```
 
 **⚠️ CRITICAL REMINDERS:**
+
 - NEVER commit directly to main branch
 - ALWAYS work in feature branches
 - ALWAYS create PR for code review
@@ -405,6 +436,7 @@ docs(readme): update setup guide (#23)
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 **IMPORTANT**:
+
 - Single line only
 - Always reference issue #
 - Always reference files specified in issue's "Technical Scope"
@@ -412,28 +444,34 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 ## Key Libraries Reference
 
 ### NestJS
+
 - `@nestjs/common` - Decorators, DI
 - `@nestjs/config` - Configuration
 - `@nestjs/bull` - Queue integration
 
 ### Database
+
 - `@prisma/client` - DB access
 - `prisma` - CLI tool
 - `qdrant-client` - Vector DB
 - `ioredis` - Redis client
 
 ### Validation
+
 - `zod` - Schema validation
 - `class-validator` - DTO validation (NestJS)
 
 ### Testing
+
 - `vitest` - Test runner
 - `@nestjs/testing` - NestJS test utilities
 
 ### MCP
+
 - `@modelcontextprotocol/sdk` - MCP protocol
 
 ## Error Handling
+
 ```typescript
 // Use NestJS exceptions
 throw new BadRequestException('Invalid input');
@@ -449,12 +487,13 @@ export class MemoryNotFoundError extends NotFoundException {
 ```
 
 ## Environment Config
+
 ```typescript
 // Use NestJS ConfigModule
 @Injectable()
 export class MyService {
   constructor(private config: ConfigService) {}
-  
+
   getDbUrl() {
     return this.config.get<string>('DATABASE_URL');
   }
@@ -464,6 +503,7 @@ export class MyService {
 ## Quick Checks
 
 ### Before Committing
+
 - [ ] Code compiles (`pnpm build`)
 - [ ] Tests pass (`pnpm test`)
 - [ ] Linter clean (`pnpm lint`)
@@ -473,6 +513,7 @@ export class MyService {
 - [ ] Used existing libraries
 
 ### Before PR
+
 - [ ] All tests green
 - [ ] Documentation updated
 - [ ] CHANGELOG entry
@@ -484,7 +525,7 @@ export class MyService {
 1. **🚨 NEVER WORK DIRECTLY ON MAIN BRANCH** - All changes MUST be in feature branches. Always verify current branch with `git branch` before making changes
 2. **Always create feature branch first** - Format: `type/description-#issue` (e.g., `feat/add-auth-#25`)
 3. **Always create PR for code review** - Never push directly to main, even for small changes
-4. **🏷️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:* label before starting work. Use the corresponding track worktree
+4. **🏷️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:\* label before starting work. Use the corresponding track worktree
 5. **Always search GitHub for existing issues before creating new ones**
 6. **Use GitHub MCP to track all work**
 7. **Prefer existing libraries over custom code**
@@ -498,6 +539,7 @@ export class MyService {
 15. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
 
 ## Resources
+
 - [NestJS Docs](https://docs.nestjs.com)
 - [Prisma Docs](https://www.prisma.io/docs)
 - [Turborepo Docs](https://turbo.build/repo/docs)
@@ -614,7 +656,7 @@ Blockers: [None|Description]
 Next: [Next action item]
 ```
 
-## Track-Based Worktrees (Persistent Tracks)  
+## Track-Based Worktrees (Persistent Tracks)
 
 Enables multiple agents to work in parallel with minimal churn by keeping long-lived worktrees per track (e.g., mcp, db, devex, health) and creating short-lived feature branches per issue inside those worktrees. (Closes #39)
 
@@ -693,4 +735,3 @@ git push origin --delete "feat/mcp-sdk-handler-#23"
 - Keep commits single-line, conventional, and include the issue number: `type(scope): description (#123)`
 - Prefer small, focused PRs. Each issue → one PR to `main`.
 - If a track is idle, leave the worktree in place; it costs nothing and saves time later.
-

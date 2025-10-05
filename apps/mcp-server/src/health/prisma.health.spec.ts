@@ -15,7 +15,7 @@ describe('PrismaHealthIndicator', () => {
           provide: PrismaService,
           useValue: {
             $queryRaw: jest.fn(),
-          },
+          } as Partial<PrismaService>,
         },
       ],
     }).compile();

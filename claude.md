@@ -1,6 +1,7 @@
 # Claude AI Instructions - ENGRAM Project
 
 ## Project Context
+
 You are working on ENGRAM (Extended Neural Graph for Recall and Memory), a production-grade MCP server for AI agent memory management. This is a modular TypeScript/NestJS application following enterprise patterns.
 
 ## Core Principles
@@ -10,6 +11,7 @@ You are working on ENGRAM (Extended Neural Graph for Recall and Memory), a produ
 **CRITICAL RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
 
 #### NestJS CLI (MANDATORY)
+
 ```bash
 # Generate complete resource (PREFERRED for new features)
 nest g resource <name>
@@ -31,6 +33,7 @@ nest g guard auth/roles
 ```
 
 #### Prisma CLI (MANDATORY)
+
 ```bash
 # After editing schema.prisma
 npx prisma format                      # Format schema
@@ -43,6 +46,7 @@ npx prisma init                        # Initialize (new projects only)
 ```
 
 #### Package Initialization (MANDATORY)
+
 ```bash
 # Create package
 pnpm create-package packages/<name>
@@ -56,6 +60,7 @@ npx tsc --init
 #### CLI vs Manual Decision Matrix
 
 **ALWAYS Use CLI:**
+
 - ✅ NestJS modules, services, controllers, guards, pipes, interceptors, filters
 - ✅ Prisma migrations and client generation
 - ✅ Package initialization (npm init)
@@ -63,12 +68,14 @@ npx tsc --init
 - ✅ Test scaffolding (nest g includes tests)
 
 **Rare Manual (Only if NO CLI exists):**
+
 - ⚠️ Zod schemas (no CLI available)
 - ⚠️ Type definitions
 - ⚠️ Utility functions
 - ⚠️ Constants and enums
 
 **NEVER Create Manually:**
+
 - ❌ NestJS components (use nest g)
 - ❌ Prisma Client code (auto-generated)
 - ❌ Database migrations (use prisma migrate)
@@ -97,6 +104,7 @@ git push origin feat/feature-name-#123
 ```
 
 **Why this is critical:**
+
 - Protects main branch from breaking changes
 - Ensures code review process
 - Enables CI/CD checks before merge
@@ -104,12 +112,15 @@ git push origin feat/feature-name-#123
 - Industry standard for team development
 
 **Before ANY code change:**
+
 1. Run `git branch` to verify current branch
 2. If on main, immediately create feature branch: `git checkout -b type/description-#issue`
 3. NEVER proceed with changes while on main
 
 ### 1. Use Existing Libraries - ALWAYS
+
 Never write custom implementations when battle-tested libraries exist:
+
 - ✅ Use Zod for validation
 - ✅ Use Prisma for database access
 - ✅ Use BullMQ for job queues
@@ -122,6 +133,7 @@ Never write custom implementations when battle-tested libraries exist:
 - ❌ Never manually create NestJS files
 
 ### 2. Type Safety First
+
 - Every function must have explicit return types
 - No `any` types ever - use `unknown` if truly dynamic
 - Use Zod schemas to generate TypeScript types
@@ -129,14 +141,18 @@ Never write custom implementations when battle-tested libraries exist:
 - Export types from dedicated files
 
 ### 3. Issue-Driven Development
+
 **CRITICAL**: Every code change must be tracked by a GitHub issue.
+
 - Before coding: Search for existing issues or create new one
 - During coding: Reference issue # in commits
 - After coding: Update issue status and link PR
 - Format: `feat(scope): description (#issue-number)`
 
 ### 4. Modular Architecture
+
 Each package is self-contained:
+
 - Has its own `package.json`
 - Exports via `src/index.ts`
 - Can be tested independently
@@ -145,6 +161,7 @@ Each package is self-contained:
 ## NestJS Patterns
 
 ### Service Pattern
+
 ```typescript
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
@@ -161,27 +178,28 @@ export class MemoryService {
 
   async create(input: CreateMemoryInput): Promise<Memory> {
     this.logger.log(`Creating memory: ${input.content.slice(0, 50)}...`);
-    
+
     return this.prisma.memory.create({
-      data: input
+      data: input,
     });
   }
 
   async findById(id: string): Promise<Memory> {
     const memory = await this.prisma.memory.findUnique({
-      where: { id }
+      where: { id },
     });
-    
+
     if (!memory) {
       throw new NotFoundException(`Memory ${id} not found`);
     }
-    
+
     return memory;
   }
 }
 ```
 
 ### Controller Pattern
+
 ```typescript
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { MemoryService } from './memory.service';
@@ -204,6 +222,7 @@ export class MemoryController {
 ```
 
 ### Module Pattern
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { MemoryService } from './memory.service';
@@ -214,7 +233,7 @@ import { DatabaseModule } from '@/database/database.module';
   imports: [DatabaseModule],
   providers: [MemoryService],
   controllers: [MemoryController],
-  exports: [MemoryService] // Export if other modules need it
+  exports: [MemoryService], // Export if other modules need it
 })
 export class MemoryModule {}
 ```
@@ -222,6 +241,7 @@ export class MemoryModule {}
 ## Database Patterns (Prisma)
 
 ### Schema Design
+
 ```prisma
 model Memory {
   id        String   @id @default(cuid())
@@ -232,9 +252,9 @@ model Memory {
   metadata  Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId])
   @@index([createdAt])
   @@map("memories")
@@ -242,6 +262,7 @@ model Memory {
 ```
 
 ### Query Patterns
+
 ```typescript
 // Always use select for performance
 const memories = await prisma.memory.findMany({
@@ -249,29 +270,30 @@ const memories = await prisma.memory.findMany({
   select: {
     id: true,
     content: true,
-    createdAt: true
+    createdAt: true,
   },
   orderBy: { createdAt: 'desc' },
-  take: 20
+  take: 20,
 });
 
 // Use transactions for consistency
 await prisma.$transaction(async (tx) => {
   const memory = await tx.memory.create({ data: memoryData });
-  await tx.analytics.create({ 
-    data: { memoryId: memory.id, type: 'created' } 
+  await tx.analytics.create({
+    data: { memoryId: memory.id, type: 'created' },
   });
 });
 
 // Use findUniqueOrThrow for required records
 const memory = await prisma.memory.findUniqueOrThrow({
-  where: { id }
+  where: { id },
 });
 ```
 
 ## Validation (Zod)
 
 ### Schema Definition
+
 ```typescript
 import { z } from 'zod';
 
@@ -280,7 +302,7 @@ export const createMemorySchema = z.object({
   content: z.string().min(1).max(10000),
   tags: z.array(z.string()).max(20).optional(),
   metadata: z.record(z.unknown()).optional(),
-  embedding: z.array(z.number()).length(1536).optional()
+  embedding: z.array(z.number()).length(1536).optional(),
 });
 
 // Infer TypeScript type
@@ -295,6 +317,7 @@ function processMemory(input: unknown) {
 ```
 
 ### NestJS DTO Validation
+
 ```typescript
 import { IsString, IsOptional, IsArray, MaxLength } from 'class-validator';
 
@@ -313,13 +336,14 @@ export class CreateMemoryDto {
 ## Error Handling
 
 ### Standard Exceptions
+
 ```typescript
 import {
   BadRequestException,
   NotFoundException,
   UnauthorizedException,
   ConflictException,
-  InternalServerErrorException
+  InternalServerErrorException,
 } from '@nestjs/common';
 
 // Use appropriate exception types
@@ -337,6 +361,7 @@ if (!hasPermission) {
 ```
 
 ### Custom Exceptions
+
 ```typescript
 export class MemoryConflictException extends ConflictException {
   constructor(memoryId: string, reason: string) {
@@ -352,6 +377,7 @@ export class VectorSearchException extends InternalServerErrorException {
 ```
 
 ### Try-Catch Pattern
+
 ```typescript
 async findMemory(id: string): Promise<Memory> {
   try {
@@ -363,7 +389,7 @@ async findMemory(id: string): Promise<Memory> {
     if (error.code === 'P2025') {
       throw new NotFoundException(`Memory ${id} not found`);
     }
-    
+
     this.logger.error(`Failed to find memory ${id}`, error);
     throw error;
   }
@@ -373,6 +399,7 @@ async findMemory(id: string): Promise<Memory> {
 ## Testing Patterns
 
 ### Unit Test Structure
+
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
 import { MemoryService } from './memory.service';
@@ -392,11 +419,11 @@ describe('MemoryService', () => {
             memory: {
               create: vi.fn(),
               findUnique: vi.fn(),
-              findMany: vi.fn()
-            }
-          }
-        }
-      ]
+              findMany: vi.fn(),
+            },
+          },
+        },
+      ],
     }).compile();
 
     service = module.get<MemoryService>(MemoryService);
@@ -407,14 +434,14 @@ describe('MemoryService', () => {
     it('should create a memory', async () => {
       const input = { content: 'test memory' };
       const expected = { id: '123', ...input };
-      
+
       vi.spyOn(prisma.memory, 'create').mockResolvedValue(expected);
-      
+
       const result = await service.create(input);
-      
+
       expect(result).toEqual(expected);
       expect(prisma.memory.create).toHaveBeenCalledWith({
-        data: input
+        data: input,
       });
     });
   });
@@ -422,6 +449,7 @@ describe('MemoryService', () => {
 ```
 
 ### Integration Test Pattern
+
 ```typescript
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
@@ -433,7 +461,7 @@ describe('MemoryController (e2e)', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      imports: [AppModule]
+      imports: [AppModule],
     }).compile();
 
     app = module.createNestApplication();
@@ -460,6 +488,7 @@ describe('MemoryController (e2e)', () => {
 ## Async Operations & Jobs
 
 ### BullMQ Job Pattern
+
 ```typescript
 import { Processor, Process } from '@nestjs/bull';
 import { Job } from 'bull';
@@ -469,15 +498,15 @@ export class MemoryProcessor {
   @Process('reconcile')
   async handleReconciliation(job: Job<{ memoryId: string }>) {
     const { memoryId } = job.data;
-    
+
     this.logger.log(`Processing reconciliation for memory ${memoryId}`);
-    
+
     // Process the job
     await this.reconcileMemory(memoryId);
-    
+
     return { success: true, memoryId };
   }
-  
+
   @Process({ name: 'generate-insights', concurrency: 5 })
   async handleInsights(job: Job) {
     // Process with concurrency limit
@@ -486,6 +515,7 @@ export class MemoryProcessor {
 ```
 
 ### Queue Usage
+
 ```typescript
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -493,20 +523,21 @@ import { Queue } from 'bull';
 @Injectable()
 export class MemoryService {
   constructor(
-    @InjectQueue('memory-processing') 
+    @InjectQueue('memory-processing')
     private readonly queue: Queue
   ) {}
-  
+
   async scheduleReconciliation(memoryId: string) {
-    await this.queue.add('reconcile', 
+    await this.queue.add(
+      'reconcile',
       { memoryId },
       {
         delay: 5000, // 5 second delay
         attempts: 3,
         backoff: {
           type: 'exponential',
-          delay: 2000
-        }
+          delay: 2000,
+        },
       }
     );
   }
@@ -516,18 +547,19 @@ export class MemoryService {
 ## Configuration Management
 
 ### Environment Variables
+
 ```typescript
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class MyService {
   constructor(private config: ConfigService) {}
-  
+
   getDatabaseUrl(): string {
     // Use getOrThrow for required config
     return this.config.getOrThrow<string>('DATABASE_URL');
   }
-  
+
   getOptionalFeature(): boolean {
     // Use get with default for optional config
     return this.config.get<boolean>('FEATURE_ENABLED', false);
@@ -536,6 +568,7 @@ export class MyService {
 ```
 
 ### Config Schema
+
 ```typescript
 import { z } from 'zod';
 
@@ -546,7 +579,7 @@ export const configSchema = z.object({
   REDIS_URL: z.string().url(),
   QDRANT_URL: z.string().url(),
   JWT_SECRET: z.string().min(32),
-  JWT_EXPIRES_IN: z.string().default('7d')
+  JWT_EXPIRES_IN: z.string().default('7d'),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -561,6 +594,7 @@ export type Config = z.infer<typeof configSchema>;
 Before making ANY GitHub MCP tool call, you MUST:
 
 1. **Verify GitHub User Identity**
+
    ```typescript
    // FIRST: Get authenticated user details
    const user = await mcp__github__get_me();
@@ -568,10 +602,11 @@ Before making ANY GitHub MCP tool call, you MUST:
    ```
 
 2. **Verify Repository Context**
+
    ```typescript
    // ALWAYS use verified owner and repo in calls
    const owner = user.login; // From get_me()
-   const repo = 'engram';     // This project's repo
+   const repo = 'engram'; // This project's repo
 
    // ✅ CORRECT - Using verified values
    await mcp__github__list_issues({ owner, repo });
@@ -587,6 +622,7 @@ Before making ANY GitHub MCP tool call, you MUST:
    - **Step 4**: Proceed with GitHub operations
 
 **Why This is Critical:**
+
 - Prevents accidental operations on wrong repository
 - Ensures proper authentication context
 - Avoids permission errors
@@ -594,6 +630,7 @@ Before making ANY GitHub MCP tool call, you MUST:
 - Protects against cross-repository contamination
 
 **Example Complete Flow:**
+
 ```typescript
 // 1. ALWAYS START: Verify user identity
 const user = await mcp__github__get_me();
@@ -607,6 +644,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 ```
 
 **NEVER:**
+
 - ❌ Skip user verification
 - ❌ Hardcode owner values
 - ❌ Assume repository context
@@ -619,6 +657,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 #### Available Templates
 
 **1. Feature Request (`.github/ISSUE_TEMPLATE/feature_request.yml`)**
+
 - Epic assignment (which high-level feature)
 - Priority level (critical/high/medium/low)
 - Complete context (why needed, user story)
@@ -628,6 +667,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 - Tests required (unit/integration/e2e)
 
 **2. Bug Report (`.github/ISSUE_TEMPLATE/bug_report.yml`)**
+
 - Severity level
 - Reproduction steps
 - Expected vs actual behavior
@@ -636,6 +676,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 - Suggested fixes
 
 **3. Epic (`.github/ISSUE_TEMPLATE/epic.yml`)**
+
 - Vision & business goals
 - Technical scope (packages involved)
 - User stories (to break into issues)
@@ -646,12 +687,14 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 #### Workflow for AI Agents
 
 **Phase 1: Planning (Done Once)**
+
 1. Create epic using Epic template
 2. Break epic into feature issues using Feature Request template
 3. Prioritize and label all issues
 4. Link related issues
 
 **Phase 2: Execution (Per Task)**
+
 1. **Read Issue** - All context is in the issue (no hunting!)
    - Files to modify are specified
    - Acceptance criteria are clear
@@ -836,6 +879,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 ## Common Workflows
 
 ### Adding New Feature
+
 1. Search/create GitHub issue
 2. Create feature branch: `git checkout -b feat/feature-name-#issue`
 3. Implement in appropriate package
@@ -846,6 +890,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 8. Merge after approval
 
 ### Adding Database Model
+
 1. Update `prisma/schema.prisma`
 2. Generate types: `pnpm db:generate`
 3. Create migration: `pnpm db:migrate dev --name add_model_name`
@@ -854,8 +899,10 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 6. Commit: `feat(db): add ModelName table (#issue)`
 
 ### Adding New Package
+
 1. Create directory: `packages/my-feature/`
 2. Add `package.json`:
+
 ```json
 {
   "name": "@engram/my-feature",
@@ -868,6 +915,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
   }
 }
 ```
+
 3. Add `tsconfig.json` extending root config
 4. Create `src/index.ts` with exports
 5. Update root `package.json` workspaces
@@ -876,6 +924,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 ## Performance Guidelines
 
 ### Database Optimization
+
 - Always use `select` to limit returned fields
 - Add indexes for frequently queried columns
 - Use pagination for list queries
@@ -883,6 +932,7 @@ await mcp__github__create_issue({ owner, repo, title: 'New Issue', body: 'Conten
 - Use `findUniqueOrThrow` instead of `findUnique` + manual check
 
 ### Caching Strategy
+
 ```typescript
 @Injectable()
 export class MemoryService {
@@ -890,32 +940,29 @@ export class MemoryService {
     private redis: Redis,
     private prisma: PrismaService
   ) {}
-  
+
   async findById(id: string): Promise<Memory> {
     // Try cache first
     const cached = await this.redis.get(`memory:${id}`);
     if (cached) {
       return JSON.parse(cached);
     }
-    
+
     // Fetch from database
     const memory = await this.prisma.memory.findUniqueOrThrow({
-      where: { id }
+      where: { id },
     });
-    
+
     // Cache for 5 minutes
-    await this.redis.setex(
-      `memory:${id}`, 
-      300, 
-      JSON.stringify(memory)
-    );
-    
+    await this.redis.setex(`memory:${id}`, 300, JSON.stringify(memory));
+
     return memory;
   }
 }
 ```
 
 ### Vector Search Optimization
+
 ```typescript
 // Batch vector insertions
 async batchInsertVectors(memories: Memory[]) {
@@ -924,7 +971,7 @@ async batchInsertVectors(memories: Memory[]) {
     vector: m.embedding,
     payload: { content: m.content, userId: m.userId }
   }));
-  
+
   await this.qdrant.upsert('memories', {
     wait: true,
     points
@@ -935,12 +982,14 @@ async batchInsertVectors(memories: Memory[]) {
 ## Security Best Practices
 
 ### Input Validation
+
 - Validate all user inputs with Zod or class-validator
 - Sanitize HTML content if storing user-generated HTML
 - Validate file uploads (type, size)
 - Rate limit endpoints
 
 ### Authentication
+
 ```typescript
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -953,6 +1002,7 @@ export class MemoryController {
 ```
 
 ### Authorization
+
 ```typescript
 import { SetMetadata } from '@nestjs/common';
 
@@ -971,19 +1021,16 @@ async create(@Body() dto: CreateMemoryDto) {
 @Injectable()
 export class MemoryService {
   private readonly logger = new Logger(MemoryService.name);
-  
+
   async create(input: CreateMemoryInput) {
     this.logger.log(`Creating memory for user ${input.userId}`);
-    
+
     try {
       const memory = await this.prisma.memory.create({ data: input });
       this.logger.log(`Memory ${memory.id} created successfully`);
       return memory;
     } catch (error) {
-      this.logger.error(
-        `Failed to create memory: ${error.message}`,
-        error.stack
-      );
+      this.logger.error(`Failed to create memory: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -993,10 +1040,11 @@ export class MemoryService {
 ## Documentation Requirements
 
 ### Code Comments
+
 ```typescript
 /**
  * Retrieves memories using semantic search
- * 
+ *
  * @param query - The search query text
  * @param userId - User ID to filter memories
  * @param limit - Maximum number of results (default: 10)
@@ -1004,8 +1052,8 @@ export class MemoryService {
  * @throws {VectorSearchException} If vector search fails
  */
 async semanticSearch(
-  query: string, 
-  userId: string, 
+  query: string,
+  userId: string,
   limit = 10
 ): Promise<Memory[]> {
   // Implementation
@@ -1013,6 +1061,7 @@ async semanticSearch(
 ```
 
 ### README Updates
+
 - Update package README when adding features
 - Include usage examples
 - Document environment variables

@@ -88,33 +88,40 @@ engram/
 ### Core Technologies
 
 **Runtime & Language:**
+
 - **TypeScript** - Type safety across the entire stack
 - **Node.js 20+** - Runtime environment
 
 **Framework:**
+
 - **NestJS** - Modular architecture with built-in DI, perfect for complex systems
 - **@modelcontextprotocol/sdk** - Official MCP TypeScript SDK
 
 **Databases:**
+
 - **PostgreSQL 16+** - Primary relational database
 - **Qdrant** - Vector database for semantic search
 - **Redis** - Caching, sessions, job queues
 
 **ORM & Data:**
+
 - **Prisma** - Type-safe database access
 - **BullMQ** - Job queue for async processing
 
 **API Layer:**
+
 - **tRPC** - End-to-end type safety for future UI
 - **Zod** - Runtime validation
 
 **Development:**
+
 - **Turborepo** - Monorepo build system
 - **Vitest** - Fast unit testing
 - **Playwright** - E2E testing
 - **ESLint + Prettier** - Code quality
 
 **DevOps:**
+
 - **Docker + Docker Compose** - Containerization
 - **GitHub Actions** - CI/CD
 - **Conventional Commits** - Changelog generation
@@ -122,24 +129,28 @@ engram/
 ### Technology Decisions
 
 #### Why NestJS over Fastify/Express?
+
 - Built-in module system aligns with our modular architecture
 - Dependency injection simplifies testing and modularity
 - Extensive ecosystem (validation, testing, config)
 - Enterprise-grade patterns for complex applications
 
 #### Why Qdrant over Pinecone/Weaviate?
+
 - Self-hostable (no vendor lock-in)
 - Excellent TypeScript client
 - High performance with low resource footprint
 - Production-ready with clustering support
 
 #### Why Prisma over TypeORM/Sequelize?
+
 - Superior type safety and DX
 - Automatic migrations
 - Excellent schema management
 - Active development and community
 
 #### Why Turborepo over Nx/Lerna?
+
 - Simpler learning curve
 - Fast incremental builds
 - Great caching strategy
@@ -150,6 +161,7 @@ engram/
 ### Epic → Story → Task → Issue Hierarchy
 
 **Epics** (High-level initiatives):
+
 - Epic 1: Core MCP Server
 - Epic 2: Memory System
 - Epic 3: Authentication & Security
@@ -157,16 +169,19 @@ engram/
 - Epic 5: UI & Developer Experience
 
 **Stories** (User-facing features):
+
 - As a developer, I want to store conversation context
 - As a user, I want to retrieve relevant historical memories
 - As an admin, I want to monitor system health
 
 **Tasks** (Implementation units):
+
 - Set up NestJS project structure
 - Implement Prisma schema
 - Create Redis connection module
 
 **Issues** (GitHub tracked work):
+
 - Each task = 1 GitHub Issue
 - Labels: `epic:*`, `story:*`, `type:*`, `priority:*`
 - All work referenced by issue number
@@ -196,12 +211,14 @@ Labels:
 ## 🚀 Project Lifecycle Phases
 
 ### Phase 0: Initialization ✅
+
 - [x] Project structure setup
 - [x] Monorepo configuration (Turborepo)
 - [x] Development environment setup (Docker Compose)
 - [ ] CI/CD pipeline skeleton
 
 ### Phase 1: Core Infrastructure
+
 - [ ] NestJS server foundation
 - [ ] Database connections (PostgreSQL, Redis, Qdrant)
 - [ ] Prisma schema & migrations
@@ -209,6 +226,7 @@ Labels:
 - [ ] Docker development environment
 
 ### Phase 2: Memory Core
+
 - [ ] Short-term memory (Redis-based)
 - [ ] Long-term memory (PostgreSQL)
 - [ ] Vector embeddings integration
@@ -216,24 +234,28 @@ Labels:
 - [ ] Memory CRUD operations via MCP
 
 ### Phase 3: Authentication
+
 - [ ] OAuth 2.0 flow
 - [ ] JWT token management
 - [ ] Multi-tenant isolation
 - [ ] Permission system
 
 ### Phase 4: Advanced Features
+
 - [ ] Memory reconciliation engine
 - [ ] Insight processing
 - [ ] Analytics collection
 - [ ] BullMQ job processing
 
 ### Phase 5: API & UI
+
 - [ ] tRPC API layer
 - [ ] Next.js frontend
 - [ ] Analytics dashboard
 - [ ] Memory visualization
 
 ### Phase 6: Production Readiness
+
 - [ ] Performance optimization
 - [ ] Security audit
 - [ ] Load testing
@@ -243,6 +265,7 @@ Labels:
 ## 🔧 Developer Setup
 
 ### Prerequisites
+
 ```bash
 - Node.js 20+
 - Docker & Docker Compose
@@ -251,6 +274,7 @@ Labels:
 ```
 
 ### Quick Start
+
 ```bash
 # Clone repository
 git clone https://github.com/osirison/engram.git
@@ -304,22 +328,26 @@ pnpm docker:clean
 ```
 
 **Services Running:**
+
 - **PostgreSQL** (port 5432) - Main database
 - **Redis** (port 6379) - Cache and job queue
 - **Qdrant** (ports 6333/6334) - Vector database for semantic search
 
 **Data Persistence:**
+
 - All data is stored in named Docker volumes
 - Data persists across container restarts
 - Use `pnpm docker:clean` to reset all data
 
 **Health Checks:**
 All services include health checks that automatically verify:
+
 - PostgreSQL: Database is accepting connections
 - Redis: Server responds to PING
 - Qdrant: Health endpoint returns OK
 
 **Troubleshooting:**
+
 ```bash
 # If services fail to start, check logs
 pnpm docker:logs
@@ -368,12 +396,14 @@ pnpm clean
 ```
 
 **Turborepo Features:**
+
 - ✅ **Incremental Builds** - Only rebuilds changed packages
 - ✅ **Smart Caching** - Second build is instant (cache hit)
 - ✅ **Parallel Execution** - Runs tasks concurrently when possible
 - ✅ **Dependency Awareness** - Builds dependencies first (via `^build`)
 
 **Working with Specific Packages:**
+
 ```bash
 # Build only a specific package
 cd packages/core && pnpm build
@@ -398,6 +428,7 @@ cp .env.example .env
 ENGRAM uses Zod schemas to validate environment variables on startup. This ensures configuration errors are caught early and provides type-safe access to configuration throughout the application.
 
 **Required Variables** (validated on startup):
+
 - `NODE_ENV` - Environment mode (development, production, test)
 - `PORT` - Application port (default: 3000)
 - `DATABASE_URL` - PostgreSQL connection string
@@ -407,6 +438,7 @@ ENGRAM uses Zod schemas to validate environment variables on startup. This ensur
 The application will **fail fast on startup** if required variables are missing or invalid.
 
 **Key Variables:**
+
 ```env
 # Database (matches docker-compose.yml defaults)
 DATABASE_URL="postgresql://engram:dev_password@localhost:5432/engram"
@@ -542,6 +574,7 @@ git push origin feat/feature-name-#123
 ### Contribution Requirements
 
 All contributions must:
+
 1. ✅ **Reference a GitHub issue** - Use issue templates
 2. ✅ **Follow conventional commit format** - `type(scope): description (#issue)`
 3. ✅ **Include tests** - Unit tests for services, integration for APIs
@@ -574,11 +607,13 @@ test(memory): add unit tests for retrieval (#55)
 ### Why This Workflow?
 
 **For Humans:**
+
 - Clear task definitions
 - Visible project progress
 - Easy onboarding for new contributors
 
 **For AI Agents:**
+
 - No context hunting - all info in the issue
 - Clear success criteria - know when done
 - Proper guidance - patterns and files specified

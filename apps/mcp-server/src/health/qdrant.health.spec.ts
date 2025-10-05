@@ -15,7 +15,7 @@ describe('QdrantHealthIndicator', () => {
           provide: QdrantService,
           useValue: {
             healthCheck: jest.fn(),
-          },
+          } as Partial<QdrantService>,
         },
       ],
     }).compile();

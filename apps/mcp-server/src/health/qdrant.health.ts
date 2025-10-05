@@ -13,7 +13,7 @@ export class QdrantHealthIndicator extends HealthIndicator {
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    const isHealthy = await this.qdrantService.healthCheck();
+    const isHealthy: boolean = await this.qdrantService.healthCheck();
     const result = this.getStatus(key, isHealthy);
 
     if (isHealthy) {
