@@ -57,7 +57,7 @@ We use persistent Git worktrees per focus area to enable parallel work with mini
 - Per issue: from the track directory, branch off `origin/main` → implement → single-line commit with `(#issue)` → PR to `main`
 - Cleanup: delete the feature branch after merge; keep worktrees for reuse
 
-See full instructions with copyable PowerShell commands in `AGENTS.md` → Track-Based Worktrees: ./../AGENTS.md#track-based-worktrees-persistent-tracks
+See full instructions with copyable PowerShell commands in `AGENTS.md` → Track-Based Worktrees: AGENTS.md#track-based-worktrees-persistent-tracks
 
 ## Reflecting Tracks in GitHub
 
@@ -72,17 +72,17 @@ git push -u origin track/devex
 git push -u origin track/health
 ```
 
-1. Labels: create `track:mcp`, `track:db`, `track:devex`, `track:health`
+2. Labels: create `track:mcp`, `track:db`, `track:devex`, `track:health`
 
 - Apply to issues/PRs to indicate ownership; add saved views per label
 
-1. Branch/PR discipline
+3. Branch/PR discipline
 
 - One issue → one PR to `main`
 - Branch name: `type/kebab-name-#<issue>` (e.g., `feat/mcp-sdk-handler-#23`)
 - Commit format: `type(scope): description (#123)`
 
-1. Optional: Project board per track
+4. Optional: Project board per track
 
 - Columns: MCP, DB, DevEx, Health; filter cards by `track:*` labels
 - Saved views: per-track, “Wave 1/2/3” filters using labels/milestones
