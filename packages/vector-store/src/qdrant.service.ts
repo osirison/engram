@@ -7,9 +7,7 @@ type Distance = 'Cosine' | 'Euclid' | 'Dot' | 'Manhattan';
 export class QdrantService {
   private readonly logger = new Logger(QdrantService.name);
 
-  constructor(
-    @Inject('QDRANT_CLIENT') private readonly client: QdrantClient,
-  ) {}
+  constructor(@Inject('QDRANT_CLIENT') private readonly client: QdrantClient) {}
 
   /**
    * Performs a health check on the Qdrant connection
@@ -35,7 +33,7 @@ export class QdrantService {
   async createCollection(
     name: string,
     vectorSize: number,
-    distance: Distance = 'Cosine',
+    distance: Distance = 'Cosine'
   ): Promise<void> {
     try {
       this.logger.log(`Creating collection: ${name} with vector size ${vectorSize}`);
@@ -106,7 +104,7 @@ export class QdrantService {
       id: string | number;
       vector: number[];
       payload?: Record<string, unknown>;
-    }>,
+    }>
   ): Promise<void> {
     try {
       this.logger.log(`Upserting ${points.length} points to ${collectionName}`);
@@ -131,7 +129,7 @@ export class QdrantService {
   async search(
     collectionName: string,
     vector: number[],
-    limit = 10,
+    limit = 10
   ): Promise<
     Array<{
       id: string | number;

@@ -5,10 +5,10 @@ import { PrismaService } from './prisma.service';
 
 /**
  * Integration tests for PrismaModule and PrismaService
- * 
+ *
  * Note: These tests require a running PostgreSQL database.
  * Run with: pnpm docker:up to start the database.
- * 
+ *
  * These tests are skipped by default in CI environments where the database
  * may not be available. To run them locally:
  * 1. Ensure PostgreSQL is running (pnpm docker:up)
@@ -52,7 +52,7 @@ describe('PrismaModule Integration', () => {
       console.log('Skipping: DATABASE_URL not set');
       return;
     }
-    
+
     // This should not throw
     await expect(prismaService.$connect()).resolves.not.toThrow();
   });

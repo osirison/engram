@@ -11,6 +11,7 @@ This NestJS application serves as the main API server for ENGRAM, implementing t
 The server uses environment variables for configuration. See `.env.example` in the project root for all available options.
 
 **Key Configuration:**
+
 - `PORT` - Server port (default: 3000)
 - `NODE_ENV` - Environment (development/production/test)
 - `DATABASE_URL` - PostgreSQL connection string
@@ -29,6 +30,7 @@ pnpm docker:up
 ```
 
 This starts:
+
 - PostgreSQL (port 5432)
 - Redis (port 6379)
 - Qdrant (port 6333)
@@ -53,24 +55,70 @@ The server will be available at `http://localhost:3000`
 
 ### Health Check
 
+The `/health` endpoint provides comprehensive health status for all service dependencies using [@nestjs/terminus](https://docs.nestjs.com/recipes/terminus).
+
 ```bash
 # Check overall health (all services)
 curl http://localhost:3000/health
 
-# Response:
+# Response when healthy (HTTP 200):
 # {
-#   "status": "healthy",
-#   "qdrant": true
+#   "status": "ok",
+#   "info": {
+#     "database": {
+#       "status": "up"
+#     },
+#     "redis": {
+#       "status": "up"
+#     },
+#     "qdrant": {
+#       "status": "up"
+#     }
+#   },
+#   "error": {},
+#   "details": {
+#     "database": {
+#       "status": "up"
+#     },
+#     "redis": {
+#       "status": "up"
+#     },
+#     "qdrant": {
+#       "status": "up"
+#     }
+#   }
 # }
 
-# Check only Qdrant connection
-curl http://localhost:3000/health/qdrant
-
-# Response:
+# Response when unhealthy (HTTP 503):
 # {
-#   "healthy": true
+#   "status": "error",
+#   "info": {},
+#   "error": {
+#     "database": {
+#       "status": "down"
+#     }
+#   },
+#   "details": {
+#     "database": {
+#       "status": "down"
+#     },
+#     "redis": {
+#       "status": "up"
+#     },
+#     "qdrant": {
+#       "status": "up"
+#     }
+#   }
 # }
 ```
+
+**Monitored Services:**
+
+- **PostgreSQL** - Database connection via Prisma
+- **Redis** - Cache connection
+- **Qdrant** - Vector database connection
+
+**Performance:** Health checks are optimized for fast response times (<100ms) using simple connectivity tests.
 
 ### Additional Endpoints
 

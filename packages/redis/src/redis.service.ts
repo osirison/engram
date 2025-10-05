@@ -5,9 +5,7 @@ import type Redis from 'ioredis';
 export class RedisService {
   private readonly logger = new Logger(RedisService.name);
 
-  constructor(
-    @Inject('REDIS_CLIENT') private readonly redis: Redis
-  ) {}
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
 
   /**
    * Get a value from Redis by key

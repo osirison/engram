@@ -191,7 +191,7 @@ Execute raw SQL when needed:
 ```typescript
 async getUserStats() {
   return this.prisma.$queryRaw`
-    SELECT 
+    SELECT
       DATE(created_at) as date,
       COUNT(*) as count
     FROM users

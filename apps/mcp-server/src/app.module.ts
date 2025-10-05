@@ -6,12 +6,12 @@ import { RedisModule } from '@engram/redis';
 import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { HealthController } from './health.controller';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      validate: validateEnv,
+      validate: (config: Record<string, unknown>) => validateEnv(config),
       isGlobal: true,
       envFilePath: '../../.env',
     }),
@@ -19,8 +19,9 @@ import { HealthController } from './health.controller';
     McpModule,
     RedisModule,
     QdrantModule,
+    HealthModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}

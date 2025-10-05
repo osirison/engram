@@ -1,6 +1,7 @@
 # GitHub Copilot Instructions - ENGRAM Project
 
 ## Project Overview
+
 ENGRAM is a modular MCP (Model Context Protocol) server built with NestJS and TypeScript for AI agent memory management.
 
 ## CRITICAL: Use Framework CLIs - NEVER Create Files From Scratch
@@ -8,6 +9,7 @@ ENGRAM is a modular MCP (Model Context Protocol) server built with NestJS and Ty
 **MANDATORY RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
 
 ### NestJS CLI Commands (REQUIRED)
+
 ```bash
 # Generate complete resource (module + service + controller + DTOs + tests)
 nest g resource <name>  # PREFERRED - Creates everything you need
@@ -32,6 +34,7 @@ nest g pipe validation/zod         # Create Zod validation pipe
 ```
 
 ### Prisma CLI Commands (REQUIRED)
+
 ```bash
 # Initialize Prisma (only for new projects)
 npx prisma init
@@ -64,6 +67,7 @@ npx prisma format
 ```
 
 ### Package Creation Commands (REQUIRED)
+
 ```bash
 # Create new package in monorepo (if script exists)
 pnpm create-package packages/<name>
@@ -82,6 +86,7 @@ pnpm add <dependency>
 ```
 
 ### Testing Initialization (REQUIRED)
+
 ```bash
 # Vitest is configured at root level
 # For new package, copy vitest.config.ts from existing package
@@ -96,6 +101,7 @@ pnpm test packages/<name>    # Specific package
 ```
 
 ### Database Migration Workflow (REQUIRED)
+
 ```bash
 # 1. Edit prisma/schema.prisma manually (this is the ONLY manual step)
 
@@ -115,6 +121,7 @@ pnpm db:migrate deploy
 ```
 
 ### Monorepo/Turborepo Commands
+
 ```bash
 # Build all packages
 pnpm build
@@ -132,6 +139,7 @@ pnpm -r <script>
 ### When to Use CLI vs Manual Creation
 
 **ALWAYS Use CLI:**
+
 - ✅ NestJS modules, services, controllers, guards, pipes, interceptors, filters
 - ✅ Prisma migrations and client generation
 - ✅ Package initialization (npm init, pnpm create-package)
@@ -140,6 +148,7 @@ pnpm -r <script>
 - ✅ Database schema changes (via Prisma migrate)
 
 **Rare Manual Creation (Only if NO CLI exists):**
+
 - ⚠️ Zod validation schemas (no CLI - must write manually)
 - ⚠️ Custom TypeScript type definitions
 - ⚠️ Configuration files (after checking for init commands first)
@@ -148,6 +157,7 @@ pnpm -r <script>
 - ⚠️ Constants and enums
 
 **NEVER Manually Create:**
+
 - ❌ NestJS components (modules, services, controllers, etc.)
 - ❌ Prisma Client code (auto-generated)
 - ❌ Database migrations (use `prisma migrate`)
@@ -156,7 +166,9 @@ pnpm -r <script>
 - ❌ tsconfig.json from scratch (use `tsc --init`)
 
 ### Verification Checklist
+
 Before creating ANY framework file manually, STOP and ask:
+
 1. ❓ Does this framework have a CLI command? (Check NestJS, Prisma, npm, etc.)
 2. ❓ Can I use `nest generate` for this?
 3. ❓ Is this a Prisma schema change? (Use `prisma migrate`)
@@ -166,6 +178,7 @@ Before creating ANY framework file manually, STOP and ask:
 **If ANY answer is YES → Use the CLI/command. Do NOT create files manually.**
 
 ### Common Mistakes to Avoid
+
 - ❌ Creating `*.module.ts` manually → Use `nest g module`
 - ❌ Creating `*.service.ts` manually → Use `nest g service`
 - ❌ Creating `*.controller.ts` manually → Use `nest g controller`
@@ -180,6 +193,7 @@ Before creating ANY framework file manually, STOP and ask:
 ### Issue Templates (`.github/ISSUE_TEMPLATE/`)
 
 **1. Feature Request** - For new features
+
 - Epic assignment (which high-level feature)
 - Priority level (critical/high/medium/low)
 - Complete context (why needed, user story)
@@ -189,6 +203,7 @@ Before creating ANY framework file manually, STOP and ask:
 - Tests required (unit/integration/e2e)
 
 **2. Bug Report** - For bugs
+
 - Severity level
 - Reproduction steps
 - Expected vs actual behavior
@@ -197,6 +212,7 @@ Before creating ANY framework file manually, STOP and ask:
 - Suggested fixes
 
 **3. Epic** - For high-level initiatives
+
 - Vision & business goals
 - Technical scope (packages involved)
 - User stories (to break into issues)
@@ -207,6 +223,7 @@ Before creating ANY framework file manually, STOP and ask:
 ### AI Agent Workflow
 
 **Phase 1: Before Coding**
+
 1. List open issues (GitHub issues tab or MCP)
 2. Review available issues - check epic labels
 3. Read complete issue (context, scope, criteria all provided)
@@ -217,6 +234,7 @@ Before creating ANY framework file manually, STOP and ask:
 8. Comment: "Starting work on this issue"
 
 **Phase 2: Implementation**
+
 1. Read issue's "Technical Scope" - files to modify are listed
 2. Follow "Implementation Notes" - patterns specified
 3. Post progress updates to issue regularly
@@ -225,6 +243,7 @@ Before creating ANY framework file manually, STOP and ask:
 6. If blocked: Comment on issue, change to status:blocked
 
 **Phase 3: Verification & Completion**
+
 1. Verify ALL "Acceptance Criteria" are met
 2. Run ALL tests specified in "Tests Required"
 3. Add completion summary to issue
@@ -258,6 +277,7 @@ Before creating ANY framework file manually, STOP and ask:
 ## Code Style & Standards
 
 ### TypeScript Rules
+
 - Use strict mode, no `any` types
 - Prefer interfaces for data structures
 - Use type inference where obvious
@@ -265,6 +285,7 @@ Before creating ANY framework file manually, STOP and ask:
 - Use `const` assertions for constants
 
 ### NestJS Patterns
+
 ```typescript
 // Services: Business logic
 @Injectable()
@@ -279,7 +300,7 @@ export class MyService {
 @Controller('resource')
 export class MyController {
   constructor(private readonly service: MyService) {}
-  
+
   @Get()
   findAll() {
     return this.service.findAll();
@@ -291,12 +312,13 @@ export class MyController {
   imports: [DatabaseModule],
   providers: [MyService],
   controllers: [MyController],
-  exports: [MyService]
+  exports: [MyService],
 })
 export class MyModule {}
 ```
 
 ### File Naming
+
 - Services: `*.service.ts`
 - Controllers: `*.controller.ts`
 - Modules: `*.module.ts`
@@ -305,6 +327,7 @@ export class MyModule {}
 - DTOs: `*.dto.ts`
 
 ### Import Order
+
 1. Node.js built-ins
 2. External packages
 3. NestJS packages
@@ -324,6 +347,7 @@ import type { MyType } from './types';
 ## Library Usage
 
 ### Always Use These Libraries
+
 - **Validation**: Zod or class-validator (NestJS DTOs)
 - **Database**: Prisma Client
 - **Queue Jobs**: BullMQ
@@ -333,6 +357,7 @@ import type { MyType } from './types';
 - **Logging**: NestJS Logger
 
 ### Never Reinvent
+
 - ❌ Custom validation logic → Use Zod
 - ❌ Raw SQL queries → Use Prisma
 - ❌ Custom date formatting → Use date-fns
@@ -342,41 +367,44 @@ import type { MyType } from './types';
 ## Database (Prisma)
 
 ### Schema Patterns
+
 ```prisma
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   memories Memory[]
-  
+
   @@index([email])
 }
 ```
 
 ### Query Patterns
+
 ```typescript
 // Use findUniqueOrThrow for required records
 const user = await prisma.user.findUniqueOrThrow({
-  where: { id }
+  where: { id },
 });
 
 // Use transactions for multiple writes
 await prisma.$transaction([
   prisma.user.create({ data: userData }),
-  prisma.memory.create({ data: memoryData })
+  prisma.memory.create({ data: memoryData }),
 ]);
 
 // Use select for performance
 const users = await prisma.user.findMany({
-  select: { id: true, email: true }
+  select: { id: true, email: true },
 });
 ```
 
 ## Validation (Zod)
 
 ### Schema Patterns
+
 ```typescript
 import { z } from 'zod';
 
@@ -384,7 +412,7 @@ import { z } from 'zod';
 export const createMemorySchema = z.object({
   content: z.string().min(1).max(5000),
   tags: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.unknown()).optional(),
 });
 
 // Infer types
@@ -395,6 +423,7 @@ const validated = createMemorySchema.parse(input);
 ```
 
 ### NestJS DTO Pattern
+
 ```typescript
 import { IsString, IsOptional, MaxLength } from 'class-validator';
 
@@ -412,12 +441,9 @@ export class CreateMemoryDto {
 ## Error Handling
 
 ### NestJS Exceptions
+
 ```typescript
-import {
-  BadRequestException,
-  NotFoundException,
-  UnauthorizedException
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 
 // Use built-in exceptions
 throw new NotFoundException(`Memory ${id} not found`);
@@ -432,6 +458,7 @@ export class MemoryConflictException extends ConflictException {
 ```
 
 ### Try-Catch Pattern
+
 ```typescript
 async findMemory(id: string) {
   try {
@@ -450,6 +477,7 @@ async findMemory(id: string) {
 ## Testing Patterns
 
 ### Unit Tests
+
 ```typescript
 import { Test } from '@nestjs/testing';
 import { MyService } from './my.service';
@@ -463,9 +491,9 @@ describe('MyService', () => {
         MyService,
         {
           provide: PrismaService,
-          useValue: mockPrismaService
-        }
-      ]
+          useValue: mockPrismaService,
+        },
+      ],
     }).compile();
 
     service = module.get<MyService>(MyService);
@@ -479,13 +507,14 @@ describe('MyService', () => {
 ```
 
 ### Integration Tests
+
 ```typescript
 describe('MemoryController (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      imports: [AppModule]
+      imports: [AppModule],
     }).compile();
 
     app = module.createNestApplication();
@@ -493,10 +522,7 @@ describe('MemoryController (e2e)', () => {
   });
 
   it('/memories (POST)', () => {
-    return request(app.getHttpServer())
-      .post('/memories')
-      .send(createMemoryDto)
-      .expect(201);
+    return request(app.getHttpServer()).post('/memories').send(createMemoryDto).expect(201);
   });
 });
 ```
@@ -506,11 +532,13 @@ describe('MemoryController (e2e)', () => {
 **CRITICAL: Single-line commits ONLY. No multi-line messages, no body, no footer.**
 
 ### Commit Message Structure
+
 ```
 type(scope): subject (#issue-number)
 ```
 
 ### Types
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation
@@ -520,6 +548,7 @@ type(scope): subject (#issue-number)
 - `chore`: Maintenance tasks
 
 ### Examples (all single line)
+
 ```bash
 feat(memory): implement semantic search (#42)
 fix(auth): resolve JWT expiration issue (#67)
@@ -530,6 +559,7 @@ test(memory): add unit tests for retrieval (#55)
 ## Configuration
 
 ### Environment Variables
+
 ```typescript
 // Use ConfigModule
 import { ConfigService } from '@nestjs/config';
@@ -537,7 +567,7 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class MyService {
   constructor(private config: ConfigService) {}
-  
+
   getDatabaseUrl() {
     return this.config.getOrThrow<string>('DATABASE_URL');
   }
@@ -545,6 +575,7 @@ export class MyService {
 ```
 
 ### Validation Schema
+
 ```typescript
 // config/validation.ts
 export const validationSchema = z.object({
@@ -552,13 +583,14 @@ export const validationSchema = z.object({
   PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
-  JWT_SECRET: z.string().min(32)
+  JWT_SECRET: z.string().min(32),
 });
 ```
 
 ## Common Tasks
 
 ### Adding New Endpoint
+
 1. Create DTO in `*.dto.ts`
 2. Add method to service
 3. Add controller route
@@ -566,6 +598,7 @@ export const validationSchema = z.object({
 5. Update OpenAPI decorators
 
 ### Adding New Database Model
+
 1. Update `prisma/schema.prisma`
 2. Run `pnpm db:generate`
 3. Create migration: `pnpm db:migrate`
@@ -573,6 +606,7 @@ export const validationSchema = z.object({
 5. Write tests
 
 ### Adding New Module
+
 1. Create directory: `packages/my-module/`
 2. Add `package.json`, `tsconfig.json`
 3. Create `src/index.ts` with exports
@@ -583,6 +617,7 @@ export const validationSchema = z.object({
 ## Specific Reminders
 
 ### When Working With:
+
 - **Prisma**: Always use transactions for multiple writes
 - **Redis**: Set TTL on all cached values
 - **Qdrant**: Batch vector insertions when possible
@@ -591,6 +626,7 @@ export const validationSchema = z.object({
 - **Validation**: Validate at boundaries (DTOs, schemas)
 
 ### Performance
+
 - Use `select` in Prisma queries
 - Implement pagination for list endpoints
 - Cache frequently accessed data in Redis
@@ -598,6 +634,7 @@ export const validationSchema = z.object({
 - Batch operations when possible
 
 ### Security
+
 - Never log sensitive data
 - Validate all inputs
 - Use parameterized queries (Prisma does this)
@@ -612,6 +649,7 @@ export const validationSchema = z.object({
 ### Quick Checklist
 
 **Before Starting:**
+
 - [ ] List open issues to see available work
 - [ ] Read complete issue (context, scope, criteria)
 - [ ] Create branch: `type/description-#issue`
@@ -619,6 +657,7 @@ export const validationSchema = z.object({
 - [ ] Comment: "Starting work on this issue"
 
 **During Work:**
+
 - [ ] Post progress updates to issue
 - [ ] Update epic with milestone completions
 - [ ] Reference issue # in ALL commits: `type(scope): msg (#123)` - SINGLE LINE ONLY
@@ -626,6 +665,7 @@ export const validationSchema = z.object({
 - [ ] If blocked: Comment and change to status:blocked
 
 **After Completion:**
+
 - [ ] Verify ALL "Acceptance Criteria" met
 - [ ] Add completion summary comment to issue
 - [ ] Create PR with "Closes #123" in description
@@ -635,6 +675,7 @@ export const validationSchema = z.object({
 - [ ] Move to next open issue
 
 ### Issue Template Benefits
+
 - **Technical Scope**: Lists exact files to modify
 - **Acceptance Criteria**: Defines success (testable)
 - **Implementation Notes**: Specifies patterns to use
@@ -643,6 +684,7 @@ export const validationSchema = z.object({
 **Remember**: If you're unclear on what to do, re-read the issue. All context is there!
 
 ## Documentation
+
 - Update README when adding features
 - Document complex logic with comments
 - Keep API docs in sync with code
@@ -650,6 +692,7 @@ export const validationSchema = z.object({
 - Add JSDoc for public APIs
 
 ## Resources
+
 - NestJS: https://docs.nestjs.com
 - Prisma: https://www.prisma.io/docs
 - Zod: https://zod.dev

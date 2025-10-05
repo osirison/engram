@@ -38,12 +38,10 @@ export class McpHandler implements OnModuleDestroy {
             tools: {},
           },
           instructions: config.instructions,
-        },
+        }
       );
 
-      this.logger.log(
-        `MCP server created: ${config.name} v${config.version}`,
-      );
+      this.logger.log(`MCP server created: ${config.name} v${config.version}`);
 
       // Set up error handler
       this.server.onerror = (error) => {
