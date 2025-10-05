@@ -1,6 +1,6 @@
 // Mock implementation of @engram/redis for Jest tests
 export class RedisService {
-  async isHealthy(): Promise<boolean> {
+  isHealthy(): boolean {
     return true;
   }
 }

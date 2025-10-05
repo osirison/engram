@@ -8,11 +8,21 @@ import { HttpModule } from '@nestjs/axios';
 
 describe('Health Integration Tests', () => {
   let controller: HealthController;
-  let prismaHealthIndicator: PrismaHealthIndicator;
-  let redisHealthIndicator: RedisHealthIndicator;
-  let qdrantHealthIndicator: QdrantHealthIndicator;
+  let prismaHealthMock: jest.Mock;
+  let redisHealthMock: jest.Mock;
+  let qdrantHealthMock: jest.Mock;
 
   beforeEach(async () => {
+    prismaHealthMock = jest.fn().mockResolvedValue({
+      database: { status: 'up' },
+    });
+    redisHealthMock = jest.fn().mockResolvedValue({
+      redis: { status: 'up' },
+    });
+    qdrantHealthMock = jest.fn().mockResolvedValue({
+      qdrant: { status: 'up' },
+    });
+
     const module: TestingModule = await Test.createTestingModule({
       imports: [TerminusModule, HttpModule],
       controllers: [HealthController],
@@ -20,40 +30,25 @@ describe('Health Integration Tests', () => {
         {
           provide: PrismaHealthIndicator,
           useValue: {
-            isHealthy: jest.fn().mockResolvedValue({
-              database: { status: 'up' },
-            }),
+            isHealthy: prismaHealthMock,
           },
         },
         {
           provide: RedisHealthIndicator,
           useValue: {
-            isHealthy: jest.fn().mockResolvedValue({
-              redis: { status: 'up' },
-            }),
+            isHealthy: redisHealthMock,
           },
         },
         {
           provide: QdrantHealthIndicator,
           useValue: {
-            isHealthy: jest.fn().mockResolvedValue({
-              qdrant: { status: 'up' },
-            }),
+            isHealthy: qdrantHealthMock,
           },
         },
       ],
     }).compile();
 
     controller = module.get<HealthController>(HealthController);
-    prismaHealthIndicator = module.get<PrismaHealthIndicator>(
-      PrismaHealthIndicator,
-    );
-    redisHealthIndicator = module.get<RedisHealthIndicator>(
-      RedisHealthIndicator,
-    );
-    qdrantHealthIndicator = module.get<QdrantHealthIndicator>(
-      QdrantHealthIndicator,
-    );
   });
 
   describe('Health Controller Integration', () => {
@@ -61,14 +56,14 @@ describe('Health Integration Tests', () => {
       const result = await controller.check();
 
       expect(result).toBeDefined();
-      expect(prismaHealthIndicator.isHealthy).toHaveBeenCalledWith('database');
-      expect(redisHealthIndicator.isHealthy).toHaveBeenCalledWith('redis');
-      expect(qdrantHealthIndicator.isHealthy).toHaveBeenCalledWith('qdrant');
+      expect(prismaHealthMock).toHaveBeenCalledWith('database');
+      expect(redisHealthMock).toHaveBeenCalledWith('redis');
+      expect(qdrantHealthMock).toHaveBeenCalledWith('qdrant');
     });
 
     it('should handle health indicator failures', async () => {
       // Make Prisma health check fail
-      (prismaHealthIndicator.isHealthy as jest.Mock).mockRejectedValueOnce(
+      prismaHealthMock.mockRejectedValueOnce(
         new Error('Database connection failed'),
       );
 
