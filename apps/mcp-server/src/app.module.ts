@@ -6,7 +6,7 @@ import { RedisModule } from '@engram/redis';
 import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { HealthController } from './health.controller';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -19,8 +19,9 @@ import { HealthController } from './health.controller';
     McpModule,
     RedisModule,
     QdrantModule,
+    HealthModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}

@@ -23,12 +23,16 @@
   "dependencies": {
     "@engram/config": "workspace:^",
     "@engram/core": "workspace:^",
+    "@engram/database": "workspace:^",
     "@engram/redis": "workspace:^",
     "@engram/vector-store": "workspace:^",
+    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/terminus": "^11.0.0",
+    "axios": "^1.12.2",
     "nestjs-pino": "^4.4.1",
     "pino-http": "^10.5.0",
     "reflect-metadata": "^0.2.2",
@@ -76,6 +80,15 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@engram/database$": "<rootDir>/../../../packages/database/src/index.ts",
+      "^@engram/redis/(.*)$": "<rootDir>/../../../packages/redis/src/$1.ts",
+      "^@engram/redis$": "<rootDir>/../../../packages/redis/src/index.ts",
+      "^@engram/vector-store$": "<rootDir>/../../../packages/vector-store/src/index.ts",
+      "^@engram/config$": "<rootDir>/../../../packages/config/src/index.ts",
+      "^@engram/core$": "<rootDir>/../../../packages/core/src/index.ts",
+      "^(.*)\\.js$": "$1"
+    }
   }
 }
