@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaService } from '@engram/database';
+import { MemoryStmService } from '@engram/memory-stm';
 import { MemoryLtmService } from './memory-ltm.service';
 import {
   LtmMemoryNotFoundError,
@@ -11,13 +13,11 @@ import { MemoryType } from '@engram/database';
 
 describe('MemoryLtmService', () => {
   let service: MemoryLtmService;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prismaService: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let stmService: any;
+  let prismaService: jest.Mocked<PrismaService>;
+  let stmService: jest.Mocked<MemoryStmService>;
 
-  const mockUserId = 'cldx4k8xp000108l83h4y8v2q';
-  const mockMemoryId = 'cldx4k8xp000208l84b5c9w3r';
+  const mockUserId = 'user-123';
+  const mockMemoryId = 'memory-456';
   const mockMemory = {
     id: mockMemoryId,
     userId: mockUserId,
@@ -46,31 +46,38 @@ describe('MemoryLtmService', () => {
   beforeEach(async () => {
     const mockPrismaService = {
       memory: {
-        create: vi.fn(),
-        findFirst: vi.fn(),
-        update: vi.fn(),
-        deleteMany: vi.fn(),
-        findMany: vi.fn(),
-        count: vi.fn(),
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        deleteMany: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
       },
-      $transaction: vi.fn(),
+      $transaction: jest.fn(),
     };
 
     const mockStmService = {
-      findById: vi.fn(),
-      delete: vi.fn(),
+      findById: jest.fn(),
+      delete: jest.fn(),
     };
 
-    // Create service directly with mocks instead of using testing module
-    service = new MemoryLtmService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockPrismaService as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockStmService as any
-    );
-    
-    prismaService = mockPrismaService;
-    stmService = mockStmService;
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MemoryLtmService,
+        {
+          provide: PrismaService,
+          useValue: mockPrismaService,
+        },
+        {
+          provide: MemoryStmService,
+          useValue: mockStmService,
+        },
+      ],
+    }).compile();
+
+    service = module.get<MemoryLtmService>(MemoryLtmService);
+    prismaService = module.get(PrismaService);
+    stmService = module.get(MemoryStmService);
   });
 
   describe('create', () => {
@@ -130,7 +137,7 @@ describe('MemoryLtmService', () => {
 
       expect(prismaService.memory.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          metadata: undefined,
+          metadata: null,
           tags: [],
         }),
       });
@@ -285,7 +292,7 @@ describe('MemoryLtmService', () => {
   });
 
   describe('list', () => {
-    const mockMemories = [mockMemory, { ...mockMemory, id: 'cldx4k8xp000308l85c6d0x4s' }];
+    const mockMemories = [mockMemory, { ...mockMemory, id: 'memory-2' }];
 
     it('should return paginated list of memories', async () => {
       prismaService.memory.count.mockResolvedValue(2);
@@ -301,7 +308,7 @@ describe('MemoryLtmService', () => {
         hasNextPage: false,
         hasPreviousPage: false,
         startCursor: mockMemory.id,
-        endCursor: 'cldx4k8xp000308l85c6d0x4s',
+        endCursor: 'memory-2',
       });
     });
 
@@ -342,7 +349,7 @@ describe('MemoryLtmService', () => {
     });
 
     it('should handle cursor-based pagination', async () => {
-      const options = { cursor: 'cldx4k8xp000708l89g0h4b8w', limit: 10 };
+      const options = { cursor: 'cursor-id', limit: 10 };
 
       prismaService.memory.count.mockResolvedValue(1);
       prismaService.memory.findMany.mockResolvedValue([mockMemory]);
@@ -351,7 +358,7 @@ describe('MemoryLtmService', () => {
 
       expect(prismaService.memory.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          cursor: { id: 'cldx4k8xp000708l89g0h4b8w' },
+          cursor: { id: 'cursor-id' },
           skip: 1,
           take: 11, // limit + 1
         })
@@ -444,11 +451,11 @@ describe('MemoryLtmService', () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockResolvedValue(undefined);
       
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
+      const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
           memory: {
-            count: vi.fn().mockResolvedValue(0),
-            create: vi.fn().mockResolvedValue(mockMemory),
+            count: jest.fn().mockResolvedValue(0),
+            create: jest.fn().mockResolvedValue(mockMemory),
           },
         };
         return callback(mockTx);
@@ -484,19 +491,16 @@ describe('MemoryLtmService', () => {
 
     it('should handle quota exceeded during promotion', async () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
-
-      // Mock the main prisma service to return quota exceeded count
-      prismaService.memory.count.mockResolvedValue(DEFAULT_LTM_CONFIG.maxMemoriesPerUser);
-
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
+      
+      const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
           memory: {
-            create: vi.fn(),
+            count: jest.fn().mockResolvedValue(DEFAULT_LTM_CONFIG.maxMemoriesPerUser),
           },
         };
         return callback(mockTx);
       });
-
+      
       prismaService.$transaction.mockImplementation(mockTransaction);
 
       await expect(service.promote(mockUserId, mockMemoryId)).rejects.toThrow(
@@ -508,11 +512,11 @@ describe('MemoryLtmService', () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockRejectedValue(new Error('STM delete failed'));
       
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
+      const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
           memory: {
-            count: vi.fn().mockResolvedValue(0),
-            create: vi.fn().mockResolvedValue(mockMemory),
+            count: jest.fn().mockResolvedValue(0),
+            create: jest.fn().mockResolvedValue(mockMemory),
           },
         };
         return callback(mockTx);
@@ -532,9 +536,9 @@ describe('MemoryLtmService', () => {
 
   describe('user isolation', () => {
     it('should enforce user isolation in all operations', async () => {
-      const user1 = 'cldx4k8xp000408l86d7e1y5t';
-      const user2 = 'cldx4k8xp000508l87e8f2z6u';
-      const memoryId = 'cldx4k8xp000608l88f9g3a7v';
+      const user1 = 'user-1';
+      const user2 = 'user-2';
+      const memoryId = 'shared-memory-id';
 
       // Setup mocks for isolation test
       prismaService.memory.count.mockResolvedValue(0);

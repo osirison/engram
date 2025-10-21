@@ -20,7 +20,6 @@ import {
   validateUpdateLtmMemory,
   validateLtmQueryOptions,
 } from './types';
-import { randomUUID } from 'crypto';
 
 // Type for Prisma Memory result - temporary until Prisma types are properly configured
 type PrismaMemory = {
@@ -64,22 +63,19 @@ export class MemoryLtmService {
       // Check if user has exceeded quota
       await this.checkQuota(validatedInput.userId);
 
-      // TODO: Replace with actual Prisma call once types are resolved
-      // const memory = await this.prisma.memory.create({
-      const memory: PrismaMemory = {
-        id: randomUUID(),
-        userId: validatedInput.userId,
-        content: validatedInput.content,
-        metadata: validatedInput.metadata || null,
-        tags: validatedInput.tags || [],
-        type: MemoryType.LONG_TERM,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        expiresAt: null,
-      };
-      // TODO: Remove placeholder once Prisma is working
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug('Would create memory:', JSON.stringify(memory));
+      // Create memory in database
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const memory = await (this.prisma as any).memory.create({
+        data: {
+          userId: validatedInput.userId,
+          content: validatedInput.content,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          metadata: validatedInput.metadata as any,
+          tags: validatedInput.tags || [],
+          type: MemoryType.LONG_TERM,
+          expiresAt: null,
+        },
+      });
 
       this.logger.debug(`LTM memory created: ${memory.id}`);
       return this.mapToLtmMemory(memory);
@@ -99,11 +95,14 @@ export class MemoryLtmService {
     this.logger.debug(`Getting LTM memory: ${memoryId} for user: ${userId}`);
 
     try {
-      // TODO: Replace with actual Prisma call once types are resolved
-      // const memory = await this.prisma.memory.findFirst({
-      const memory: PrismaMemory | null = null; // Placeholder
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would find memory: ${memoryId} for user: ${userId}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const memory = await (this.prisma as any).memory.findFirst({
+        where: {
+          id: memoryId,
+          userId: userId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
 
       if (!memory) {
         return null;
@@ -146,20 +145,15 @@ export class MemoryLtmService {
       }
 
       // Update memory in database
-      // TODO: Replace with actual Prisma call once types are resolved
-      const memory: PrismaMemory = {
-        id: memoryId,
-        userId,
-        content: validatedInput.content !== undefined ? validatedInput.content : existing.content,
-        metadata: validatedInput.metadata !== undefined ? validatedInput.metadata : existing.metadata,
-        tags: validatedInput.tags !== undefined ? validatedInput.tags : existing.tags,
-        type: MemoryType.LONG_TERM,
-        createdAt: existing.createdAt,
-        updatedAt: new Date(),
-        expiresAt: null,
-      };
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would update memory: ${memoryId} with data: ${JSON.stringify(updateData)}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const memory = await (this.prisma as any).memory.update({
+        where: {
+          id: memoryId,
+          userId: userId,
+          type: MemoryType.LONG_TERM,
+        },
+        data: updateData,
+      });
 
       this.logger.debug(`LTM memory updated: ${memoryId}`);
       return this.mapToLtmMemory(memory);
@@ -179,10 +173,14 @@ export class MemoryLtmService {
     this.logger.debug(`Deleting LTM memory: ${memoryId} for user: ${userId}`);
 
     try {
-      // TODO: Replace with actual Prisma call once types are resolved
-      const result = { count: 1 }; // Placeholder
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would delete memory: ${memoryId} for user: ${userId}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (this.prisma as any).memory.deleteMany({
+        where: {
+          id: memoryId,
+          userId: userId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
 
       const deleted = result.count > 0;
       if (deleted) {
@@ -209,36 +207,60 @@ export class MemoryLtmService {
 
     try {
       // Build where clause
-      // Note: This would be used in actual Prisma implementation
-      // TODO: Remove these void statements once Prisma integration is complete
-      void userId; // Prevent unused warning
-      void MemoryType.LONG_TERM; // Prevent unused warning
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const whereClause: any = {
+        userId: userId,
+        type: MemoryType.LONG_TERM,
+      };
 
       // Add filters
       if (validatedOptions.tags && validatedOptions.tags.length > 0) {
-        // Would add tags filter to whereClause
+        whereClause.tags = {
+          hasSome: validatedOptions.tags,
+        };
       }
 
       if (validatedOptions.dateFrom || validatedOptions.dateTo) {
-        // Would add date filters to whereClause
+        whereClause.createdAt = {};
+        if (validatedOptions.dateFrom) {
+          whereClause.createdAt.gte = validatedOptions.dateFrom;
+        }
+        if (validatedOptions.dateTo) {
+          whereClause.createdAt.lte = validatedOptions.dateTo;
+        }
       }
 
       if (validatedOptions.search) {
-        // Would add search filter to whereClause
+        whereClause.content = {
+          contains: validatedOptions.search,
+          mode: 'insensitive',
+        };
       }
 
       // Handle cursor-based pagination
-      // Note: These would be used in actual Prisma implementation
-      void validatedOptions.sortBy; // Prevent unused var warning
-      void validatedOptions.sortOrder; // Prevent unused var warning
-      void validatedOptions.cursor; // Prevent unused var warning
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const orderBy: any = { [validatedOptions.sortBy]: validatedOptions.sortOrder };
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const findManyOptions: any = {
+        where: whereClause,
+        orderBy,
+        take: validatedOptions.limit + 1, // +1 to check if there's a next page
+        skip: validatedOptions.cursor ? 1 : 0,
+      };
 
-      // Get total count
-      // TODO: Replace with actual Prisma call once types are resolved
-      const totalCount = 2; // Placeholder
-      const memories: PrismaMemory[] = []; // Placeholder
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would list memories for user: ${userId} with options: ${JSON.stringify(validatedOptions)}`);
+      if (validatedOptions.cursor) {
+        findManyOptions.cursor = { id: validatedOptions.cursor };
+      }
+
+      // Get total count and memories
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [totalCount, memories] = await Promise.all([
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.prisma as any).memory.count({ where: whereClause }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.prisma as any).memory.findMany(findManyOptions),
+      ]);
 
       // Check if there are more pages
       const hasNextPage = memories.length > validatedOptions.limit;
@@ -253,7 +275,7 @@ export class MemoryLtmService {
       const result: PaginatedResult<LtmMemory> = {
         items: ltmMemories,
         totalCount,
-        hasNextPage: false, // Placeholder
+        hasNextPage,
         hasPreviousPage: !!validatedOptions.cursor,
         startCursor: ltmMemories.length > 0 ? ltmMemories[0]?.id : undefined,
         endCursor: ltmMemories.length > 0 ? ltmMemories[ltmMemories.length - 1]?.id : undefined,
@@ -274,15 +296,39 @@ export class MemoryLtmService {
     this.logger.debug(`Counting LTM memories for user: ${userId}`);
 
     try {
-      // Note: whereClause would be used in actual Prisma implementation
-      void userId; // Prevent unused warning
-      void MemoryType.LONG_TERM; // Prevent unused warning
-      void filters; // Prevent unused warning
+      // Build where clause
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const whereClause: any = {
+        userId: userId,
+        type: MemoryType.LONG_TERM,
+      };
 
-      // TODO: Replace with actual Prisma call once types are resolved
-      const count = 5; // Placeholder
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would count memories for user: ${userId} with filters: ${JSON.stringify(filters)}`);
+      // Add filters if provided
+      if (filters?.tags && filters.tags.length > 0) {
+        whereClause.tags = {
+          hasSome: filters.tags,
+        };
+      }
+
+      if (filters?.dateFrom || filters?.dateTo) {
+        whereClause.createdAt = {};
+        if (filters.dateFrom) {
+          whereClause.createdAt.gte = filters.dateFrom;
+        }
+        if (filters.dateTo) {
+          whereClause.createdAt.lte = filters.dateTo;
+        }
+      }
+
+      if (filters?.search) {
+        whereClause.content = {
+          contains: filters.search,
+          mode: 'insensitive',
+        };
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const count = await (this.prisma as any).memory.count({ where: whereClause });
 
       this.logger.debug(`Counted ${count} LTM memories for user: ${userId}`);
       return count;
@@ -299,10 +345,13 @@ export class MemoryLtmService {
     this.logger.debug(`Clearing all LTM memories for user: ${userId}`);
 
     try {
-      // TODO: Replace with actual Prisma call once types are resolved
-      const result = { count: 10 }; // Placeholder
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would clear memories for user: ${userId}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (this.prisma as any).memory.deleteMany({
+        where: {
+          userId: userId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
 
       this.logger.debug(`Cleared ${result.count} LTM memories for user: ${userId}`);
       return result.count;
@@ -331,20 +380,27 @@ export class MemoryLtmService {
       }
 
       // Step 2: Begin database transaction for atomic operation
-      // TODO: Replace with actual Prisma transaction once types are resolved
-      const result: PrismaMemory = {
-        id: stmMemory.id,
-        userId: stmMemory.userId,
-        content: stmMemory.content,
-        metadata: stmMemory.metadata,
-        tags: stmMemory.tags,
-        type: MemoryType.LONG_TERM,
-        createdAt: stmMemory.createdAt,
-        updatedAt: new Date(),
-        expiresAt: null,
-      };
-      this.logger.warn('Using placeholder implementation - Prisma types not available');
-      this.logger.debug(`Would promote STM memory to LTM: ${JSON.stringify(stmMemory)}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (this.prisma as any).$transaction(async (prisma: any) => {
+        // Check quota before creating
+        await this.checkQuota(userId);
+
+        // Create memory in LTM
+        return await prisma.memory.create({
+          data: {
+            id: stmMemory.id,
+            userId: stmMemory.userId,
+            content: stmMemory.content,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            metadata: stmMemory.metadata as any,
+            tags: stmMemory.tags,
+            type: MemoryType.LONG_TERM,
+            createdAt: stmMemory.createdAt,
+            updatedAt: new Date(),
+            expiresAt: null,
+          },
+        });
+      });
 
       // Step 3: Delete from STM storage (only after successful LTM creation)
       try {
@@ -369,8 +425,14 @@ export class MemoryLtmService {
    * Check if user has exceeded memory quota
    */
   private async checkQuota(userId: string): Promise<void> {
-    // TODO: Replace with actual count implementation
-    const currentCount = 0; // Placeholder
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const currentCount = await (this.prisma as any).memory.count({
+      where: {
+        userId: userId,
+        type: MemoryType.LONG_TERM,
+      },
+    });
+    
     this.logger.debug(`Quota check for user ${userId}: ${currentCount}/${this.config.maxMemoriesPerUser}`);
     
     if (currentCount >= this.config.maxMemoriesPerUser) {

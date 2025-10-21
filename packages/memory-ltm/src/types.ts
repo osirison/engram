@@ -1,10 +1,6 @@
 import { z } from 'zod';
 import {
   Memory,
-  memoryContentSchema,
-  memoryMetadataSchema,
-  memoryTagsSchema,
-  userIdSchema,
 } from '@engram/database';
 
 // LTM-specific configuration
@@ -57,17 +53,17 @@ export interface LtmQueryOptions {
 
 // Create LTM memory schema
 export const createLtmMemorySchema = z.object({
-  userId: userIdSchema,
-  content: memoryContentSchema,
-  metadata: memoryMetadataSchema,
-  tags: memoryTagsSchema,
+  userId: z.string().cuid('Invalid user ID format'),
+  content: z.string().min(1, 'Content cannot be empty').max(10240, 'Content cannot exceed 10KB'),
+  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
+  tags: z.array(z.string()).optional().default([]),
 });
 
 // Update LTM memory schema
 export const updateLtmMemorySchema = z.object({
-  content: memoryContentSchema.optional(),
-  metadata: memoryMetadataSchema.optional(),
-  tags: memoryTagsSchema.optional(),
+  content: z.string().min(1, 'Content cannot be empty').max(10240, 'Content cannot exceed 10KB').optional(),
+  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
+  tags: z.array(z.string()).optional(),
 });
 
 // LTM query options schema
