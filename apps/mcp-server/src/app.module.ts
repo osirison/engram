@@ -8,6 +8,7 @@ import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
+import { MemoryModule } from './memory/memory.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { HealthModule } from './health/health.module';
     RedisModule,
     QdrantModule,
     HealthModule,
+    MemoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
