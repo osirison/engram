@@ -27,7 +27,7 @@ type PrismaMemory = {
   id: string;
   userId: string;
   content: string;
-  metadata: unknown;  // Changed from any to unknown
+  metadata: unknown;  // Using unknown for type safety; must be type-checked before use
   tags: string[];
   type: string;
   createdAt: Date;
@@ -47,6 +47,7 @@ export class MemoryLtmService {
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG, ...config };
     // Use prisma to avoid unused variable warning
+    // TODO: Remove this workaround once Prisma types are properly configured and the actual implementation uses `this.prisma`
     void this.prisma;
   }
 
@@ -149,11 +150,11 @@ export class MemoryLtmService {
       const memory: PrismaMemory = {
         id: memoryId,
         userId,
-        content: validatedInput.content || 'existing content',
-        metadata: validatedInput.metadata !== undefined ? validatedInput.metadata : null,
-        tags: validatedInput.tags || [],
+        content: validatedInput.content !== undefined ? validatedInput.content : existing.content,
+        metadata: validatedInput.metadata !== undefined ? validatedInput.metadata : existing.metadata,
+        tags: validatedInput.tags !== undefined ? validatedInput.tags : existing.tags,
         type: MemoryType.LONG_TERM,
-        createdAt: new Date(),
+        createdAt: existing.createdAt,
         updatedAt: new Date(),
         expiresAt: null,
       };
@@ -209,6 +210,7 @@ export class MemoryLtmService {
     try {
       // Build where clause
       // Note: This would be used in actual Prisma implementation
+      // TODO: Remove these void statements once Prisma integration is complete
       void userId; // Prevent unused warning
       void MemoryType.LONG_TERM; // Prevent unused warning
 

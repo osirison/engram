@@ -66,8 +66,8 @@ export const createLtmMemorySchema = z.object({
 // Update LTM memory schema
 export const updateLtmMemorySchema = z.object({
   content: memoryContentSchema.optional(),
-  metadata: memoryMetadataSchema,
-  tags: memoryTagsSchema,
+  metadata: memoryMetadataSchema.optional(),
+  tags: memoryTagsSchema.optional(),
 });
 
 // LTM query options schema
