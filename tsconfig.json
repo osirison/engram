@@ -4,12 +4,19 @@
     "noEmit": true
   },
   "include": [
-    "apps/**/*",
-    "packages/**/*"
+    "apps/mcp-server/**/*",
+    "packages/core/**/*",
+    "packages/database/**/*",
+    "packages/redis/**/*",
+    "packages/vector-store/**/*",
+    "packages/config/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    ".turbo"
+    ".turbo",
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "**/test/**/*"
   ]
 }

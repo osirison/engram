@@ -6,12 +6,12 @@ import { RedisService } from './redis.service.js';
   providers: [
     {
       provide: 'REDIS_CLIENT',
-      useFactory: () => {
+      useFactory: (): Redis => {
         const logger = new Logger('RedisModule');
         const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
         const redis = new Redis(redisUrl, {
-          retryStrategy: (times) => {
+          retryStrategy: (times): number => {
             return Math.min(times * 50, 2000);
           },
           maxRetriesPerRequest: 3,
@@ -20,7 +20,7 @@ import { RedisService } from './redis.service.js';
           connectTimeout: 10000, // ✅ Add connection timeout
           commandTimeout: 5000, // ✅ Add command timeout
           enableReadyCheck: true, // ✅ Enable ready state check
-          reconnectOnError: (err) => {
+          reconnectOnError: (err): boolean => {
             const targetError = 'READONLY';
             return err.message.includes(targetError);
           },
