@@ -21,8 +21,9 @@ pnpm test:watch src/health
 ```
 
 **Current Test Results:**
+
 - ✅ Redis Health Indicator: 3 tests passing
-- ✅ Prisma Health Indicator: 2 tests passing  
+- ✅ Prisma Health Indicator: 2 tests passing
 - ✅ Qdrant Health Indicator: 3 tests passing
 - ✅ Total: 8/8 health tests passing
 
@@ -34,6 +35,7 @@ node test-health-standalone.js
 ```
 
 This tests the actual health check logic with different scenarios:
+
 - ✅ All services healthy
 - ⚠️ Redis service failure
 - ❌ Database service failure
@@ -69,18 +71,22 @@ curl http://localhost:3000/health
 ### 4. **Testing Different Scenarios**
 
 #### Test Healthy State
+
 ```bash
 curl -i http://localhost:3000/health
 # Expected: HTTP 200 OK
 ```
 
 #### Test with Services Down
+
 To test failure scenarios, you would need to:
+
 1. Stop Redis: `docker stop redis` (if using Docker)
-2. Stop PostgreSQL: `docker stop postgres` 
+2. Stop PostgreSQL: `docker stop postgres`
 3. Stop Qdrant: `docker stop qdrant`
 
 Then call the health endpoint:
+
 ```bash
 curl -i http://localhost:3000/health
 # Expected: HTTP 503 Service Unavailable
@@ -91,6 +97,7 @@ curl -i http://localhost:3000/health
 For more comprehensive testing, you can:
 
 1. **Use Testcontainers** (future enhancement):
+
    ```typescript
    // Start real database containers for testing
    const postgres = await new PostgreSqlContainer().start();
@@ -101,7 +108,7 @@ For more comprehensive testing, you can:
    ```typescript
    // Already implemented in our Jest tests
    const mockRedisService = {
-     isHealthy: jest.fn().mockResolvedValue(true)
+     isHealthy: jest.fn().mockResolvedValue(true),
    };
    ```
 
@@ -110,6 +117,7 @@ For more comprehensive testing, you can:
 In production, you can:
 
 1. **Set up health check monitoring**:
+
    ```bash
    # Use tools like:
    # - Prometheus + Grafana
@@ -128,16 +136,19 @@ In production, you can:
 ## 🎯 **Testing Recommendations**
 
 ### **Development Workflow:**
+
 1. ✅ Run unit tests: `pnpm test src/health`
-2. ✅ Run standalone test: `node test-health-standalone.js` 
+2. ✅ Run standalone test: `node test-health-standalone.js`
 3. 🔄 Start server and test manually with curl (when module issues are fixed)
 
 ### **CI/CD Pipeline:**
+
 1. ✅ Unit tests (automated)
 2. 🔄 Integration tests with real services
 3. 🔄 End-to-end API tests
 
 ### **Production Monitoring:**
+
 1. 🔄 Continuous health check monitoring
 2. 🔄 Alerting on failures
 3. 🔄 Performance metrics tracking

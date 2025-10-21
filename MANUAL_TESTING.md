@@ -35,6 +35,7 @@ Invoke-RestMethod -Uri "http://localhost:3001/health" -Method GET | ConvertTo-Js
 ```
 
 **Expected Response (200 OK):**
+
 ```json
 {
   "status": "ok",
@@ -55,6 +56,7 @@ Invoke-RestMethod -Uri "http://localhost:3001/health" -Method GET | ConvertTo-Js
 #### ❌ **Test Service Failures**
 
 **Stop PostgreSQL:**
+
 ```powershell
 docker stop engram-postgres
 
@@ -63,6 +65,7 @@ curl http://localhost:3001/health
 ```
 
 **Expected Response (503 Service Unavailable):**
+
 ```json
 {
   "status": "error",
@@ -82,6 +85,7 @@ curl http://localhost:3001/health
 ```
 
 **Stop Redis:**
+
 ```powershell
 docker stop engram-redis
 
@@ -90,6 +94,7 @@ curl http://localhost:3001/health
 ```
 
 **Stop Qdrant:**
+
 ```powershell
 docker stop engram-qdrant
 
@@ -100,18 +105,21 @@ curl http://localhost:3001/health
 ### 3. Individual Service Tests
 
 #### Test Database Only
+
 ```powershell
 # Custom endpoint (if available)
 curl http://localhost:3001/health/database
 ```
 
 #### Test Redis Only
+
 ```powershell
 # Custom endpoint (if available)
 curl http://localhost:3001/health/redis
 ```
 
 #### Test Qdrant Only
+
 ```powershell
 # Custom endpoint (if available)
 curl http://localhost:3001/health/qdrant
@@ -138,6 +146,7 @@ pnpm dev  # Watch the console output
 ### Common Issues
 
 #### 1. Port Conflicts
+
 ```powershell
 # Check what's using ports
 netstat -ano | findstr :3001
@@ -147,18 +156,21 @@ netstat -ano | findstr :6333
 ```
 
 #### 2. Database Connection
+
 ```powershell
 # Test direct PostgreSQL connection
 docker exec -it engram-postgres psql -U engram -d engram -c "SELECT 1;"
 ```
 
 #### 3. Redis Connection
+
 ```powershell
 # Test direct Redis connection
 docker exec -it engram-redis redis-cli ping
 ```
 
 #### 4. Qdrant Connection
+
 ```powershell
 # Test direct Qdrant connection
 curl http://localhost:6333/health
@@ -180,33 +192,40 @@ docker-compose up -d
 ## 📊 Testing Scenarios
 
 ### Scenario 1: Full System Health
+
 1. ✅ Start all services with `docker-compose up -d`
 2. ✅ Start MCP server with `pnpm dev`
 3. ✅ Test `/health` endpoint → Should return 200 OK
 
 ### Scenario 2: Database Failure
+
 1. ❌ Stop PostgreSQL: `docker stop engram-postgres`
 2. 🧪 Test `/health` endpoint → Should return 503 with database error
 
 ### Scenario 3: Redis Failure
+
 1. ❌ Stop Redis: `docker stop engram-redis`
 2. 🧪 Test `/health` endpoint → Should return 503 with redis error
 
 ### Scenario 4: Qdrant Failure
+
 1. ❌ Stop Qdrant: `docker stop engram-qdrant`
 2. 🧪 Test `/health` endpoint → Should return 503 with qdrant error
 
 ### Scenario 5: Multiple Failures
+
 1. ❌ Stop multiple services
 2. 🧪 Test `/health` endpoint → Should return 503 with multiple errors
 
 ### Scenario 6: Recovery Testing
+
 1. ✅ Restart stopped services: `docker start engram-postgres engram-redis engram-qdrant`
 2. 🧪 Test `/health` endpoint → Should return 200 OK after brief delay
 
 ## 🌐 Browser Testing
 
 Visit in your browser:
+
 - **Health Check**: http://localhost:3001/health
 - **Qdrant UI**: http://localhost:6333/dashboard (if Qdrant has web UI)
 
@@ -225,6 +244,7 @@ Create a Postman collection with these requests:
 ## 🔍 Advanced Testing
 
 ### Load Testing
+
 ```powershell
 # Use curl in a loop
 for ($i=1; $i -le 10; $i++) {
@@ -235,12 +255,14 @@ for ($i=1; $i -le 10; $i++) {
 ```
 
 ### Timing Tests
+
 ```powershell
 # Measure response time
 Measure-Command { Invoke-RestMethod -Uri "http://localhost:3001/health" }
 ```
 
 ### Concurrent Tests
+
 ```powershell
 # Run multiple requests simultaneously
 1..5 | ForEach-Object -Parallel {
@@ -251,7 +273,7 @@ Measure-Command { Invoke-RestMethod -Uri "http://localhost:3001/health" }
 ## ✅ Success Criteria
 
 - ✅ Health endpoint responds in < 2 seconds
-- ✅ Returns 200 when all services are healthy  
+- ✅ Returns 200 when all services are healthy
 - ✅ Returns 503 when any service is unhealthy
 - ✅ Proper error messages for each failed service
 - ✅ System recovers automatically when services restart
