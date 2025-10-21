@@ -165,12 +165,16 @@ export class MemoryStmService {
    * Note: This is a simplified implementation since Redis service doesn't expose keys/mget
    * For production, consider using Redis SCAN pattern or implementing pattern search in RedisService
    */
-  async list(userId: string, _options?: Partial<ListStmOptionsData>): Promise<StmMemory[]> {
+  async list(userId: string, options?: Partial<ListStmOptionsData>): Promise<StmMemory[]> {
     this.logger.debug(`Listing STM memories for user: ${userId}`);
 
     // For now, return empty array since we need pattern matching not available in current RedisService
     // TODO: Implement SCAN pattern in RedisService or use alternative approach
     this.logger.warn('List operation not fully implemented - requires Redis SCAN pattern support');
+    
+    // Prevent unused parameter warning - options will be used in future implementation
+    void options;
+    
     return [];
   }
 
