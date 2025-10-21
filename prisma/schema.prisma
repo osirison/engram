@@ -16,5 +16,29 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relationships
+  memories  Memory[]
+
   @@map("users")
+}
+
+model Memory {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String   @db.Text // Support up to 10KB content
+  metadata  Json?
+  tags      String[]
+  type      String   // 'short-term' | 'long-term'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime? // For short-term memories only
+
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes for performance
+  @@index([userId])
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@map("memories")
 }
