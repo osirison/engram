@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Standalone Health Check Test
- * 
+ *
  * This script tests the health check logic independently
  * without requiring the full NestJS application to start.
  */
@@ -80,14 +80,16 @@ class HealthController {
       ]);
 
       const details = { ...database, ...redis, ...qdrant };
-      const allHealthy = Object.values(details).every(service => service.status === 'up');
+      const allHealthy = Object.values(details).every((service) => service.status === 'up');
 
       return {
         status: allHealthy ? 'ok' : 'error',
         info: allHealthy ? details : {},
-        error: allHealthy ? {} : Object.fromEntries(
-          Object.entries(details).filter(([, service]) => service.status === 'down')
-        ),
+        error: allHealthy
+          ? {}
+          : Object.fromEntries(
+              Object.entries(details).filter(([, service]) => service.status === 'down')
+            ),
         details,
       };
     } catch (error) {
@@ -104,19 +106,19 @@ class HealthController {
 // Test scenarios
 async function runTests() {
   console.log('🏥 Health Check System Test\n');
-  
+
   const healthController = new HealthController();
-  
+
   console.log('📊 Test 1: All services healthy');
   const healthyResult = await healthController.check();
   console.log(JSON.stringify(healthyResult, null, 2));
-  
+
   console.log('\n📊 Test 2: Simulating Redis failure');
   // Mock Redis failure
   healthController.redisHealth.redisService.isHealthy = async () => false;
   const redisFailResult = await healthController.check();
   console.log(JSON.stringify(redisFailResult, null, 2));
-  
+
   console.log('\n📊 Test 3: Simulating Database failure');
   // Mock Prisma failure
   healthController.prismaHealth.prismaService.$queryRaw = async () => {
