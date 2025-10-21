@@ -305,6 +305,37 @@ pnpm dev
 pnpm test
 ```
 
+### MCP Client Setup (Claude Desktop)
+
+Once ENGRAM is running, you can connect it to Claude Desktop as an MCP server:
+
+**Quick Setup:**
+
+```bash
+# Build the MCP server
+pnpm build
+
+# Copy example configuration
+cp claude_desktop_config.json.example claude_desktop_config.json
+
+# Update paths in the config file to match your system
+# Then copy to Claude Desktop's config location:
+
+# Windows:
+Copy-Item claude_desktop_config.json "$env:APPDATA\Claude\claude_desktop_config.json"
+
+# macOS:
+cp claude_desktop_config.json ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+
+**Test the connection:**
+
+1. Restart Claude Desktop completely
+2. Ask Claude: "Can you call the ping tool to test the ENGRAM connection?"
+3. If successful, try: "What MCP tools are available from ENGRAM?"
+
+📖 **For detailed setup instructions, troubleshooting, and configuration options, see [docs/SETUP.md](docs/SETUP.md)**
+
 ### Docker Commands
 
 ENGRAM uses Docker Compose to manage local development infrastructure:
