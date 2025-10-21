@@ -218,7 +218,7 @@ export class MemoryStmService {
     // Update memory with new TTL
     return this.update(userId, memoryId, { 
       ttl: newTtl,
-      tags: existing.tags // Include required tags field
+      tags: existing.tags // Preserve existing tags value (tags is optional in schema)
     });
   }
 

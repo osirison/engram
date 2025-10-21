@@ -284,16 +284,16 @@ describe('MemoryStmService', () => {
       };
 
       mockRedisService.get.mockResolvedValue(JSON.stringify(existingMemory));
-      mockRedisService.ttl.mockResolvedValue(1800); // 30 minutes remaining
+      mockRedisService.ttl.mockResolvedValue(600); // 10 minutes remaining
       mockRedisService.set.mockResolvedValue('OK');
 
       const result = await service.extendTtl('clq1234567890abcdef1234', 'mem123', 1800); // Add 30 minutes
 
-      expect(result.ttl).toBe(3600); // 30 min remaining + 30 min added
+      expect(result.ttl).toBe(2400); // 10 min remaining (600) + 30 min added (1800) = 2400
       expect(mockRedisService.set).toHaveBeenCalledWith(
         'memory:stm:clq1234567890abcdef1234:mem123',
         expect.any(String),
-        3600
+        2400
       );
     });
 

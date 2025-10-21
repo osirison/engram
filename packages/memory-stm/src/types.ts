@@ -142,7 +142,7 @@ export class StmKeyBuilder {
   extractMemoryId(key: string): string | null {
     const parts = key.split(':');
     const memoryId = parts[parts.length - 1];
-    return memoryId || null;
+    return memoryId && memoryId.length > 0 ? memoryId : null;
   }
 
   /**
@@ -151,7 +151,7 @@ export class StmKeyBuilder {
   extractUserId(key: string): string | null {
     const parts = key.split(':');
     const userId = parts[parts.length - 2];
-    return userId || null;
+    return userId && userId.length > 0 ? userId : null;
   }
 }
 
