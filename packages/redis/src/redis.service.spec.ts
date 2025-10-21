@@ -322,9 +322,11 @@ describe('RedisService', () => {
     it('should return false when health check times out', async () => {
       mockRedisClient.status = 'ready';
       // Mock a slow ping that would timeout
-      mockRedisClient.ping = vi.fn().mockImplementation(() => 
-        new Promise(resolve => setTimeout(() => resolve('PONG'), 5000))
-      );
+      mockRedisClient.ping = vi
+        .fn()
+        .mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve('PONG'), 5000))
+        );
 
       const result = await service.isHealthy();
 

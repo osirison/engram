@@ -23,11 +23,12 @@ pnpm test:watch src/health
 **Current Test Results:**
 
 - ✅ Redis Health Indicator: 8 tests passing (enhanced with connection status tests)
-- ✅ Prisma Health Indicator: 3 tests passing  
+- ✅ Prisma Health Indicator: 3 tests passing
 - ✅ Qdrant Health Indicator: 3 tests passing
 - ✅ **Total: 14/14 health tests passing**
 
 **Recent Improvements:**
+
 - ✅ **Redis Health Check**: Fixed connection configuration issues
 - ✅ **Enhanced Testing**: Added connection status verification tests
 - ✅ **Production Ready**: All health checks now work reliably
@@ -170,12 +171,14 @@ In production, you can:
 ## 📝 **Recent Updates**
 
 **Redis Health Check Fix (Issue #49 / PR #52):**
+
 - Fixed `lazyConnect`, `enableOfflineQueue`, and `enableReadyCheck` configuration
 - Enhanced health check method with connection status verification
 - Added timeout protection and improved error handling
 - Updated tests to cover new connection status logic
 
 The health check system is **production-ready** and **fully tested**.
+
 - ✅ **Response format**: Matches @nestjs/terminus standard
 - ⚠️ **API testing**: Blocked by module resolution issues
 

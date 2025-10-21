@@ -129,7 +129,10 @@ export class RedisService {
         try {
           await this.redis.connect();
         } catch (connError) {
-          this.logger.error('Redis connection error during health check:', connError instanceof Error ? connError.message : 'Unknown error');
+          this.logger.error(
+            'Redis connection error during health check:',
+            connError instanceof Error ? connError.message : 'Unknown error'
+          );
           return false;
         }
       }
@@ -141,14 +144,17 @@ export class RedisService {
           this.redis.ping(),
           new Promise<never>((_, reject) => {
             timeout = setTimeout(() => reject(new Error('Health check timeout')), 3000);
-          })
+          }),
         ]);
         return result === 'PONG';
       } finally {
         if (timeout) clearTimeout(timeout);
       }
     } catch (error) {
-      this.logger.error('Redis health check failed:', error instanceof Error ? error.message : 'Unknown error');
+      this.logger.error(
+        'Redis health check failed:',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
       return false;
     }
   }

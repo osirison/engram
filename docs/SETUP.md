@@ -72,7 +72,7 @@ pnpm dev
 
 # The server should start and show:
 # ✅ Database connected
-# ✅ Redis connected  
+# ✅ Redis connected
 # ✅ Qdrant connected
 # ✅ MCP server listening on stdio
 ```
@@ -113,6 +113,7 @@ The Claude Desktop configuration file location depends on your operating system:
 ### Create Configuration
 
 1. **Copy the example configuration:**
+
    ```bash
    # From your ENGRAM project root
    cp claude_desktop_config.json.example claude_desktop_config.json
@@ -142,16 +143,19 @@ The Claude Desktop configuration file location depends on your operating system:
 4. **Copy the configuration** to Claude Desktop's config location:
 
    **Windows (PowerShell):**
+
    ```powershell
    Copy-Item claude_desktop_config.json "$env:APPDATA\Claude\claude_desktop_config.json"
    ```
 
    **Windows (Command Prompt):**
+
    ```cmd
    copy claude_desktop_config.json %APPDATA%\Claude\claude_desktop_config.json
    ```
 
    **macOS/Linux:**
+
    ```bash
    cp claude_desktop_config.json ~/Library/Application\ Support/Claude/claude_desktop_config.json
    ```
@@ -213,14 +217,16 @@ Once Claude Desktop has restarted, test the connection by asking Claude to:
 #### "Connection Failed" or "Server Not Found"
 
 1. **Check file paths:**
+
    ```bash
    # Verify the dist folder exists
    ls -la apps/mcp-server/dist/
-   
+
    # Should contain main.js
    ```
 
 2. **Verify build completed:**
+
    ```bash
    pnpm build
    cd apps/mcp-server && pnpm build
@@ -236,12 +242,14 @@ Once Claude Desktop has restarted, test the connection by asking Claude to:
 #### "Database Connection Error"
 
 1. **Check Docker services:**
+
    ```bash
    pnpm docker:ps
    # Should show postgres, redis, and qdrant running
    ```
 
 2. **Verify environment variables:**
+
    ```bash
    # Check .env file has correct DATABASE_URL
    cat .env | grep DATABASE_URL
@@ -257,6 +265,7 @@ Once Claude Desktop has restarted, test the connection by asking Claude to:
 
 1. **Check Claude Desktop logs** (if available in the app)
 2. **Verify configuration file location and format:**
+
    ```bash
    # Check JSON syntax
    cat ~/.config/Claude/claude_desktop_config.json | jq .
@@ -270,12 +279,14 @@ Once Claude Desktop has restarted, test the connection by asking Claude to:
 #### "Permission Denied" or "Command Not Found"
 
 1. **Check Node.js version:**
+
    ```bash
    node --version
    # Should be 20.0.0 or higher
    ```
 
 2. **Verify file permissions:**
+
    ```bash
    chmod +x apps/mcp-server/dist/main.js
    ```

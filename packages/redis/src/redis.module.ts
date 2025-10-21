@@ -15,11 +15,11 @@ import { RedisService } from './redis.service.js';
             return Math.min(times * 50, 2000);
           },
           maxRetriesPerRequest: 3,
-          lazyConnect: false,          // ✅ Enable immediate connection
-          enableOfflineQueue: true,    // ✅ Enable command queuing
-          connectTimeout: 10000,       // ✅ Add connection timeout
-          commandTimeout: 5000,        // ✅ Add command timeout
-          enableReadyCheck: true,      // ✅ Enable ready state check
+          lazyConnect: false, // ✅ Enable immediate connection
+          enableOfflineQueue: true, // ✅ Enable command queuing
+          connectTimeout: 10000, // ✅ Add connection timeout
+          commandTimeout: 5000, // ✅ Add command timeout
+          enableReadyCheck: true, // ✅ Enable ready state check
           reconnectOnError: (err) => {
             const targetError = 'READONLY';
             return err.message.includes(targetError);
