@@ -141,9 +141,14 @@ The Claude Desktop configuration file location depends on your operating system:
 
 4. **Copy the configuration** to Claude Desktop's config location:
 
-   **Windows:**
-   ```bash
+   **Windows (PowerShell):**
+   ```powershell
    Copy-Item claude_desktop_config.json "$env:APPDATA\Claude\claude_desktop_config.json"
+   ```
+
+   **Windows (Command Prompt):**
+   ```cmd
+   copy claude_desktop_config.json %APPDATA%\Claude\claude_desktop_config.json
    ```
 
    **macOS/Linux:**

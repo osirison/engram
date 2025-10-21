@@ -2,7 +2,7 @@
   "mcpServers": {
     "engram": {
       "command": "node",
-      "args": ["C:/path/to/your/engram/apps/mcp-server/dist/main.js"],
+      "args": ["/absolute/path/to/your/engram/apps/mcp-server/dist/main.js"],
       "env": {
         "DATABASE_URL": "postgresql://postgres:password@localhost:5432/engram",
         "REDIS_URL": "redis://localhost:6379",
