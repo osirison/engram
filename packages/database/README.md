@@ -85,6 +85,19 @@ pnpm db:push
 
 The Prisma schema is located at `/prisma/schema.prisma` in the root of the monorepo.
 
+## Health Monitoring
+
+The PrismaService includes health checking capabilities for use with NestJS health checks:
+
+```typescript
+import { PrismaService } from '@engram/database';
+
+// The PrismaService is ready for health checks through connection testing
+// Health indicators can verify database connectivity by attempting operations
+```
+
+See the main application's health module for implementation details.
+
 ## Environment Variables
 
 Required environment variable:
