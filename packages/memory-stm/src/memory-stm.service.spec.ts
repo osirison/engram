@@ -312,9 +312,9 @@ describe('MemoryStmService', () => {
       };
 
       mockRedisService.get.mockResolvedValue(JSON.stringify(existingMemory));
-      mockRedisService.ttl.mockResolvedValue(600000); // 10 minutes remaining
+      mockRedisService.ttl.mockResolvedValue(604000); // Nearly 7 days remaining (604000 seconds)
       
-      // Try to extend by 1 day which would exceed max TTL
+      // Try to extend by 1 day (86400) which would exceed max TTL (604000 + 86400 = 690400 > 604800)
       await expect(service.extendTtl('clq1234567890abcdef1234', 'mem123', 86400)).rejects.toThrow(
         StmTtlValidationError
       );
