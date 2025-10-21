@@ -14,10 +14,8 @@ export class PrismaHealthIndicator extends HealthIndicator {
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
-      // Use $connect/$disconnect for simple health check to avoid template tag linting issues
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      // Use $connect/$disconnect for simple health check
       await this.prismaService.$connect();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       await this.prismaService.$disconnect();
       return this.getStatus(key, true);
     } catch {
