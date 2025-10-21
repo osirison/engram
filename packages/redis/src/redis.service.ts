@@ -135,14 +135,18 @@ export class RedisService {
       }
       
       // Test with ping command and timeout
-      const result = await Promise.race([
-        this.redis.ping(),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Health check timeout')), 3000)
-        )
-      ]);
-      
-      return result === 'PONG';
+      let timeout: NodeJS.Timeout;
+      try {
+        const result = await Promise.race([
+          this.redis.ping(),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('Health check timeout')), 3000);
+          })
+        ]);
+        return result === 'PONG';
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
     } catch (error) {
       this.logger.error('Redis health check failed:', error instanceof Error ? error.message : 'Unknown error');
       return false;
