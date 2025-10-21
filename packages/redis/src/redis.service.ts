@@ -124,10 +124,22 @@ export class RedisService {
    */
   async isHealthy(): Promise<boolean> {
     try {
-      const result = await this.redis.ping();
+      // Ensure connection is established
+      if (this.redis.status !== 'ready') {
+        await this.redis.connect();
+      }
+      
+      // Test with ping command and timeout
+      const result = await Promise.race([
+        this.redis.ping(),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Health check timeout')), 3000)
+        )
+      ]);
+      
       return result === 'PONG';
     } catch (error) {
-      this.logger.error('Redis health check failed:', error);
+      this.logger.error('Redis health check failed:', error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
   }

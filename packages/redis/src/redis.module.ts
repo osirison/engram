@@ -15,8 +15,11 @@ import { RedisService } from './redis.service.js';
             return Math.min(times * 50, 2000);
           },
           maxRetriesPerRequest: 3,
-          lazyConnect: true,
-          enableOfflineQueue: false,
+          lazyConnect: false,          // ✅ Enable immediate connection
+          enableOfflineQueue: true,    // ✅ Enable command queuing
+          connectTimeout: 10000,       // ✅ Add connection timeout
+          commandTimeout: 5000,        // ✅ Add command timeout
+          enableReadyCheck: true,      // ✅ Enable ready state check
           reconnectOnError: (err) => {
             const targetError = 'READONLY';
             return err.message.includes(targetError);
@@ -26,6 +29,10 @@ import { RedisService } from './redis.service.js';
         // Handle connection events
         redis.on('connect', () => {
           logger.log('Redis client connected');
+        });
+
+        redis.on('ready', () => {
+          logger.log('Redis client ready');
         });
 
         redis.on('error', (err) => {

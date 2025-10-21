@@ -15,6 +15,7 @@ const mockRedisClient = {
   incr: vi.fn(),
   incrby: vi.fn(),
   ping: vi.fn(),
+  connect: vi.fn(),
   disconnect: vi.fn(),
   status: 'ready',
 } as unknown as Redis;
@@ -275,7 +276,8 @@ describe('RedisService', () => {
   });
 
   describe('isHealthy', () => {
-    it('should return true when Redis responds with PONG', async () => {
+    it('should return true when Redis responds with PONG and is ready', async () => {
+      mockRedisClient.status = 'ready';
       mockRedisClient.ping = vi.fn().mockResolvedValue('PONG');
 
       const result = await service.isHealthy();
@@ -284,7 +286,20 @@ describe('RedisService', () => {
       expect(result).toBe(true);
     });
 
+    it('should connect and return true when Redis is not ready initially', async () => {
+      mockRedisClient.status = 'connecting';
+      mockRedisClient.connect = vi.fn().mockResolvedValue(undefined);
+      mockRedisClient.ping = vi.fn().mockResolvedValue('PONG');
+
+      const result = await service.isHealthy();
+
+      expect(mockRedisClient.connect).toHaveBeenCalled();
+      expect(mockRedisClient.ping).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
     it('should return false when Redis responds with unexpected value', async () => {
+      mockRedisClient.status = 'ready';
       mockRedisClient.ping = vi.fn().mockResolvedValue('UNEXPECTED');
 
       const result = await service.isHealthy();
@@ -294,6 +309,7 @@ describe('RedisService', () => {
     });
 
     it('should return false when Redis operation fails', async () => {
+      mockRedisClient.status = 'ready';
       const error = new Error('Redis connection failed');
       mockRedisClient.ping = vi.fn().mockRejectedValue(error);
 
@@ -302,6 +318,19 @@ describe('RedisService', () => {
       expect(mockRedisClient.ping).toHaveBeenCalled();
       expect(result).toBe(false);
     });
+
+    it('should return false when health check times out', async () => {
+      mockRedisClient.status = 'ready';
+      // Mock a slow ping that would timeout
+      mockRedisClient.ping = vi.fn().mockImplementation(() => 
+        new Promise(resolve => setTimeout(() => resolve('PONG'), 5000))
+      );
+
+      const result = await service.isHealthy();
+
+      expect(mockRedisClient.ping).toHaveBeenCalled();
+      expect(result).toBe(false);
+    }, 10000); // Extend test timeout
   });
 
   describe('getStatus', () => {
