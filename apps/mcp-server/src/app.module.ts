@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from '@engram/config';
 import { LoggingModule, McpModule } from '@engram/core';
+import { PrismaModule } from '@engram/database';
 import { RedisModule } from '@engram/redis';
 import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
@@ -17,6 +18,7 @@ import { HealthModule } from './health/health.module';
     }),
     LoggingModule,
     McpModule,
+    PrismaModule,
     RedisModule,
     QdrantModule,
     HealthModule,

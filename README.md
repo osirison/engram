@@ -380,6 +380,7 @@ All services include comprehensive health checks that automatically verify:
 - **Qdrant**: Health endpoint returns OK status
 
 The health system has been thoroughly tested and includes:
+
 - Immediate connection establishment for Redis
 - Proper error handling and logging
 - Timeout protection for all checks
