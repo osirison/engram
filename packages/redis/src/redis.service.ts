@@ -126,7 +126,12 @@ export class RedisService {
     try {
       // Ensure connection is established
       if (this.redis.status !== 'ready') {
-        await this.redis.connect();
+        try {
+          await this.redis.connect();
+        } catch (connError) {
+          this.logger.error('Redis connection error during health check:', connError instanceof Error ? connError.message : 'Unknown error');
+          return false;
+        }
       }
       
       // Test with ping command and timeout
