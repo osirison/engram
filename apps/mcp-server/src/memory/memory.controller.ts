@@ -13,6 +13,10 @@ import {
   listMemoriesToolSchema,
   ListMemoriesToolInput,
 } from './dto/list-memories.dto';
+import {
+  updateMemoryToolSchema,
+  UpdateMemoryToolInput,
+} from './dto/update-memory.dto';
 
 /**
  * MCP Memory Tools Controller
@@ -186,21 +190,22 @@ export class MemoryController {
     try {
       this.logger.debug('update_memory tool called');
 
-      // Basic validation (TODO: Create proper Zod schema)
-      const inputObj = input as Record<string, unknown>;
-      const { userId, memoryId, ...updates } = inputObj;
-
-      if (!userId || !memoryId) {
-        throw new Error('userId and memoryId are required');
-      }
+      // Validate input using Zod schema
+      const validatedInput: UpdateMemoryToolInput =
+        updateMemoryToolSchema.parse(input);
 
       // Convert to service DTO
-      const updateDto: UpdateMemoryDto = updates;
+      const updateDto: UpdateMemoryDto = {
+        content: validatedInput.content,
+        metadata: validatedInput.metadata,
+        tags: validatedInput.tags,
+        ttl: validatedInput.ttl,
+      };
 
       // Update memory using service
       const memory = await this.memoryService.updateMemory(
-        userId as string,
-        memoryId as string,
+        validatedInput.userId,
+        validatedInput.memoryId,
         updateDto,
       );
 
