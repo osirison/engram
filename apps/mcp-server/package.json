@@ -24,6 +24,8 @@
     "@engram/config": "workspace:^",
     "@engram/core": "workspace:^",
     "@engram/database": "workspace:^",
+    "@engram/memory-ltm": "workspace:^",
+    "@engram/memory-stm": "workspace:^",
     "@engram/redis": "workspace:^",
     "@engram/vector-store": "workspace:^",
     "@nestjs/axios": "^4.0.1",
