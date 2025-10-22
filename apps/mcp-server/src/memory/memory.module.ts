@@ -5,10 +5,7 @@ import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
 
 @Module({
-  imports: [
-    MemoryStmModule,
-    MemoryLtmModule,
-  ],
+  imports: [MemoryStmModule, MemoryLtmModule],
   controllers: [MemoryController],
   providers: [MemoryService],
   exports: [MemoryService],
