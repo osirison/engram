@@ -37,7 +37,23 @@
       "Bash(gh issue comment:*)",
       "Bash(gh pr view:*)",
       "Bash(gh pr checks:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+<<<<<<< Updated upstream
+      "Bash(gh auth status:*)",
+      "Bash(git pull:*)"
+=======
+      "Bash(mcp list:*)",
+      "Bash(gh auth:*)",
+      "Bash(pnpm --filter mcp-server build:*)",
+      "Bash(pnpm db:generate:*)",
+      "Bash(pnpm start)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(gh pr create:*)",
+      "Bash(timeout 60 bash:*)",
+      "Bash(pnpm --filter mcp-server lint:*)",
+      "Bash(npx prettier --write \"src/memory/memory.module.ts\")",
+      "Bash(timeout 120 bash:*)"
+>>>>>>> Stashed changes
     ],
     "deny": [],
     "ask": []
