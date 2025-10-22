@@ -53,48 +53,66 @@ export class MemoryService {
     // TODO: Inject MemoryStmService and MemoryLtmService when packages are built
   }
 
-  async createMemory(dto: CreateMemoryDto): Promise<Memory> {
+  createMemory(dto: CreateMemoryDto): Promise<Memory> {
     this.logger.debug(`Creating ${dto.type} memory for user: ${dto.userId}`);
     // TODO: Implement with actual services
-    throw new Error('Not implemented yet - waiting for package dependencies');
+    return Promise.reject(
+      new Error('Not implemented yet - waiting for package dependencies'),
+    );
   }
 
-  async getMemory(userId: string, memoryId: string): Promise<Memory | null> {
+  getMemory(userId: string, memoryId: string): Promise<Memory | null> {
     this.logger.debug(`Getting memory ${memoryId} for user: ${userId}`);
     // TODO: Implement with actual services
-    throw new Error('Not implemented yet - waiting for package dependencies');
+    return Promise.reject(
+      new Error('Not implemented yet - waiting for package dependencies'),
+    );
   }
 
-  async listMemories(
+  listMemories(
     userId: string,
-    _options: ListMemoryOptions = {},
+    options: ListMemoryOptions = {},
   ): Promise<PaginatedMemories> {
-    this.logger.debug(`Listing memories for user: ${userId}`);
+    this.logger.debug(
+      `Listing memories for user: ${userId} with options:`,
+      options,
+    );
     // TODO: Implement with actual services
-    throw new Error('Not implemented yet - waiting for package dependencies');
+    return Promise.reject(
+      new Error('Not implemented yet - waiting for package dependencies'),
+    );
   }
 
-  async updateMemory(
+  updateMemory(
     userId: string,
     memoryId: string,
-    _updates: UpdateMemoryDto,
+    updates: UpdateMemoryDto,
   ): Promise<Memory> {
-    this.logger.debug(`Updating memory ${memoryId} for user: ${userId}`);
+    this.logger.debug(
+      `Updating memory ${memoryId} for user: ${userId} with updates:`,
+      updates,
+    );
     // TODO: Implement with actual services
-    throw new Error('Not implemented yet - waiting for package dependencies');
+    return Promise.reject(
+      new Error('Not implemented yet - waiting for package dependencies'),
+    );
   }
 
-  async deleteMemory(userId: string, memoryId: string): Promise<boolean> {
+  deleteMemory(userId: string, memoryId: string): Promise<boolean> {
     this.logger.debug(`Deleting memory ${memoryId} for user: ${userId}`);
     // TODO: Implement with actual services
-    throw new Error('Not implemented yet - waiting for package dependencies');
+    return Promise.reject(
+      new Error('Not implemented yet - waiting for package dependencies'),
+    );
   }
 
-  async promoteMemory(userId: string, memoryId: string): Promise<Memory> {
+  promoteMemory(userId: string, memoryId: string): Promise<Memory> {
     this.logger.debug(
       `Promoting memory ${memoryId} from STM to LTM for user: ${userId}`,
     );
     // TODO: Implement with actual services
-    throw new Error('Not implemented yet - waiting for package dependencies');
+    return Promise.reject(
+      new Error('Not implemented yet - waiting for package dependencies'),
+    );
   }
 }

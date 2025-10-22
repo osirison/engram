@@ -69,7 +69,9 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in create_memory tool:', error);
-      throw new Error(`Failed to create memory: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to create memory: ${errorMessage}`);
     }
   }
 
@@ -114,7 +116,9 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in get_memory tool:', error);
-      throw new Error(`Failed to get memory: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to get memory: ${errorMessage}`);
     }
   }
 
@@ -122,7 +126,9 @@ export class MemoryController {
    * MCP Tool: list_memories
    * List memories with pagination and filtering
    */
-  async listMemories(input: unknown) {
+  async listMemories(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('list_memories tool called');
 
@@ -164,7 +170,9 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in list_memories tool:', error);
-      throw new Error(`Failed to list memories: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to list memories: ${errorMessage}`);
     }
   }
 
@@ -206,7 +214,9 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in update_memory tool:', error);
-      throw new Error(`Failed to update memory: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to update memory: ${errorMessage}`);
     }
   }
 
@@ -214,7 +224,9 @@ export class MemoryController {
    * MCP Tool: delete_memory
    * Delete memory by ID
    */
-  async deleteMemory(input: unknown) {
+  async deleteMemory(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('delete_memory tool called');
 
@@ -240,7 +252,9 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in delete_memory tool:', error);
-      throw new Error(`Failed to delete memory: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to delete memory: ${errorMessage}`);
     }
   }
 
@@ -248,7 +262,9 @@ export class MemoryController {
    * MCP Tool: promote_memory
    * Promote short-term memory to long-term storage
    */
-  async promoteMemory(input: unknown) {
+  async promoteMemory(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('promote_memory tool called');
 
@@ -272,14 +288,20 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in promote_memory tool:', error);
-      throw new Error(`Failed to promote memory: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to promote memory: ${errorMessage}`);
     }
   }
 
   /**
    * Get MCP tool definitions for registration
    */
-  getMcpToolDefinitions() {
+  getMcpToolDefinitions(): Array<{
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }> {
     return [
       {
         name: 'create_memory',
