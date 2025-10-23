@@ -38,10 +38,8 @@
       "Bash(gh pr view:*)",
       "Bash(gh pr checks:*)",
       "Bash(gh run view:*)",
-<<<<<<< Updated upstream
       "Bash(gh auth status:*)",
-      "Bash(git pull:*)"
-=======
+      "Bash(git pull:*)",
       "Bash(mcp list:*)",
       "Bash(gh auth:*)",
       "Bash(pnpm --filter mcp-server build:*)",
@@ -53,7 +51,6 @@
       "Bash(pnpm --filter mcp-server lint:*)",
       "Bash(npx prettier --write \"src/memory/memory.module.ts\")",
       "Bash(timeout 120 bash:*)"
->>>>>>> Stashed changes
     ],
     "deny": [],
     "ask": []

@@ -153,9 +153,7 @@ describe('MemoryService', () => {
       stmService.findById.mockRejectedValue(
         new StmMemoryNotFoundError('not-found'),
       );
-      ltmService.get.mockRejectedValue(
-        new LtmMemoryNotFoundError('not-found'),
-      );
+      ltmService.get.mockRejectedValue(new LtmMemoryNotFoundError('not-found'));
 
       const result = await service.getMemory('user-1', 'not-found');
 
@@ -213,7 +211,7 @@ describe('MemoryService', () => {
       expect(stmService.update).toHaveBeenCalledWith('user-1', 'stm-123', {
         content: 'Updated content',
         metadata: undefined,
-        tags: [],
+        tags: undefined,
         ttl: undefined,
       });
     });
