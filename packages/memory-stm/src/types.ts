@@ -17,6 +17,7 @@ export interface CreateStmMemoryOptions {
 }
 
 // STM update options
+// STM update options
 export interface UpdateStmMemoryOptions {
   content?: string;
   metadata?: Record<string, unknown>;
@@ -27,7 +28,18 @@ export interface UpdateStmMemoryOptions {
 // STM list options
 export interface ListStmMemoryOptions {
   limit?: number;
-  offset?: number;
+  cursor?: string;
+  tags?: string[];
+}
+
+// Paginated result for list operations
+export interface PaginatedResult<T> {
+  items: T[];
+  totalCount: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor?: string;
+  endCursor?: string;
 }
 
 // STM Memory (extends base Memory with STM-specific properties)
@@ -88,7 +100,8 @@ export const updateStmMemorySchema = z.object({
 // List STM options schema
 export const listStmOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
-  offset: z.number().int().min(0).optional().default(0),
+  cursor: z.string().optional().default('0'),
+  tags: z.array(z.string()).optional(),
 });
 
 // Type exports

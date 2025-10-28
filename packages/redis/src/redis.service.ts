@@ -55,6 +55,23 @@ export class RedisService {
   }
 
   /**
+   * Delete multiple keys from Redis
+   * @param keys - The keys to delete
+   * @returns Number of keys deleted
+   */
+  async delMany(keys: string[]): Promise<number> {
+    try {
+      if (keys.length === 0) {
+        return 0;
+      }
+      return await this.redis.del(...keys);
+    } catch (error) {
+      this.logger.error('Redis DEL (multi) error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Check if a key exists in Redis
    * @param key - The key to check
    * @returns True if key exists, false otherwise
@@ -177,5 +194,55 @@ export class RedisService {
       this.logger.error('Redis disconnect error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Scan Redis keys matching a pattern
+   * @param cursor - The cursor to start from (0 to start new scan)
+   * @param pattern - The pattern to match keys against
+   * @param count - The number of keys to scan per iteration (hint to Redis)
+   * @returns Object containing next cursor and matching keys
+   */
+  async scan(
+    cursor: string,
+    options: { match?: string; count?: number } = {}
+  ): Promise<{ cursor: string; keys: string[] }> {
+    try {
+      let result: [string, string[]];
+      
+      if (options.match && options.count) {
+        result = await this.redis.scan(cursor, 'MATCH', options.match, 'COUNT', options.count);
+      } else if (options.match) {
+        result = await this.redis.scan(cursor, 'MATCH', options.match);
+      } else if (options.count) {
+        result = await this.redis.scan(cursor, 'COUNT', options.count);
+      } else {
+        result = await this.redis.scan(cursor);
+      }
+
+      return {
+        cursor: result[0],
+        keys: result[1],
+      };
+    } catch (error) {
+      this.logger.error('Redis SCAN error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a Redis pipeline for batch operations
+   * @returns Pipeline object that can be used to queue multiple commands
+   */
+  pipeline(): ReturnType<Redis['pipeline']> {
+    return this.redis.pipeline();
+  }
+
+  /**
+   * Get access to the underlying Redis client for advanced operations
+   * @returns The ioredis client instance
+   */
+  getClient(): Redis {
+    return this.redis;
   }
 }
