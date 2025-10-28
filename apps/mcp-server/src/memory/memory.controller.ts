@@ -1,4 +1,5 @@
 import { Controller, Injectable, Logger } from '@nestjs/common';
+import type { Tool } from '@engram/core';
 import {
   MemoryService,
   CreateMemoryDto,
@@ -300,7 +301,65 @@ export class MemoryController {
   }
 
   /**
+   * Get MCP tools in the format required by the MCP handler
+   * This method creates Tool objects that bind controller methods as handlers
+   */
+  getMcpTools(): Tool[] {
+    return [
+      {
+        name: 'create_memory',
+        description: 'Create a new memory in short-term or long-term storage',
+        inputSchema: createMemoryToolSchema,
+        handler: this.createMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'get_memory',
+        description: 'Retrieve memory by ID',
+        inputSchema: getMemoryToolSchema,
+        handler: this.getMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'list_memories',
+        description: 'List memories with pagination and filtering',
+        inputSchema: listMemoriesToolSchema,
+        handler: this.listMemories.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'update_memory',
+        description: 'Update existing memory',
+        inputSchema: updateMemoryToolSchema,
+        handler: this.updateMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'delete_memory',
+        description: 'Delete memory by ID',
+        inputSchema: getMemoryToolSchema, // Reuse get_memory schema
+        handler: this.deleteMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'promote_memory',
+        description: 'Promote short-term memory to long-term storage',
+        inputSchema: getMemoryToolSchema, // Reuse get_memory schema
+        handler: this.promoteMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+    ];
+  }
+
+  /**
    * Get MCP tool definitions for registration
+   * @deprecated Use getMcpTools() instead - this method is kept for backward compatibility
    */
   getMcpToolDefinitions(): Array<{
     name: string;

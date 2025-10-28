@@ -174,7 +174,7 @@ export class MemoryService {
       return await this.stmService.update(userId, memoryId, {
         content: updates.content,
         metadata: updates.metadata,
-        tags: updates.tags,
+        tags: updates.tags ?? [],
         ttl: updates.ttl,
       });
     } catch (error) {
