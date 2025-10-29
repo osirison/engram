@@ -3,7 +3,16 @@
     "allow": [
       "Bash(gh issue create:*)",
       "Bash(gh label:*)",
-      "Bash(gh issue close:*)"
+      "Bash(gh issue close:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(pnpm --filter mcp-server start:dev:*)"
     ],
     "deny": [],
     "ask": []
