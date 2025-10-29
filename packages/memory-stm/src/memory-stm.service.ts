@@ -188,7 +188,11 @@ export class MemoryStmService {
       const results = await pipeline.exec();
 
       if (results) {
-        for (const [error, data] of results) {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (!result) continue;
+          
+          const [error, data] = result;
           if (!error && data) {
             try {
               const memory = JSON.parse(data as string) as StmMemory;
@@ -204,7 +208,7 @@ export class MemoryStmService {
               memories.push(memory);
               if (memories.length >= limit) break;
             } catch {
-              this.logger.warn(`Failed to parse STM memory from key: ${keys[results.indexOf([error, data])]}`);
+              this.logger.warn(`Failed to parse STM memory from key: ${keys[i]}`);
             }
           }
         }
