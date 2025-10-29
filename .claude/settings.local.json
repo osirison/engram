@@ -50,7 +50,16 @@
       "Bash(timeout 60 bash:*)",
       "Bash(pnpm --filter mcp-server lint:*)",
       "Bash(npx prettier --write \"src/memory/memory.module.ts\")",
-      "Bash(timeout 120 bash:*)"
+      "Bash(timeout 120 bash:*)",
+      "Bash(pnpm --filter @engram/core build:*)",
+      "Bash(pnpm --filter @engram/core lint:*)",
+      "Bash(npx prettier:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker rm:*)",
+      "Bash(curl:*)",
+      "Bash(pnpm db:migrate:*)",
+      "Bash(pnpm --filter mcp-server start:dev:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

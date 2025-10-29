@@ -24,9 +24,8 @@ export class MemoryStmService {
 
   constructor(
     private readonly redisService: RedisService,
-    config?: Partial<StmConfig>
   ) {
-    this.config = { ...DEFAULT_STM_CONFIG, ...config };
+    this.config = { ...DEFAULT_STM_CONFIG };
     this.keyBuilder = new StmKeyBuilder(this.config.keyPrefix);
   }
 
