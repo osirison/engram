@@ -13,8 +13,14 @@ const mockRedisService = {
   get: vi.fn(),
   set: vi.fn(),
   del: vi.fn(),
+  delMany: vi.fn(),
   ttl: vi.fn(),
   exists: vi.fn(),
+  scan: vi.fn(),
+  pipeline: vi.fn(() => ({
+    get: vi.fn().mockReturnThis(),
+    exec: vi.fn(),
+  })),
 };
 
 describe('MemoryStmService', () => {
@@ -47,7 +53,7 @@ describe('MemoryStmService', () => {
         content: input.content,
         metadata: input.metadata,
         tags: input.tags,
-        type: 'short-term',
+        type: 'short-term' as const,
         ttl: input.ttl,
       });
 
@@ -100,7 +106,7 @@ describe('MemoryStmService', () => {
         content: 'Test content',
         metadata: null,
         tags: [],
-        type: 'short-term',
+        type: 'short-term' as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
@@ -115,7 +121,7 @@ describe('MemoryStmService', () => {
         id: 'mem123',
         userId: 'clq1234567890abcdef1234',
         content: 'Test content',
-        type: 'short-term',
+        type: 'short-term' as const,
       });
       expect(mockRedisService.get).toHaveBeenCalledWith('memory:stm:clq1234567890abcdef1234:mem123');
     });
@@ -135,7 +141,7 @@ describe('MemoryStmService', () => {
         content: 'Test content',
         metadata: null,
         tags: [],
-        type: 'short-term',
+        type: 'short-term' as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() - 1000).toISOString(), // 1 second ago (expired)
@@ -160,7 +166,7 @@ describe('MemoryStmService', () => {
         content: 'Original content',
         metadata: { type: 'note' },
         tags: ['original'],
-        type: 'short-term',
+        type: 'short-term' as const,
         createdAt: new Date(),
         updatedAt: new Date(),
         expiresAt: new Date(Date.now() + 3600000),
@@ -199,7 +205,7 @@ describe('MemoryStmService', () => {
         content: 'Original content',
         metadata: { type: 'note' },
         tags: ['original'],
-        type: 'short-term',
+        type: 'short-term' as const,
         createdAt: new Date(),
         updatedAt: new Date(),
         expiresAt: new Date(Date.now() + 3600000),
@@ -276,7 +282,7 @@ describe('MemoryStmService', () => {
         content: 'Test content',
         metadata: null,
         tags: ['test'],
-        type: 'short-term',
+        type: 'short-term' as const,
         createdAt: new Date(),
         updatedAt: new Date(),
         expiresAt: new Date(Date.now() + 3600000),
@@ -304,7 +310,7 @@ describe('MemoryStmService', () => {
         content: 'Test content',
         metadata: null,
         tags: ['test'],
-        type: 'short-term',
+        type: 'short-term' as const,
         createdAt: new Date(),
         updatedAt: new Date(),
         expiresAt: new Date(Date.now() + 3600000),
@@ -322,23 +328,320 @@ describe('MemoryStmService', () => {
   });
 
   describe('list', () => {
-    it('should return empty array (not implemented)', async () => {
-      const result = await service.list('clq1234567890abcdef1234');
-      expect(result).toEqual([]);
+    it('should list all memories for a user', async () => {
+      const memory1 = {
+        id: 'mem1',
+        userId: 'clq1234567890abcdef1234',
+        content: 'Memory 1',
+        metadata: null,
+        tags: ['test'],
+        type: 'short-term' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        ttl: 3600,
+      };
+
+      const memory2 = {
+        id: 'mem2',
+        userId: 'clq1234567890abcdef1234',
+        content: 'Memory 2',
+        metadata: null,
+        tags: ['test'],
+        type: 'short-term' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        ttl: 3600,
+      };
+
+      // Mock for list operation
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+
+      const mockPipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([
+          [null, JSON.stringify(memory1)],
+          [null, JSON.stringify(memory2)],
+        ]),
+      };
+      mockRedisService.pipeline.mockReturnValue(mockPipeline);
+
+      // Mock for count operation (called by list)
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+
+      const result = await service.list('clq1234567890abcdef1234', { limit: 20 });
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]!.id).toBe('mem1');
+      expect(result.items[1]!.id).toBe('mem2');
+      expect(result.totalCount).toBe(2);
+      expect(result.hasNextPage).toBe(false);
+      expect(result.hasPreviousPage).toBe(false);
+    });
+
+    it('should apply tag filtering correctly', async () => {
+      const memory1 = {
+        id: 'mem1',
+        userId: 'clq1234567890abcdef1234',
+        content: 'Memory 1',
+        metadata: null,
+        tags: ['tag1'],
+        type: 'short-term' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        ttl: 3600,
+      };
+
+      const memory2 = {
+        id: 'mem2',
+        userId: 'clq1234567890abcdef1234',
+        content: 'Memory 2',
+        metadata: null,
+        tags: ['tag2'],
+        type: 'short-term' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        ttl: 3600,
+      };
+
+      // Mock for list operation
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+
+      const mockPipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([
+          [null, JSON.stringify(memory1)],
+          [null, JSON.stringify(memory2)],
+        ]),
+      };
+      mockRedisService.pipeline.mockReturnValue(mockPipeline);
+
+      // Mock for count operation with tag filtering
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+
+      const result = await service.list('clq1234567890abcdef1234', { tags: ['tag1'] });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]!.id).toBe('mem1');
+      expect(result.items[0]!.tags).toContain('tag1');
+    });
+
+    it('should handle pagination with cursors', async () => {
+      // Mock for list operation
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '123',
+        keys: [],
+      });
+
+      const mockPipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([]),
+      };
+      mockRedisService.pipeline.mockReturnValue(mockPipeline);
+
+      // Mock for count operation
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: [],
+      });
+
+      const result = await service.list('clq1234567890abcdef1234', { cursor: '0' });
+
+      expect(result.startCursor).toBe('0');
+      expect(result.endCursor).toBe('123');
+      expect(result.hasPreviousPage).toBe(false);
+    });
+
+    it('should return empty result for non-existent user', async () => {
+      // Mock for list operation
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: [],
+      });
+
+      const mockPipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([]),
+      };
+      mockRedisService.pipeline.mockReturnValue(mockPipeline);
+
+      // Mock for count operation
+      mockRedisService.scan.mockResolvedValueOnce({
+        cursor: '0',
+        keys: [],
+      });
+
+      const result = await service.list('clq1234567890abcdef9999');
+
+      expect(result.items).toHaveLength(0);
+      expect(result.totalCount).toBe(0);
     });
   });
 
   describe('count', () => {
-    it('should return 0 (not implemented)', async () => {
+    it('should count all memories for a user', async () => {
+      mockRedisService.scan.mockResolvedValue({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+
       const result = await service.count('clq1234567890abcdef1234');
+
+      expect(result).toBe(2);
+      expect(mockRedisService.scan).toHaveBeenCalledWith('0', {
+        match: 'memory:stm:clq1234567890abcdef1234:*',
+        count: 1000,
+      });
+    });
+
+    it('should apply tag filtering to count', async () => {
+      const memory1 = {
+        id: 'mem1',
+        userId: 'clq1234567890abcdef1234',
+        content: 'Memory 1',
+        metadata: null,
+        tags: ['tag1'],
+        type: 'short-term' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        ttl: 3600,
+      };
+
+      const memory2 = {
+        id: 'mem2',
+        userId: 'clq1234567890abcdef1234',
+        content: 'Memory 2',
+        metadata: null,
+        tags: ['tag2'],
+        type: 'short-term' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        ttl: 3600,
+      };
+
+      mockRedisService.scan.mockResolvedValue({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+
+      const mockPipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([
+          [null, JSON.stringify(memory1)],
+          [null, JSON.stringify(memory2)],
+        ]),
+      };
+      mockRedisService.pipeline.mockReturnValue(mockPipeline);
+
+      const result = await service.count('clq1234567890abcdef1234', { tags: ['tag1'] });
+
+      expect(result).toBe(1);
+    });
+
+    it('should return 0 for non-existent user', async () => {
+      mockRedisService.scan.mockResolvedValue({
+        cursor: '0',
+        keys: [],
+      });
+
+      const result = await service.count('clq1234567890abcdef9999');
+
       expect(result).toBe(0);
+    });
+
+    it('should handle multiple scan iterations', async () => {
+      mockRedisService.scan
+        .mockResolvedValueOnce({
+          cursor: '123',
+          keys: ['memory:stm:clq1234567890abcdef1234:mem1'],
+        })
+        .mockResolvedValueOnce({
+          cursor: '0',
+          keys: ['memory:stm:clq1234567890abcdef1234:mem2'],
+        });
+
+      const result = await service.count('clq1234567890abcdef1234');
+
+      expect(result).toBe(2);
+      expect(mockRedisService.scan).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('clear', () => {
-    it('should return 0 (not implemented)', async () => {
+    it('should clear all memories for a user', async () => {
+      mockRedisService.scan.mockResolvedValue({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+      });
+      mockRedisService.delMany.mockResolvedValue(2);
+
       const result = await service.clear('clq1234567890abcdef1234');
+
+      expect(result).toBe(2);
+      expect(mockRedisService.delMany).toHaveBeenCalledWith([
+        'memory:stm:clq1234567890abcdef1234:mem1',
+        'memory:stm:clq1234567890abcdef1234:mem2',
+      ]);
+    });
+
+    it('should return correct count of deleted memories', async () => {
+      mockRedisService.scan.mockResolvedValue({
+        cursor: '0',
+        keys: ['memory:stm:clq1234567890abcdef1234:mem1'],
+      });
+      mockRedisService.delMany.mockResolvedValue(1);
+
+      const result = await service.clear('clq1234567890abcdef1234');
+
+      expect(result).toBe(1);
+    });
+
+    it('should handle empty user gracefully', async () => {
+      mockRedisService.scan.mockResolvedValue({
+        cursor: '0',
+        keys: [],
+      });
+
+      const result = await service.clear('clq1234567890abcdef9999');
+
       expect(result).toBe(0);
+      expect(mockRedisService.delMany).not.toHaveBeenCalled();
+    });
+
+    it('should handle multiple scan iterations', async () => {
+      mockRedisService.scan
+        .mockResolvedValueOnce({
+          cursor: '123',
+          keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        })
+        .mockResolvedValueOnce({
+          cursor: '0',
+          keys: ['memory:stm:clq1234567890abcdef1234:mem3'],
+        });
+      mockRedisService.delMany.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+
+      const result = await service.clear('clq1234567890abcdef1234');
+
+      expect(result).toBe(3);
+      expect(mockRedisService.scan).toHaveBeenCalledTimes(2);
+      expect(mockRedisService.delMany).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -6,6 +6,7 @@ import {
   CreateStmMemoryData,
   UpdateStmMemoryData,
   ListStmOptionsData,
+  PaginatedResult,
   StmKeyBuilder,
   StmMemoryNotFoundError,
   StmMemoryExpiredError,
@@ -161,21 +162,70 @@ export class MemoryStmService {
   }
 
   /**
-   * List short-term memories for a user
-   * Note: This is a simplified implementation since Redis service doesn't expose keys/mget
-   * For production, consider using Redis SCAN pattern or implementing pattern search in RedisService
+   * List short-term memories for a user with pagination and filtering
    */
-  async list(userId: string, options?: Partial<ListStmOptionsData>): Promise<StmMemory[]> {
+  async list(userId: string, options: Partial<ListStmOptionsData> = {}): Promise<PaginatedResult<StmMemory>> {
     this.logger.debug(`Listing STM memories for user: ${userId}`);
 
-    // For now, return empty array since we need pattern matching not available in current RedisService
-    // TODO: Implement SCAN pattern in RedisService or use alternative approach
-    this.logger.warn('List operation not fully implemented - requires Redis SCAN pattern support');
-    
-    // Prevent unused parameter warning - options will be used in future implementation
-    void options;
-    
-    return [];
+    const limit = options.limit || 20;
+    const cursor = options.cursor || '0';
+    const tags = options.tags || [];
+    const pattern = this.keyBuilder.buildUserPattern(userId);
+
+    // Use Redis SCAN for memory-efficient iteration
+    const scanResult = await this.redisService.scan(cursor, {
+      match: pattern,
+      count: limit * 2, // Get extra keys to account for filtering
+    });
+
+    const keys = scanResult.keys;
+    const memories: StmMemory[] = [];
+
+    if (keys.length > 0) {
+      // Fetch memory data for found keys using pipeline
+      const pipeline = this.redisService.pipeline();
+      keys.forEach(key => pipeline.get(key));
+      const results = await pipeline.exec();
+
+      if (results) {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (!result) continue;
+          
+          const [error, data] = result;
+          if (!error && data) {
+            try {
+              const memory = JSON.parse(data as string) as StmMemory;
+
+              // Apply tag filtering if tags are provided
+              if (tags.length > 0) {
+                const hasMatchingTag = tags.some(tag => 
+                  memory.tags.includes(tag)
+                );
+                if (!hasMatchingTag) continue;
+              }
+
+              memories.push(memory);
+              if (memories.length >= limit) break;
+            } catch {
+              this.logger.warn(`Failed to parse STM memory from key: ${keys[i]}`);
+            }
+          }
+        }
+      }
+    }
+
+    // Get total count for pagination metadata
+    const totalCount = await this.count(userId, { tags });
+
+    return {
+      items: memories,
+      totalCount,
+      hasNextPage: scanResult.cursor !== '0',
+      hasPreviousPage: cursor !== '0',
+      startCursor: cursor,
+      endCursor: scanResult.cursor,
+    };
   }
 
   /**
@@ -223,15 +273,56 @@ export class MemoryStmService {
   }
 
   /**
-   * Count total memories for a user
+   * Count total memories for a user with optional tag filtering
    */
-  async count(userId: string): Promise<number> {
+  async count(userId: string, options: { tags?: string[] } = {}): Promise<number> {
     this.logger.debug(`Counting STM memories for user: ${userId}`);
 
-    // For now, return 0 since we need pattern matching not available in current RedisService
-    // TODO: Implement when Redis SCAN support is added
-    this.logger.warn('Count operation not fully implemented - requires Redis SCAN pattern support');
-    return 0;
+    const pattern = this.keyBuilder.buildUserPattern(userId);
+    const tags = options.tags || [];
+    let cursor = '0';
+    let count = 0;
+
+    do {
+      const scanResult = await this.redisService.scan(cursor, {
+        match: pattern,
+        count: 1000, // Process in batches
+      });
+
+      if (tags.length > 0) {
+        // Need to check tag filtering - fetch and count
+        const keys = scanResult.keys;
+        if (keys.length > 0) {
+          const pipeline = this.redisService.pipeline();
+          keys.forEach(key => pipeline.get(key));
+          const results = await pipeline.exec();
+
+          if (results) {
+            for (const [error, data] of results) {
+              if (!error && data) {
+                try {
+                  const memory = JSON.parse(data as string) as StmMemory;
+                  const hasMatchingTag = tags.some(tag => 
+                    memory.tags.includes(tag)
+                  );
+                  if (hasMatchingTag) count++;
+                } catch {
+                  // Skip invalid entries
+                  this.logger.warn(`Failed to parse STM memory during count`);
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Simple count without tag filtering
+        count += scanResult.keys.length;
+      }
+
+      cursor = scanResult.cursor;
+    } while (cursor !== '0');
+
+    return count;
   }
 
   /**
@@ -240,10 +331,28 @@ export class MemoryStmService {
   async clear(userId: string): Promise<number> {
     this.logger.debug(`Clearing all STM memories for user: ${userId}`);
 
-    // For now, return 0 since we need pattern matching not available in current RedisService
-    // TODO: Implement when Redis SCAN support is added
-    this.logger.warn('Clear operation not fully implemented - requires Redis SCAN pattern support');
-    return 0;
+    const pattern = this.keyBuilder.buildUserPattern(userId);
+    let cursor = '0';
+    let deletedCount = 0;
+
+    do {
+      const scanResult = await this.redisService.scan(cursor, {
+        match: pattern,
+        count: 1000, // Process in batches
+      });
+
+      const keys = scanResult.keys;
+      if (keys.length > 0) {
+        // Delete in batches for efficiency
+        const deleteResult = await this.redisService.delMany(keys);
+        deletedCount += deleteResult;
+      }
+
+      cursor = scanResult.cursor;
+    } while (cursor !== '0');
+
+    this.logger.debug(`Cleared ${deletedCount} STM memories for user: ${userId}`);
+    return deletedCount;
   }
 
   /**
