@@ -12,7 +12,10 @@
       "Bash(curl:*)",
       "Bash(docker compose:*)",
       "Bash(docker exec:*)",
-      "Bash(pnpm --filter mcp-server start:dev:*)"
+      "Bash(pnpm --filter mcp-server start:dev:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
