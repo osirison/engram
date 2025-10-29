@@ -17,7 +17,6 @@ export interface CreateStmMemoryOptions {
 }
 
 // STM update options
-// STM update options
 export interface UpdateStmMemoryOptions {
   content?: string;
   metadata?: Record<string, unknown>;
