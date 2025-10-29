@@ -217,7 +217,7 @@ export class MemoryStmService {
     return {
       items: memories,
       totalCount,
-      hasNextPage: scanResult.cursor !== '0' || memories.length === limit,
+      hasNextPage: scanResult.cursor !== '0',
       hasPreviousPage: cursor !== '0',
       startCursor: cursor,
       endCursor: scanResult.cursor,
