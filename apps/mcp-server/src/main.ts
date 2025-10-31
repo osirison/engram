@@ -2,8 +2,9 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
+import { MemoryController } from './memory/memory.controller';
 
-async function bootstrap() {
+async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   // Use Pino logger
@@ -19,9 +20,20 @@ async function bootstrap() {
     'Bootstrap',
   );
 
-  // Initialize MCP handler
+  // Initialize MCP handler with memory tools
   const mcpHandler = app.get(McpHandler);
+  const memoryController = app.get(MemoryController);
+
   try {
+    // Register memory tools before initializing MCP server
+    const memoryTools = memoryController.getMcpTools();
+    mcpHandler.registerAdditionalTools(memoryTools);
+    logger.log(
+      `Registered ${memoryTools.length} memory tools with MCP handler`,
+      'Bootstrap',
+    );
+
+    // Start MCP handler
     await mcpHandler.start({
       name: 'engram',
       version: '0.1.0',

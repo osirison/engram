@@ -42,9 +42,8 @@ export class MemoryLtmService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly stmService?: MemoryStmService,
-    config?: Partial<LtmConfig>
   ) {
-    this.config = { ...DEFAULT_LTM_CONFIG, ...config };
+    this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
     // TODO: Remove this workaround once Prisma types are properly configured and the actual implementation uses `this.prisma`
     void this.prisma;

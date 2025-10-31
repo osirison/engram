@@ -7,7 +7,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { McpServerConfig, McpServer } from './types.js';
-import { registerTools } from './tools/index.js';
+import { registerTools, type Tool } from './tools/index.js';
 
 /**
  * MCP Protocol Handler
@@ -19,6 +19,16 @@ export class McpHandler implements OnModuleDestroy {
   private server: McpServer | null = null;
   private transport: StdioServerTransport | null = null;
   private isConnected = false;
+  private additionalTools: Tool[] = [];
+
+  /**
+   * Register additional tools before initialization
+   * @param tools - Array of tools to register
+   */
+  registerAdditionalTools(tools: Tool[]): void {
+    this.additionalTools = [...this.additionalTools, ...tools];
+    this.logger.log(`Registered ${tools.length} additional tools`);
+  }
 
   /**
    * Initialize the MCP server with configuration
@@ -44,18 +54,18 @@ export class McpHandler implements OnModuleDestroy {
       this.logger.log(`MCP server created: ${config.name} v${config.version}`);
 
       // Set up error handler
-      this.server.onerror = (error) => {
+      this.server.onerror = (error): void => {
         this.logger.error('MCP server error:', error);
       };
 
       // Set up close handler
-      this.server.onclose = () => {
+      this.server.onclose = (): void => {
         this.logger.log('MCP server connection closed');
         this.isConnected = false;
       };
 
-      // Register MCP tools
-      registerTools(this.server);
+      // Register MCP tools (built-in + additional)
+      registerTools(this.server, this.additionalTools);
 
       this.logger.log('MCP server initialized successfully');
     } catch (error) {
