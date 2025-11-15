@@ -20,9 +20,9 @@ export interface Tool {
 }
 
 /**
- * Registry of all available tools
+ * Registry of built-in tools
  */
-const tools: Tool[] = [pingTool];
+const builtInTools: Tool[] = [pingTool];
 
 /**
  * Convert Zod schema to JSON Schema format for MCP
@@ -69,16 +69,21 @@ function zodToJsonSchema(schema: z.ZodSchema): {
 
 /**
  * Register all MCP tools with the server
+ * @param server - MCP server instance
+ * @param additionalTools - Optional array of additional tools to register
  */
-export function registerTools(server: McpServer): void {
+export function registerTools(server: McpServer, additionalTools: Tool[] = []): void {
   const logger = new Logger('McpTools');
+
+  // Combine built-in and additional tools
+  const allTools = [...builtInTools, ...additionalTools];
 
   // Register list_tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     logger.log('Handling tools/list request');
 
     return {
-      tools: tools.map((tool) => ({
+      tools: allTools.map((tool) => ({
         name: tool.name,
         description: tool.description,
         inputSchema: zodToJsonSchema(tool.inputSchema),
@@ -93,7 +98,7 @@ export function registerTools(server: McpServer): void {
 
     try {
       // Find the tool
-      const tool = tools.find((t) => t.name === toolName);
+      const tool = allTools.find((t) => t.name === toolName);
       if (!tool) {
         logger.error(`Unknown tool: ${toolName}`);
         throw new Error(`Unknown tool: ${toolName}`);
@@ -107,7 +112,18 @@ export function registerTools(server: McpServer): void {
 
       logger.log(`Tool ${toolName} executed successfully`);
 
-      // Return result in MCP format
+      // Check if result is already in MCP format (has content array)
+      if (
+        result &&
+        typeof result === 'object' &&
+        'content' in result &&
+        Array.isArray(result.content)
+      ) {
+        // Result is already in MCP format, return as-is
+        return result as { content: Array<{ type: string; text: string }> };
+      }
+
+      // Wrap simple result in MCP format
       return {
         content: [
           {
@@ -134,5 +150,5 @@ export function registerTools(server: McpServer): void {
     }
   });
 
-  logger.log(`Registered ${tools.length} MCP tools`);
+  logger.log(`Registered ${allTools.length} MCP tools (${builtInTools.length} built-in, ${additionalTools.length} additional)`);
 }
