@@ -20,13 +20,15 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "zod": "^4.1.11"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "eslint": "^9.16.0",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "eslint": "^9.39.1",
+    "pino": "9",
+    "pino-http": "10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.9"
   }
 }

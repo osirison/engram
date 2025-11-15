@@ -14,9 +14,9 @@ export class PrismaHealthIndicator extends HealthIndicator {
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
-      // Use $connect/$disconnect for simple health check
-      await this.prismaService.$connect();
-      await this.prismaService.$disconnect();
+      // Use a simple query for health check - Prisma $executeRaw returns a count
+
+      await this.prismaService.$executeRaw`SELECT 1`;
       return this.getStatus(key, true);
     } catch {
       throw new HealthCheckError(
