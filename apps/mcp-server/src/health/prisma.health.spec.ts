@@ -8,15 +8,18 @@ describe('PrismaHealthIndicator', () => {
   let prismaService: PrismaService;
 
   beforeEach(async () => {
+    const mockPrismaService = {
+      $connect: jest.fn(),
+      $disconnect: jest.fn(),
+      $executeRaw: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PrismaHealthIndicator,
         {
           provide: PrismaService,
-          useValue: {
-            $connect: jest.fn(),
-            $disconnect: jest.fn(),
-          } as Partial<PrismaService>,
+          useValue: mockPrismaService,
         },
       ],
     }).compile();
@@ -30,8 +33,7 @@ describe('PrismaHealthIndicator', () => {
   });
 
   it('should return healthy status when database is accessible', async () => {
-    jest.spyOn(prismaService, '$connect').mockResolvedValue(undefined);
-    jest.spyOn(prismaService, '$disconnect').mockResolvedValue(undefined);
+    (prismaService.$executeRaw as jest.Mock).mockResolvedValue(1);
 
     const result = await indicator.isHealthy('database');
 
@@ -43,9 +45,9 @@ describe('PrismaHealthIndicator', () => {
   });
 
   it('should throw HealthCheckError when database is not accessible', async () => {
-    jest
-      .spyOn(prismaService, '$connect')
-      .mockRejectedValue(new Error('Connection failed'));
+    (prismaService.$executeRaw as jest.Mock).mockRejectedValue(
+      new Error('Connection failed'),
+    );
 
     await expect(indicator.isHealthy('database')).rejects.toThrow(
       HealthCheckError,
