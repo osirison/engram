@@ -23,9 +23,7 @@ export class MemoryStmService {
   private readonly keyBuilder: StmKeyBuilder;
   private readonly config: StmConfig;
 
-  constructor(
-    private readonly redisService: RedisService,
-  ) {
+  constructor(private readonly redisService: RedisService) {
     this.config = { ...DEFAULT_STM_CONFIG };
     this.keyBuilder = new StmKeyBuilder(this.config.keyPrefix);
   }
@@ -86,7 +84,7 @@ export class MemoryStmService {
 
     try {
       const memory: StmMemory = JSON.parse(redisValue);
-      
+
       // Check if memory has expired (additional safety check)
       if (memory.expiresAt && new Date() > new Date(memory.expiresAt)) {
         await this.redisService.del(redisKey);
@@ -163,7 +161,10 @@ export class MemoryStmService {
   /**
    * List short-term memories for a user with pagination and filtering
    */
-  async list(userId: string, options: Partial<ListStmOptionsData> = {}): Promise<PaginatedResult<StmMemory>> {
+  async list(
+    userId: string,
+    options: Partial<ListStmOptionsData> = {}
+  ): Promise<PaginatedResult<StmMemory>> {
     this.logger.debug(`Listing STM memories for user: ${userId}`);
 
     const limit = options.limit || 20;
@@ -183,14 +184,14 @@ export class MemoryStmService {
     if (keys.length > 0) {
       // Fetch memory data for found keys using pipeline
       const pipeline = this.redisService.pipeline();
-      keys.forEach(key => pipeline.get(key));
+      keys.forEach((key) => pipeline.get(key));
       const results = await pipeline.exec();
 
       if (results) {
         for (let i = 0; i < results.length; i++) {
           const result = results[i];
           if (!result) continue;
-          
+
           const [error, data] = result;
           if (!error && data) {
             try {
@@ -198,9 +199,7 @@ export class MemoryStmService {
 
               // Apply tag filtering if tags are provided
               if (tags.length > 0) {
-                const hasMatchingTag = tags.some(tag => 
-                  memory.tags.includes(tag)
-                );
+                const hasMatchingTag = tags.some((tag) => memory.tags.includes(tag));
                 if (!hasMatchingTag) continue;
               }
 
@@ -257,17 +256,17 @@ export class MemoryStmService {
 
     // Get existing memory
     const existing = await this.findById(userId, memoryId);
-    
+
     // Calculate new TTL
     const currentTtl = await this.getTtl(userId, memoryId);
     const newTtl = currentTtl + additionalSeconds;
-    
+
     this.validateTtl(newTtl);
 
     // Update memory with new TTL
-    return this.update(userId, memoryId, { 
+    return this.update(userId, memoryId, {
       ttl: newTtl,
-      tags: existing.tags // Preserve existing tags value (tags is optional in schema)
+      tags: existing.tags, // Preserve existing tags value (tags is optional in schema)
     });
   }
 
@@ -293,7 +292,7 @@ export class MemoryStmService {
         const keys = scanResult.keys;
         if (keys.length > 0) {
           const pipeline = this.redisService.pipeline();
-          keys.forEach(key => pipeline.get(key));
+          keys.forEach((key) => pipeline.get(key));
           const results = await pipeline.exec();
 
           if (results) {
@@ -301,9 +300,7 @@ export class MemoryStmService {
               if (!error && data) {
                 try {
                   const memory = JSON.parse(data as string) as StmMemory;
-                  const hasMatchingTag = tags.some(tag => 
-                    memory.tags.includes(tag)
-                  );
+                  const hasMatchingTag = tags.some((tag) => memory.tags.includes(tag));
                   if (hasMatchingTag) count++;
                 } catch {
                   // Skip invalid entries

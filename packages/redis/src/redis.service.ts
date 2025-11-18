@@ -209,7 +209,7 @@ export class RedisService {
   ): Promise<{ cursor: string; keys: string[] }> {
     try {
       let result: [string, string[]];
-      
+
       if (options.match && options.count) {
         result = await this.redis.scan(cursor, 'MATCH', options.match, 'COUNT', options.count);
       } else if (options.match) {

@@ -4,9 +4,9 @@ import { Memory } from '@engram/database';
 // STM-specific configuration
 export interface StmConfig {
   defaultTtl: number; // Default TTL in seconds (24 hours)
-  maxTtl: number;     // Maximum TTL in seconds (7 days)
-  minTtl: number;     // Minimum TTL in seconds (1 minute)
-  keyPrefix: string;  // Redis key prefix
+  maxTtl: number; // Maximum TTL in seconds (7 days)
+  minTtl: number; // Minimum TTL in seconds (1 minute)
+  keyPrefix: string; // Redis key prefix
 }
 
 // STM creation options
@@ -45,7 +45,7 @@ export interface PaginatedResult<T> {
 export interface StmMemory extends Memory {
   type: 'short-term';
   expiresAt: Date; // Always set for STM
-  ttl: number;     // Current TTL in seconds
+  ttl: number; // Current TTL in seconds
 }
 
 // Validation schemas for STM operations
@@ -64,9 +64,7 @@ const metadataSchema = z.record(z.string(), z.unknown()).optional();
 
 // Tags validation (array of strings, max 50 tags, each max 100 chars)
 const tagsSchema = z
-  .array(
-    z.string().min(1, 'Tag cannot be empty').max(100, 'Tag cannot exceed 100 characters')
-  )
+  .array(z.string().min(1, 'Tag cannot be empty').max(100, 'Tag cannot exceed 100 characters'))
   .max(50, 'Cannot have more than 50 tags')
   .optional()
   .default([]);
@@ -169,8 +167,8 @@ export class StmKeyBuilder {
 
 // Default STM configuration
 export const DEFAULT_STM_CONFIG: StmConfig = {
-  defaultTtl: 86400,    // 24 hours
-  maxTtl: 604800,      // 7 days
-  minTtl: 60,          // 1 minute
+  defaultTtl: 86400, // 24 hours
+  maxTtl: 604800, // 7 days
+  minTtl: 60, // 1 minute
   keyPrefix: 'memory:stm',
 };

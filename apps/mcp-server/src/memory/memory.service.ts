@@ -119,8 +119,13 @@ export class MemoryService {
 
     // Get memories from both services
     // Note: STM list is not fully implemented yet, but we'll call it anyway
-    const [stmMemories, ltmResult] = await Promise.all([
-      this.stmService.list(userId, { limit }).catch(() => [] as StmMemory[]),
+    const [stmResult, ltmResult] = await Promise.all([
+      this.stmService.list(userId, { limit }).catch(() => ({
+        items: [] as StmMemory[],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      })),
       this.ltmService.list(userId, {
         limit,
         cursor: options.cursor,
@@ -130,7 +135,7 @@ export class MemoryService {
     ]);
 
     // Combine and sort by creation date (newest first)
-    const combinedMemories = [...stmMemories, ...ltmResult.items].sort(
+    const combinedMemories = [...stmResult.items, ...ltmResult.items].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
 
@@ -140,7 +145,7 @@ export class MemoryService {
 
     return {
       items: paginatedItems,
-      totalCount: ltmResult.totalCount + stmMemories.length,
+      totalCount: ltmResult.totalCount + stmResult.totalCount,
       hasNextPage: hasMore || ltmResult.hasNextPage,
       hasPreviousPage: ltmResult.hasPreviousPage,
       startCursor:
