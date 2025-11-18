@@ -163,12 +163,7 @@ describe('MemoryService', () => {
 
   describe('listMemories', () => {
     it('should combine memories from both STM and LTM', async () => {
-      stmService.list.mockResolvedValue({
-        items: [mockStmMemory],
-        totalCount: 1,
-        hasNextPage: false,
-        hasPreviousPage: false,
-      });
+      stmService.list.mockResolvedValue([mockStmMemory]);
       ltmService.list.mockResolvedValue({
         items: [mockLtmMemory],
         totalCount: 1,
@@ -216,7 +211,7 @@ describe('MemoryService', () => {
       expect(stmService.update).toHaveBeenCalledWith('user-1', 'stm-123', {
         content: 'Updated content',
         metadata: undefined,
-        tags: [],
+        tags: undefined,
         ttl: undefined,
       });
     });

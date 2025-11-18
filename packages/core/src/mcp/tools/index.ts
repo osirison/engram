@@ -150,7 +150,5 @@ export function registerTools(server: McpServer, additionalTools: Tool[] = []): 
     }
   });
 
-  logger.log(
-    `Registered ${allTools.length} MCP tools (${builtInTools.length} built-in, ${additionalTools.length} additional)`
-  );
+  logger.log(`Registered ${allTools.length} MCP tools (${builtInTools.length} built-in, ${additionalTools.length} additional)`);
 }
