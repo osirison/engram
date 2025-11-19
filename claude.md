@@ -1,1 +1,1 @@
-**IMPORTANT** read [AGENT.md](./AGENT.md).
+**IMPORTANT** read [AGENTS.md](./AGENTS.md).
