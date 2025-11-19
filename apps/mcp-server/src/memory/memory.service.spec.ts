@@ -211,7 +211,7 @@ describe('MemoryService', () => {
       expect(stmService.update).toHaveBeenCalledWith('user-1', 'stm-123', {
         content: 'Updated content',
         metadata: undefined,
-        tags: undefined,
+        tags: [],
         ttl: undefined,
       });
     });
