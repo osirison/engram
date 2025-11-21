@@ -6,7 +6,7 @@ export const MemoryType = {
   LONG_TERM: 'long-term',
 } as const;
 
-export type MemoryTypeValues = typeof MemoryType[keyof typeof MemoryType];
+export type MemoryTypeValues = (typeof MemoryType)[keyof typeof MemoryType];
 
 // Core Memory interface (matches Prisma generated types)
 export interface Memory {
@@ -52,16 +52,11 @@ export const memoryContentSchema = z
   .max(10240, 'Content cannot exceed 10KB (10,240 characters)');
 
 // Metadata validation (optional JSON object)
-export const memoryMetadataSchema = z
-  .record(z.string(), z.unknown())
-  .optional()
-  .nullable();
+export const memoryMetadataSchema = z.record(z.string(), z.unknown()).optional().nullable();
 
 // Tags validation (array of strings, max 50 tags, each max 100 chars)
 export const memoryTagsSchema = z
-  .array(
-    z.string().min(1, 'Tag cannot be empty').max(100, 'Tag cannot exceed 100 characters')
-  )
+  .array(z.string().min(1, 'Tag cannot be empty').max(100, 'Tag cannot exceed 100 characters'))
   .max(50, 'Cannot have more than 50 tags')
   .optional()
   .default([]);
@@ -153,7 +148,10 @@ export const validateTtl = (ttl: unknown): number | undefined => {
 
 // Custom error types for memory operations
 export class MemoryValidationError extends Error {
-  constructor(message: string, public field?: string) {
+  constructor(
+    message: string,
+    public field?: string
+  ) {
     super(message);
     this.name = 'MemoryValidationError';
   }

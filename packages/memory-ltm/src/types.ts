@@ -1,7 +1,5 @@
 import { z } from 'zod';
-import {
-  Memory,
-} from '@engram/database';
+import { Memory } from '@engram/database';
 
 // LTM-specific configuration
 export interface LtmConfig {
@@ -61,7 +59,11 @@ export const createLtmMemorySchema = z.object({
 
 // Update LTM memory schema
 export const updateLtmMemorySchema = z.object({
-  content: z.string().min(1, 'Content cannot be empty').max(10240, 'Content cannot exceed 10KB').optional(),
+  content: z
+    .string()
+    .min(1, 'Content cannot be empty')
+    .max(10240, 'Content cannot exceed 10KB')
+    .optional(),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   tags: z.array(z.string()).optional(),
 });
