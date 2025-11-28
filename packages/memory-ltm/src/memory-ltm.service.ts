@@ -1,9 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
-import {
-  MemoryType,
-  PaginatedResult,
-} from '@engram/database';
+import { MemoryType, PaginatedResult } from '@engram/database';
 import { MemoryStmService } from '@engram/memory-stm';
 import {
   LtmMemory,
@@ -26,7 +23,7 @@ type PrismaMemory = {
   id: string;
   userId: string;
   content: string;
-  metadata: unknown;  // Using unknown for type safety; must be type-checked before use
+  metadata: unknown; // Using unknown for type safety; must be type-checked before use
   tags: string[];
   type: string;
   createdAt: Date;
@@ -41,7 +38,7 @@ export class MemoryLtmService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly stmService?: MemoryStmService,
+    @Optional() private readonly stmService?: MemoryStmService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -132,7 +129,7 @@ export class MemoryLtmService {
 
       // Prepare update data (only include fields that are provided)
       const updateData: Record<string, unknown> = {};
-      
+
       if (validatedInput.content !== undefined) {
         updateData.content = validatedInput.content;
       }
@@ -239,7 +236,7 @@ export class MemoryLtmService {
       // Handle cursor-based pagination
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const orderBy: any = { [validatedOptions.sortBy]: validatedOptions.sortOrder };
-      
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const findManyOptions: any = {
         where: whereClause,
@@ -253,7 +250,7 @@ export class MemoryLtmService {
       }
 
       // Get total count and memories
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const [totalCount, memories] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this.prisma as any).memory.count({ where: whereClause }),
@@ -407,7 +404,9 @@ export class MemoryLtmService {
         this.logger.debug(`Successfully promoted memory ${memoryId} from STM to LTM`);
       } catch (stmDeleteError) {
         // Log warning but don't fail the operation since LTM creation succeeded
-        this.logger.warn(`Failed to delete STM memory ${memoryId} after promotion: ${stmDeleteError}`);
+        this.logger.warn(
+          `Failed to delete STM memory ${memoryId} after promotion: ${stmDeleteError}`
+        );
       }
 
       return this.mapToLtmMemory(result);
@@ -431,9 +430,11 @@ export class MemoryLtmService {
         type: MemoryType.LONG_TERM,
       },
     });
-    
-    this.logger.debug(`Quota check for user ${userId}: ${currentCount}/${this.config.maxMemoriesPerUser}`);
-    
+
+    this.logger.debug(
+      `Quota check for user ${userId}: ${currentCount}/${this.config.maxMemoriesPerUser}`
+    );
+
     if (currentCount >= this.config.maxMemoriesPerUser) {
       throw new LtmMemoryQuotaExceededError(userId, this.config.maxMemoriesPerUser);
     }

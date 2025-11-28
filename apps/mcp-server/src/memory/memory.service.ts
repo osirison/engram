@@ -1,9 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import {
-  MemoryStmService,
-  StmMemory,
-  StmMemoryNotFoundError,
-} from '@engram/memory-stm';
+import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
 import { MemoryLtmService, LtmMemoryNotFoundError } from '@engram/memory-ltm';
 import { Memory } from '@engram/database';
 
@@ -122,7 +118,7 @@ export class MemoryService {
     const [stmResult, ltmResult] = await Promise.all([
       this.stmService
         .list(userId, { limit })
-        .catch(() => ({ items: [] as StmMemory[], totalCount: 0 })),
+        .catch(() => ({ items: [] as Memory[], totalCount: 0 })),
       this.ltmService.list(userId, {
         limit,
         cursor: options.cursor,
@@ -131,8 +127,13 @@ export class MemoryService {
       }),
     ]);
 
+    const stmMemories: Memory[] = Array.isArray(stmResult)
+      ? stmResult
+      : stmResult.items;
+
     // Combine and sort by creation date (newest first)
-    const combinedMemories = [...stmResult.items, ...ltmResult.items].sort(
+    const combinedMemories: Memory[] = [...stmMemories, ...ltmResult.items];
+    combinedMemories.sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
 

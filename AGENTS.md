@@ -1,164 +1,65 @@
 # ENGRAM - AI Agent Instructions
 
-## Project Context
-
 ENGRAM = Extended Neural Graph for Recall and Memory. Modular MCP server for AI agent memory management.
 
-## CRITICAL: Use Framework CLIs - NEVER Create Files From Scratch
+## CRITICAL: Use Framework CLIs
 
-**MANDATORY RULE**: Always use framework CLI tools and initialization commands. NEVER manually create framework files.
+**Always use CLI tools. Never manually create framework files.**
 
-### NestJS CLI Commands (REQUIRED)
-
-```bash
-# Generate complete resource (module + service + controller + DTOs + tests)
-nest g resource <name>  # USE THIS for new features
-
-# Generate individual components
-nest g module <name>       # Create module
-nest g service <name>      # Create service with test file
-nest g controller <name>   # Create controller with test file
-nest g guard <name>        # Create auth guard
-nest g interceptor <name>  # Create interceptor
-nest g filter <name>       # Create exception filter
-nest g pipe <name>         # Create validation pipe
-nest g decorator <name>    # Create custom decorator
-nest g class <name>        # Create class
-nest g interface <name>    # Create interface
-
-# Examples
-nest g resource memory --no-spec  # Create full memory module
-nest g service auth/jwt            # Create JWT service in auth module
-nest g guard auth/roles            # Create roles guard
-```
-
-### Prisma CLI Commands (REQUIRED)
+### NestJS CLI
 
 ```bash
-# Initialize Prisma (only for new projects)
-npx prisma init
-
-# Generate Prisma Client after schema changes
-pnpm db:generate
-# or
-npx prisma generate
-
-# Create and apply migrations
-pnpm db:migrate dev --name <descriptive_name>
-# or
-npx prisma migrate dev --name add_user_table
-
-# Development only - push schema without migration
-pnpm db:push
-# or
-npx prisma db push
-
-# Seed database
-pnpm db:seed
-# or
-npx prisma db seed
-
-# Open Prisma Studio (database GUI)
-npx prisma studio
+nest g resource <name>     # Full resource (preferred)
+nest g module <name>
+nest g service <name>
+nest g controller <name>
+nest g guard <name>
+nest g interceptor <name>
+nest g filter <name>
+nest g pipe <name>
+nest g decorator <name>
 ```
 
-### Package Creation Commands (REQUIRED)
+### Prisma CLI
 
 ```bash
-# Create new package in monorepo
-pnpm create-package packages/<name>
-
-# If no custom script exists, use npm init
-cd packages/<name>
-npm init -y
-# Then configure package.json for TypeScript
-
-# Initialize TypeScript in package
-npx tsc --init
+pnpm db:generate           # Generate client
+pnpm db:migrate dev --name <name>  # Create migration
+pnpm db:push               # Dev: push without migration
+pnpm db:seed               # Seed database
+npx prisma studio          # Database GUI
 ```
 
-### Testing Initialization (REQUIRED)
+### Package/Testing
 
 ```bash
-# Vitest is configured at root level
-# For new package, copy vitest.config.ts from existing package
-
-# Initialize test coverage config (if needed)
-npx vitest init
+pnpm create-package packages/<name>  # New package
+npx tsc --init             # TypeScript config
+# Copy vitest.config.ts from existing package
 ```
 
-### Database Migration Workflow
+### Manual Creation Only For
 
-```bash
-# 1. Edit prisma/schema.prisma manually
-# 2. Generate types
-pnpm db:generate
+- Zod schemas
+- Custom types
+- Config files (if no CLI)
+- Documentation
 
-# 3. Create migration
-pnpm db:migrate dev --name descriptive_migration_name
+## Stack
 
-# 4. In production
-pnpm db:migrate deploy
-```
+TypeScript + Node.js 20+ | NestJS | PostgreSQL (Prisma) | Qdrant | Redis | Turborepo | BullMQ | Docker
 
-### When to Use CLI vs Manual Creation
+## Principles
 
-**ALWAYS Use CLI:**
+1. Use existing frameworks, never custom solutions
+2. Type safety: strict TypeScript, no `any`
+3. Modular packages, independent
+4. Test-driven: write tests with features
+5. Issue-driven: all work requires GitHub issue #
 
-- ✅ NestJS modules, services, controllers, guards, pipes, etc.
-- ✅ Prisma migrations and client generation
-- ✅ Package initialization
-- ✅ TypeScript configuration (tsc --init)
-- ✅ Test file scaffolding
+## Structure
 
-**Rare Manual Creation (Only if no CLI exists):**
-
-- ⚠️ Zod schemas (no CLI available)
-- ⚠️ Custom type definitions
-- ⚠️ Configuration files (after checking for init commands)
-- ⚠️ Documentation files (when explicitly requested)
-
-**NEVER Manually Create:**
-
-- ❌ NestJS modules, services, controllers, etc.
-- ❌ Prisma client code
-- ❌ Database migrations (use prisma migrate)
-- ❌ Test boilerplate (use nest g with --spec)
-- ❌ Package.json from scratch (use npm init)
-
-### Verification Checklist
-
-Before creating any framework file manually, ask:
-
-1. ❓ Does this framework have a CLI? (NestJS, Prisma, etc.)
-2. ❓ Can I use `nest g` or `prisma` commands?
-3. ❓ Is there a package initialization command?
-4. ❓ Does the monorepo have helper scripts in package.json?
-
-**If ANY answer is YES, use the CLI command instead of manual file creation.**
-
-## Tech Stack
-
-- TypeScript + Node.js 20+
-- NestJS framework
-- PostgreSQL (Prisma ORM)
-- Qdrant (vectors)
-- Redis (cache/queues)
-- Turborepo (monorepo)
-- BullMQ (jobs)
-- Docker
-
-## Code Principles
-
-1. **Use existing frameworks** - Never write custom solutions when libraries exist
-2. **Type safety first** - Leverage TypeScript strictly
-3. **Modular design** - Each package is independent
-4. **Test-driven** - Write tests for all features
-5. **Issue-driven** - Every task needs GitHub issue #
-
-## Project Structure
-
-```
+```text
 apps/mcp-server     → Main MCP server
 apps/api            → Future tRPC API
 packages/core       → MCP implementation
@@ -168,383 +69,76 @@ packages/analytics  → Analytics
 shared/types        → Shared types
 ```
 
-## Workflow Requirements
+## Workflow
 
-### ⚠️ CRITICAL: NEVER WORK DIRECTLY ON MAIN BRANCH
+### 🚨 NEVER WORK ON MAIN BRANCH
 
-**ABSOLUTE RULE: ALL code changes MUST be made in feature branches. NEVER commit directly to main.**
+All changes in feature branches. Never commit directly to main.
 
-```bash
-# ❌ FORBIDDEN - Never do this
-git checkout main
-# ... make changes ...
-git commit -m "some changes"
-git push origin main
+### Before Starting
 
-# ✅ REQUIRED - Always do this
-git checkout main
-git pull origin main
-git checkout -b feat/feature-name-#123
-# ... make changes ...
-git commit -m "feat(scope): description (#123)"
-git push origin feat/feature-name-#123
-# ... create PR ...
-```
-
-**Why This Rule Exists:**
-
-- Protects main branch from direct modifications
-- Ensures all changes go through PR review process
-- Maintains clean git history
-- Enables CI/CD checks before merge
-- Allows easy rollback if issues arise
-
-**If you're on main branch, STOP and create a feature branch immediately.**
-
-### Before Starting Work
-
-1. **Ensure you're NOT on main** - Run `git branch` to verify current branch
-2. **Pull latest main branch** - Always run `git checkout main && git pull origin main`
-3. **⚠️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:\* label (track:mcp, track:db, track:devex, track:health)
-4. **Use the correct track worktree** - Navigate to the appropriate path matching the issue's track label:
-   - **Windows:** `C:\projects\worktree\engram\{track}`
-   - **macOS/Linux:** `~/projects/worktree/engram/{track}`
-5. **Create feature branch** - Run `git checkout -b type/description-#issue origin/main` (e.g., `feat/add-auth-#25`)
-6. **Check for GitHub issue** - All work must have issue #
-7. **Verify epic/story hierarchy** - Issue must link to story → epic
-8. **Check dependencies** - Review package.json for existing libs
-9. **Read module README** - Each package has implementation guide
+1. Verify NOT on main: `git branch`
+2. Pull latest: `git checkout main && git pull origin main`
+3. Verify track label (track:mcp|db|devex|health)
+4. Navigate to track worktree: `C:\projects\worktree\engram\{track}`
+5. Create branch: `git checkout -b type/description-#issue origin/main`
+6. Verify issue exists and links to epic
+7. Check dependencies in package.json
 
 ### During Development
 
-1. **Reference issue #** - Include in commit: `feat(core): add X (#123)`
-2. **Use existing packages**:
-   - Validation → Zod
-   - DB access → Prisma
-   - Queues → BullMQ
-   - HTTP → NestJS decorators
-   - Testing → Vitest
-3. **Follow NestJS patterns**:
-   - Services for logic
-   - Controllers for routes
-   - Modules for organization
-   - Providers for DI
-4. **Type everything** - No `any` types
-5. **Write tests** - Unit tests in `.spec.ts` files
+- Commits: `type(scope): description (#issue)`
+- Use existing libs: Zod, Prisma, BullMQ, NestJS, Vitest
+- NestJS: Services (logic), Controllers (routes), Modules (organization)
+- No `any` types
+- Write tests alongside code
 
-### Code Patterns
-
-#### NestJS Module Template
-
-```typescript
-@Module({
-  imports: [
-    /* dependencies */
-  ],
-  providers: [MyService],
-  controllers: [MyController],
-  exports: [MyService],
-})
-export class MyModule {}
-```
-
-#### Service with Prisma
-
-```typescript
-@Injectable()
-export class MyService {
-  constructor(private prisma: PrismaService) {}
-
-  async findAll() {
-    return this.prisma.myModel.findMany();
-  }
-}
-```
-
-#### Zod Validation
-
-```typescript
-import { z } from 'zod';
-
-const schema = z.object({
-  name: z.string(),
-  age: z.number().positive(),
-});
-
-type MyType = z.infer<typeof schema>;
-```
-
-### Testing Pattern
-
-```typescript
-describe('MyService', () => {
-  let service: MyService;
-
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      providers: [MyService],
-    }).compile();
-
-    service = module.get<MyService>(MyService);
-  });
-
-  it('should work', () => {
-    expect(service.method()).toBe(expected);
-  });
-});
-```
-
-## Common Tasks
-
-### Adding New Package
+## Common Commands
 
 ```bash
-pnpm create-package packages/my-feature
-# Add to turbo.json
-# Update root package.json workspace
-# Create package.json, tsconfig.json, src/index.ts
+# Packages
+pnpm create-package packages/<name>
+pnpm add library-name           # In package dir
+pnpm add -w library-name        # Root
+
+# Database
+pnpm db:generate                # After schema changes
+pnpm db:migrate dev --name <n>  # Migration
+pnpm db:push                    # Dev only
+
+# Testing
+pnpm test                       # All
+pnpm test:watch                 # Watch
+pnpm test packages/core         # Specific
 ```
 
-### Database Changes
+## GitHub Workflow
+
+Issues provide complete context (scope, criteria, patterns). Templates: Feature Request, Bug Report, Epic.
+
+1. Read issue completely
+2. Implement per specifications
+3. Verify acceptance criteria
+4. Create PR: "Closes #issue"
+
+### Issue Workflow
 
 ```bash
-# Edit prisma/schema.prisma
-pnpm db:generate  # Generate types
-pnpm db:migrate   # Create migration
-pnpm db:push      # Dev only - push without migration
+# Before: Verify NOT on main, pull latest, check track label, create branch
+# During: Commit with issue #, post updates, verify branch
+# After: Verify criteria, push branch, create PR, wait for CI, request review
+# Format: type(scope): description (#issue)
 ```
 
-### Adding Dependency
+**Commit types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
-```bash
-# Add to specific package
-cd packages/my-package
-pnpm add library-name
+## Libraries
 
-# Add to root (if shared)
-pnpm add -w library-name
-```
-
-### Running Tests
-
-```bash
-pnpm test              # All tests
-pnpm test:watch        # Watch mode
-pnpm test packages/core # Specific package
-```
-
-## GitHub Integration
-
-### Issue Templates - Quick Reference
-
-**ENGRAM uses structured templates for all issues. This provides AI agents with complete context.**
-
-**Templates** (`.github/ISSUE_TEMPLATE/`):
-
-1. **Feature Request** - Epic, priority, technical scope, acceptance criteria, tests
-2. **Bug Report** - Severity, reproduction steps, affected files, error logs
-3. **Epic** - Vision, user stories, milestones, success criteria
-
-**Agent Workflow**:
-
-```bash
-1. Read issue - All context is provided (files, patterns, criteria)
-2. Implement - Follow specifications in issue
-3. Verify - Check against acceptance criteria
-4. Complete - Create PR with "Closes #issue"
-```
-
-**Benefits**:
-
-- ✅ No context hunting - everything in the issue
-- ✅ Clear success criteria - know when done
-- ✅ Proper patterns - implementation guidance included
-- ✅ Traceable - epic → issue → commit → PR
-
-### VS Code GitHub Tools
-
-- Create issues via GitHub MCP (use templates!)
-- Link commits to issues
-- Update issue status
-- Create PRs with issue reference
-
-### Issue Management
-
-**Complete Workflow:**
-
-```bash
-# Before Starting (CRITICAL: Must be on feature branch, NOT main)
-1. Checkout main: git checkout main && git pull origin main
-2. List open issues: Use GitHub MCP list_issues
-3. Review issue: Read complete template (context, scope, criteria)
-4. VERIFY NOT ON MAIN: git branch (should NOT show * main)
-5. Create feature branch: git checkout -b type/description-#issue
-   Examples:
-   - git checkout -b feat/add-auth-#25
-   - git checkout -b fix/token-bug-#67
-   - git checkout -b docs/update-readme-#23
-6. Assign issue to self and update status to in-progress
-7. Comment: "Starting work on this issue"
-
-# During Work (all changes in feature branch)
-8. VERIFY BRANCH: git branch (confirm you're on feature branch, NOT main)
-9. Post progress updates regularly to issue
-10. Update epic with milestone completions
-11. Commit with issue #: git commit -m "type(scope): msg (#123)"
-12. If blocked: Comment on issue, change label to status:blocked
-
-# After Completion (push feature branch, create PR)
-13. VERIFY BRANCH: git branch (must NOT be on main)
-14. Verify ALL acceptance criteria met
-15. Add completion comment with summary to issue
-16. Push feature branch: git push origin feat/feature-name-#123
-17. Create PR via GitHub:
-    - Title: Same as issue title
-    - Description: "Closes #issue-number"
-    - Base: main, Compare: feat/feature-name-#123
-18. **IMPORTANT: Monitor PR health before requesting review**
-    - After creating PR, monitor it for CI/CD failures
-    - Wait for all GitHub checks to complete successfully
-    - Only ask user to review when PR is healthy and ready
-    - PR must have all green checks before review request
-19. Update epic: Comment "Issue #X completed - PR #Y created"
-20. Wait for PR approval and merge (DO NOT push to main directly)
-21. After PR merges: Issue auto-closes
-22. Checkout main and pull: git checkout main && git pull origin main
-23. Move to next issue from open issues list
-```
-
-**⚠️ CRITICAL REMINDERS:**
-
-- NEVER commit directly to main branch
-- ALWAYS work in feature branches
-- ALWAYS create PR for code review
-- Main branch is protected - direct pushes are FORBIDDEN
-
-### Commit Format
-
-**CRITICAL: Single-line commits ONLY. No multi-line, no body.**
-
-```
-type(scope): description (#issue-number)
-
-feat(core): implement memory storage (#45)
-fix(auth): resolve token expiry (#67)
-docs(readme): update setup guide (#23)
-```
-
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-
-**IMPORTANT**:
-
-- Single line only
-- Always reference issue #
-- Always reference files specified in issue's "Technical Scope"
-
-## Key Libraries Reference
-
-### NestJS
-
-- `@nestjs/common` - Decorators, DI
-- `@nestjs/config` - Configuration
-- `@nestjs/bull` - Queue integration
-
-### Database
-
-- `@prisma/client` - DB access
-- `prisma` - CLI tool
-- `qdrant-client` - Vector DB
-- `ioredis` - Redis client
-
-### Validation
-
-- `zod` - Schema validation
-- `class-validator` - DTO validation (NestJS)
-
-### Testing
-
-- `vitest` - Test runner
-- `@nestjs/testing` - NestJS test utilities
-
-### MCP
-
-- `@modelcontextprotocol/sdk` - MCP protocol
-
-## Error Handling
-
-```typescript
-// Use NestJS exceptions
-throw new BadRequestException('Invalid input');
-throw new NotFoundException('Resource not found');
-throw new UnauthorizedException('Auth failed');
-
-// Custom exceptions
-export class MemoryNotFoundError extends NotFoundException {
-  constructor(id: string) {
-    super(`Memory ${id} not found`);
-  }
-}
-```
-
-## Environment Config
-
-```typescript
-// Use NestJS ConfigModule
-@Injectable()
-export class MyService {
-  constructor(private config: ConfigService) {}
-
-  getDbUrl() {
-    return this.config.get<string>('DATABASE_URL');
-  }
-}
-```
-
-## Quick Checks
-
-### Before Committing
-
-- [ ] Code compiles (`pnpm build`)
-- [ ] Tests pass (`pnpm test`)
-- [ ] Linter clean (`pnpm lint`)
-- [ ] Types valid (`pnpm type-check`)
-- [ ] Issue # in commit message
-- [ ] No `any` types
-- [ ] Used existing libraries
-
-### Before PR
-
-- [ ] All tests green
-- [ ] Documentation updated
-- [ ] CHANGELOG entry
-- [ ] Issue status updated
-- [ ] Linked to epic/story
-
-## Agent Directives
-
-1. **🚨 NEVER WORK DIRECTLY ON MAIN BRANCH** - All changes MUST be in feature branches. Always verify current branch with `git branch` before making changes
-2. **Always create feature branch first** - Format: `type/description-#issue` (e.g., `feat/add-auth-#25`)
-3. **Always create PR for code review** - Never push directly to main, even for small changes
-4. **🏷️ VERIFY TRACK ASSIGNMENT** - Every issue MUST have a track:\* label before starting work. Use the corresponding track worktree
-5. **Always search GitHub for existing issues before creating new ones**
-6. **Use GitHub MCP to track all work**
-7. **Prefer existing libraries over custom code**
-8. **Follow NestJS patterns strictly**
-9. **Write tests alongside features**
-10. **Keep commits focused and small**
-11. **Update documentation with code changes**
-12. **Validate inputs with Zod**
-13. **Use Prisma for all DB access**
-14. **Never commit secrets or env vars**
-15. **Ask for clarification if conflicting instructions are found** - When instructions from different sources (CLAUDE.md, AGENTS.md, issue templates, etc.) conflict, always ask the user for clarification before proceeding
-
-## Resources
-
-- [NestJS Docs](https://docs.nestjs.com)
-- [Prisma Docs](https://www.prisma.io/docs)
-- [Turborepo Docs](https://turbo.build/repo/docs)
-- [MCP Protocol](https://modelcontextprotocol.io)
-- [Project README](./README.md)
+- **NestJS:** `@nestjs/common`, `@nestjs/config`, `@nestjs/bull`
+- **Database:** Prisma, Qdrant, Redis (ioredis)
+- **Validation:** Zod, class-validator
+- **Testing:** Vitest, `@nestjs/testing`
+- **MCP:** `@modelcontextprotocol/sdk`
 
 ## Git Worktrees (Standard Process on Windows)
 

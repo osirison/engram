@@ -3,13 +3,17 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": [
-    "apps/**/*",
-    "packages/**/*"
-  ],
+  "include": ["packages/**/*"],
   "exclude": [
     "node_modules",
     "dist",
-    ".turbo"
+    ".turbo",
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "**/test/**",
+    "apps/**",
+    "packages/ui/**",
+    "packages/eslint-config/**",
+    "packages/typescript-config/**"
   ]
 }

@@ -24,8 +24,4 @@ export {
 } from './types';
 
 // Export validation functions
-export {
-  validateCreateLtmMemory,
-  validateUpdateLtmMemory,
-  validateLtmQueryOptions,
-} from './types';
+export { validateCreateLtmMemory, validateUpdateLtmMemory, validateLtmQueryOptions } from './types';

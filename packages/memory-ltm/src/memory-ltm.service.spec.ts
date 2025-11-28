@@ -68,7 +68,7 @@ describe('MemoryLtmService', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mockStmService as any
     );
-    
+
     prismaService = mockPrismaService;
     stmService = mockStmService;
   });
@@ -97,11 +97,13 @@ describe('MemoryLtmService', () => {
           expiresAt: null,
         }),
       });
-      expect(result).toEqual(expect.objectContaining({
-        ...mockMemory,
-        type: 'long-term',
-        expiresAt: null,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          ...mockMemory,
+          type: 'long-term',
+          expiresAt: null,
+        })
+      );
     });
 
     it('should throw quota exceeded error when user has too many memories', async () => {
@@ -150,11 +152,13 @@ describe('MemoryLtmService', () => {
           type: MemoryType.LONG_TERM,
         },
       });
-      expect(result).toEqual(expect.objectContaining({
-        ...mockMemory,
-        type: 'long-term',
-        expiresAt: null,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          ...mockMemory,
+          type: 'long-term',
+          expiresAt: null,
+        })
+      );
     });
 
     it('should return null when memory not found', async () => {
@@ -225,7 +229,7 @@ describe('MemoryLtmService', () => {
 
     it('should only update provided fields', async () => {
       const partialUpdate = { content: 'New content only' };
-      
+
       prismaService.memory.findFirst.mockResolvedValue(mockMemory);
       prismaService.memory.update.mockResolvedValue(mockMemory);
 
@@ -443,7 +447,7 @@ describe('MemoryLtmService', () => {
     it('should successfully promote memory from STM to LTM', async () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockResolvedValue(undefined);
-      
+
       const mockTransaction = vi.fn().mockImplementation(async (callback) => {
         const mockTx = {
           memory: {
@@ -453,17 +457,19 @@ describe('MemoryLtmService', () => {
         };
         return callback(mockTx);
       });
-      
+
       prismaService.$transaction.mockImplementation(mockTransaction);
 
       const result = await service.promote(mockUserId, mockMemoryId);
 
       expect(stmService.findById).toHaveBeenCalledWith(mockUserId, mockMemoryId);
       expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId);
-      expect(result).toEqual(expect.objectContaining({
-        type: 'long-term',
-        expiresAt: null,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          type: 'long-term',
+          expiresAt: null,
+        })
+      );
     });
 
     it('should throw error when STM service not available', async () => {
@@ -477,9 +483,7 @@ describe('MemoryLtmService', () => {
     it('should throw error when memory not found in STM', async () => {
       stmService.findById.mockResolvedValue(null);
 
-      await expect(service.promote(mockUserId, mockMemoryId)).rejects.toThrow(
-        LtmPromotionError
-      );
+      await expect(service.promote(mockUserId, mockMemoryId)).rejects.toThrow(LtmPromotionError);
     });
 
     it('should handle quota exceeded during promotion', async () => {
@@ -507,7 +511,7 @@ describe('MemoryLtmService', () => {
     it('should continue if STM deletion fails after successful LTM creation', async () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockRejectedValue(new Error('STM delete failed'));
-      
+
       const mockTransaction = vi.fn().mockImplementation(async (callback) => {
         const mockTx = {
           memory: {
@@ -517,15 +521,17 @@ describe('MemoryLtmService', () => {
         };
         return callback(mockTx);
       });
-      
+
       prismaService.$transaction.mockImplementation(mockTransaction);
 
       const result = await service.promote(mockUserId, mockMemoryId);
 
-      expect(result).toEqual(expect.objectContaining({
-        type: 'long-term',
-        expiresAt: null,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          type: 'long-term',
+          expiresAt: null,
+        })
+      );
       // Should not throw even though STM deletion failed
     });
   });

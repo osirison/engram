@@ -28,7 +28,7 @@ describe('MemoryStmService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Create service directly with mock
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     service = new MemoryStmService(mockRedisService as any);
@@ -123,7 +123,9 @@ describe('MemoryStmService', () => {
         content: 'Test content',
         type: 'short-term' as const,
       });
-      expect(mockRedisService.get).toHaveBeenCalledWith('memory:stm:clq1234567890abcdef1234:mem123');
+      expect(mockRedisService.get).toHaveBeenCalledWith(
+        'memory:stm:clq1234567890abcdef1234:mem123'
+      );
     });
 
     it('should throw error when memory not found', async () => {
@@ -154,7 +156,9 @@ describe('MemoryStmService', () => {
       await expect(service.findById('clq1234567890abcdef1234', 'mem123')).rejects.toThrow(
         StmMemoryExpiredError
       );
-      expect(mockRedisService.del).toHaveBeenCalledWith('memory:stm:clq1234567890abcdef1234:mem123');
+      expect(mockRedisService.del).toHaveBeenCalledWith(
+        'memory:stm:clq1234567890abcdef1234:mem123'
+      );
     });
   });
 
@@ -183,7 +187,7 @@ describe('MemoryStmService', () => {
       mockRedisService.set.mockResolvedValue('OK');
 
       // Add small delay to ensure different timestamp
-      await new Promise(resolve => setTimeout(resolve, 2));
+      await new Promise((resolve) => setTimeout(resolve, 2));
 
       const result = await service.update('clq1234567890abcdef1234', 'mem123', updateInput);
 
@@ -235,7 +239,9 @@ describe('MemoryStmService', () => {
 
       await service.delete('clq1234567890abcdef1234', 'mem123');
 
-      expect(mockRedisService.del).toHaveBeenCalledWith('memory:stm:clq1234567890abcdef1234:mem123');
+      expect(mockRedisService.del).toHaveBeenCalledWith(
+        'memory:stm:clq1234567890abcdef1234:mem123'
+      );
     });
 
     it('should throw error when memory not found', async () => {
@@ -254,7 +260,9 @@ describe('MemoryStmService', () => {
       const result = await service.getTtl('clq1234567890abcdef1234', 'mem123');
 
       expect(result).toBe(1800);
-      expect(mockRedisService.ttl).toHaveBeenCalledWith('memory:stm:clq1234567890abcdef1234:mem123');
+      expect(mockRedisService.ttl).toHaveBeenCalledWith(
+        'memory:stm:clq1234567890abcdef1234:mem123'
+      );
     });
 
     it('should throw error when memory not found', async () => {
@@ -319,7 +327,7 @@ describe('MemoryStmService', () => {
 
       mockRedisService.get.mockResolvedValue(JSON.stringify(existingMemory));
       mockRedisService.ttl.mockResolvedValue(604000); // Nearly 7 days remaining (604000 seconds)
-      
+
       // Try to extend by 1 day (86400) which would exceed max TTL (604000 + 86400 = 690400 > 604800)
       await expect(service.extendTtl('clq1234567890abcdef1234', 'mem123', 86400)).rejects.toThrow(
         StmTtlValidationError
@@ -358,7 +366,10 @@ describe('MemoryStmService', () => {
       // Mock for list operation
       mockRedisService.scan.mockResolvedValueOnce({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
 
       const mockPipeline = {
@@ -373,7 +384,10 @@ describe('MemoryStmService', () => {
       // Mock for count operation (called by list)
       mockRedisService.scan.mockResolvedValueOnce({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
 
       const result = await service.list('clq1234567890abcdef1234', { limit: 20 });
@@ -416,7 +430,10 @@ describe('MemoryStmService', () => {
       // Mock for list operation
       mockRedisService.scan.mockResolvedValueOnce({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
 
       const mockPipeline = {
@@ -431,7 +448,10 @@ describe('MemoryStmService', () => {
       // Mock for count operation with tag filtering
       mockRedisService.scan.mockResolvedValueOnce({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
 
       const result = await service.list('clq1234567890abcdef1234', { tags: ['tag1'] });
@@ -497,7 +517,10 @@ describe('MemoryStmService', () => {
     it('should count all memories for a user', async () => {
       mockRedisService.scan.mockResolvedValue({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
 
       const result = await service.count('clq1234567890abcdef1234');
@@ -538,7 +561,10 @@ describe('MemoryStmService', () => {
 
       mockRedisService.scan.mockResolvedValue({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
 
       const mockPipeline = {
@@ -588,7 +614,10 @@ describe('MemoryStmService', () => {
     it('should clear all memories for a user', async () => {
       mockRedisService.scan.mockResolvedValue({
         cursor: '0',
-        keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+        keys: [
+          'memory:stm:clq1234567890abcdef1234:mem1',
+          'memory:stm:clq1234567890abcdef1234:mem2',
+        ],
       });
       mockRedisService.delMany.mockResolvedValue(2);
 
@@ -629,7 +658,10 @@ describe('MemoryStmService', () => {
       mockRedisService.scan
         .mockResolvedValueOnce({
           cursor: '123',
-          keys: ['memory:stm:clq1234567890abcdef1234:mem1', 'memory:stm:clq1234567890abcdef1234:mem2'],
+          keys: [
+            'memory:stm:clq1234567890abcdef1234:mem1',
+            'memory:stm:clq1234567890abcdef1234:mem2',
+          ],
         })
         .mockResolvedValueOnce({
           cursor: '0',
