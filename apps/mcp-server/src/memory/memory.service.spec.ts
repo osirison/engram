@@ -163,7 +163,12 @@ describe('MemoryService', () => {
 
   describe('listMemories', () => {
     it('should combine memories from both STM and LTM', async () => {
-      stmService.list.mockResolvedValue([mockStmMemory]);
+      stmService.list.mockResolvedValue({
+        items: [mockStmMemory],
+        totalCount: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
       ltmService.list.mockResolvedValue({
         items: [mockLtmMemory],
         totalCount: 1,

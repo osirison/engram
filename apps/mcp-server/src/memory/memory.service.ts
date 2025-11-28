@@ -143,7 +143,7 @@ export class MemoryService {
 
     return {
       items: paginatedItems,
-      totalCount: ltmResult.totalCount + stmMemories.length,
+      totalCount: ltmResult.totalCount + stmResult.totalCount,
       hasNextPage: hasMore || ltmResult.hasNextPage,
       hasPreviousPage: ltmResult.hasPreviousPage,
       startCursor:
@@ -177,7 +177,7 @@ export class MemoryService {
       return await this.stmService.update(userId, memoryId, {
         content: updates.content,
         metadata: updates.metadata,
-        tags: updates.tags ?? [],
+        tags: updates.tags ?? ([] as string[]),
         ttl: updates.ttl,
       });
     } catch (error) {
