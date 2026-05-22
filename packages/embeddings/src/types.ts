@@ -29,10 +29,7 @@ export const generateEmbeddingSchema = z.object({
     .string()
     .min(1, 'Text must not be empty')
     .max(MAX_TEXT_LENGTH, `Text cannot exceed ${MAX_TEXT_LENGTH} characters`),
-  model: z
-    .enum(EMBEDDING_MODELS)
-    .optional()
-    .default(DEFAULT_EMBEDDING_MODEL),
+  model: z.enum(EMBEDDING_MODELS).optional().default(DEFAULT_EMBEDDING_MODEL),
 });
 
 /**
@@ -59,7 +56,7 @@ export class EmbeddingValidationError extends Error {
 export class EmbeddingApiError extends Error {
   constructor(
     message: string,
-    public readonly cause?: unknown,
+    public override readonly cause?: unknown
   ) {
     super(message);
     this.name = 'EmbeddingApiError';

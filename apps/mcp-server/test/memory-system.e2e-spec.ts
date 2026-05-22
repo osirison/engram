@@ -39,7 +39,6 @@ import { AppModule } from '../src/app.module';
 // ---------------------------------------------------------------------------
 const E2E_ENABLED = process.env.E2E_ENABLED === 'true';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const suite: (name: string, fn: () => void) => void = E2E_ENABLED
   ? describe
   : describe.skip;
@@ -68,12 +67,10 @@ suite('Memory System E2E', () => {
   // -------------------------------------------------------------------------
   describe('App bootstrap', () => {
     it('should respond to GET /', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       return request(app.getHttpServer()).get('/').expect(200);
     });
 
     it('should expose health endpoint', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       return request(app.getHttpServer())
         .get('/health')
         .expect((res) => {

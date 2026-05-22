@@ -1,94 +1,62 @@
-# ENGRAM Roadmap (Living Document)
+---
+title: ENGRAM Roadmap
+description: Current near-term development focus for the ENGRAM repository
+---
 
-This roadmap captures the near-term execution plan so contributors can align quickly and resume work at any time. It complements issue discussions and is updated alongside milestone changes.
+## Current Focus
 
-## Current Focus: Core Infrastructure (Epic #6)
+ENGRAM is stabilizing the developer path for the MCP memory server. The next
+work should make local setup predictable, keep CI useful, and continue building
+the memory packages behind the MCP runtime.
 
-Goal: Establish a reliable NestJS MCP server, database foundation, health endpoints, and developer tooling to unblock higher-level features.
+## Active Tracks
 
-References: Epic #6, Issues #23, #24, #25, #20, #19, #5. Future epics: #7–#12.
+| Track                 | Goal                                                                    | Current next step                                                    |
+| --------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Documentation         | Keep setup and package docs short, current, and linked                  | Maintain README links and run `pnpm docs:check` in CI                |
+| MCP server quality    | Make the NestJS MCP runtime lint, type-check, and test cleanly          | Fix workspace package type resolution and remove broad lint disables |
+| Memory packages       | Keep STM, LTM, embeddings, Redis, database, and vector packages aligned | Add focused tests and docs when behavior changes                     |
+| MCP client validation | Make client setup easy to verify from a clean checkout                  | Keep `claude_desktop_config.json.example` and setup docs current     |
 
-## Parallel Tracks (Start Now)
+## Near-Term Sequence
 
-- Track A — MCP Protocol Foundation
-  - #23: Install @modelcontextprotocol/sdk; create MCP handler/module; wire into `apps/mcp-server` and `packages/core`.
-- Track B — Database Foundation
-  - #20: Install & configure Prisma; add `packages/database` module; initial schema, scripts, and migrations.
-- Track C — Developer Experience
-  - #5: Husky + lint-staged + commitlint; VS Code format-on-save.
-- Track D — Health Scaffolding
-  - #19: Create health module/controller and `/health` route; add service checks incrementally.
+1. Finish documentation validation and package README coverage.
+2. Fix MCP server lint debt so CI failures are meaningful.
+3. Add or update tests around memory workflows affected by lint/type fixes.
+4. Verify MCP client setup from a clean build.
+5. Expand roadmap details only when issue priorities are confirmed.
 
-## Sequencing and Dependencies
+## Quality Gates
 
-- After #23 completes → #24: Implement basic MCP tools (`ping`, `list_tools`) with Zod validation and logging.
-- After #23 and #24 complete → #25: Test MCP from Claude Desktop; add docs/SETUP.md and example config; verify tool calls.
-- Finalize #19 after #20 by adding DB health indicator; extend to Redis/Qdrant using existing modules.
+Run these checks before opening a pull request when the touched area supports
+them:
 
-## Waves
-
-- Wave 1 (parallel): #23, #20, #5, basic #19
-- Wave 2: #24 (depends on #23)
-- Wave 3: #25 (depends on #23 + #24) and finalize #19 (after #20)
-
-## Suggested Ownership
-
-- Infra/MCP: #23 → #24 → #25
-- Backend/DB: #20 → #19 enhancements
-- DevEx/Tooling: #5
-
-## Risks and Mitigations
-
-- MCP SDK/transport nuances: Start minimal; log verbosely; test locally.
-- Prisma/docker connectivity: Validate DATABASE_URL early; add a smoke query test.
-- Health checks timing: Ship endpoint early; expand checks incrementally.
-- Claude Desktop config variance: Provide Windows/macOS paths and troubleshooting.
-
-## Branching & PR Hygiene
-
-- Branch names: `feat/mcp-handler-#23`, `feat/prisma-setup-#20`, `feat/dev-hooks-#5`, `feat/health-endpoint-#19`, `feat/mcp-tools-#24`, `feat/claude-setup-#25`
-- Single-line commits referencing issue #. Wait for green checks before requesting review.
-
-## Track-Based Worktrees (Summary)
-
-We use persistent Git worktrees per focus area to enable parallel work with minimal churn. Tracks: `mcp`, `db`, `devex`, `health`.
-
-- One-time setup: create worktrees from `origin/main` with parking branches `track/{track}`
-- Per issue: from the track directory, branch off `origin/main` → implement → single-line commit with `(#issue)` → PR to `main`
-- Cleanup: delete the feature branch after merge; keep worktrees for reuse
-
-See full instructions with copyable PowerShell commands in `AGENTS.md` → Track-Based Worktrees: AGENTS.md#track-based-worktrees-persistent-tracks
-
-## Reflecting Tracks in GitHub
-
-To make tracks visible and actionable on GitHub:
-
-1. Push parking branches so tracks are discoverable
-
-```powershell
-git push -u origin track/mcp
-git push -u origin track/db
-git push -u origin track/devex
-git push -u origin track/health
+```bash
+pnpm docs:check
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
-2. Labels: create `track:mcp`, `track:db`, `track:devex`, `track:health`
+For the MCP server specifically:
 
-- Apply to issues/PRs to indicate ownership; add saved views per label
+```bash
+pnpm --filter mcp-server lint
+pnpm --filter mcp-server test
+```
 
-3. Branch/PR discipline
+## Working Agreements
 
-- One issue → one PR to `main`
-- Branch name: `type/kebab-name-#<issue>` (e.g., `feat/mcp-sdk-handler-#23`)
-- Commit format: `type(scope): description (#123)`
+- Start from a feature branch, not `main`.
+- Keep changes tied to the issue or request in front of you.
+- Prefer existing workspace packages and framework CLIs.
+- Update [../README.md](../README.md) and [SETUP.md](SETUP.md) when startup commands change.
+- Keep detailed implementation notes in focused docs rather than expanding the root README.
 
-4. Optional: Project board per track
+## Links
 
-- Columns: MCP, DB, DevEx, Health; filter cards by `track:*` labels
-- Saved views: per-track, “Wave 1/2/3” filters using labels/milestones
-
-## Next Actions
-
-- Kick off Wave 1 branches and post progress updates per issue.
-
-> Last updated: 2025-10-02. Keep this concise and aligned with issue comments (see Epic #6).
+- Developer setup: [../README.md](../README.md)
+- Local setup details: [SETUP.md](SETUP.md)
+- Agent guidance: [../AGENTS.md](../AGENTS.md)
+- MCP server: [../apps/mcp-server/README.md](../apps/mcp-server/README.md)

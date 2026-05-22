@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MemoryService } from './memory.service';
@@ -28,6 +23,7 @@ describe('MemoryService', () => {
     content: 'Short-term memory content',
     metadata: { source: 'test' },
     tags: ['test', 'stm'],
+    embedding: [],
     type: 'short-term',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -41,6 +37,7 @@ describe('MemoryService', () => {
     content: 'Long-term memory content',
     metadata: { source: 'test' },
     tags: ['test', 'ltm'],
+    embedding: [],
     type: 'long-term',
     createdAt: new Date(),
     updatedAt: new Date(),

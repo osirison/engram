@@ -39,8 +39,6 @@ export class HealthController {
       return '';
     }
 
-    const getPrometheusMetrics = this.embeddingsService
-      .getPrometheusMetrics as () => string;
-    return getPrometheusMetrics();
+    return this.embeddingsService.getPrometheusMetrics();
   }
 }

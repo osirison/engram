@@ -62,6 +62,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check docs
+        run: pnpm docs:check
+
       - name: Setup database
         run: |
           pnpm db:generate

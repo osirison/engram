@@ -1,10 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/require-await */
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryController } from '../src/memory/memory.controller';
@@ -36,6 +29,7 @@ const makeStmMemory = (overrides: Partial<StmMemory> = {}): StmMemory => ({
   content: 'STM tool test content',
   metadata: null,
   tags: ['tool-test'],
+  embedding: [],
   type: 'short-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -50,6 +44,7 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   content: 'LTM tool test content',
   metadata: null,
   tags: ['tool-test'],
+  embedding: [],
   type: 'long-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -57,7 +52,16 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   ...overrides,
 });
 
-const emptyPaginated = <T>() => ({
+type PaginatedFixture<T> = {
+  items: T[];
+  totalCount: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor?: string;
+  endCursor?: string;
+};
+
+const emptyPaginated = <T>(): PaginatedFixture<T> => ({
   items: [] as T[],
   totalCount: 0,
   hasNextPage: false,
@@ -66,9 +70,30 @@ const emptyPaginated = <T>() => ({
   endCursor: undefined,
 });
 
+type ToolTextResponse = { content: Array<{ type: string; text: string }> };
+type MemoryResponsePayload = { id: string; type: string };
+type ListResponsePayload = {
+  memories: unknown[];
+  pagination: {
+    totalCount: number;
+    hasNextPage: boolean;
+  };
+};
+
 /** Extract text from a tool response */
-const text = (response: { content: Array<{ type: string; text: string }> }) =>
-  response.content[0].text;
+const text = (response: ToolTextResponse): string => {
+  const firstContent = response.content[0];
+
+  if (!firstContent) {
+    throw new Error('Tool response did not include text content');
+  }
+
+  return firstContent.text;
+};
+
+const parseToolResponse = <T>(response: ToolTextResponse): T => {
+  return JSON.parse(text(response)) as T;
+};
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -263,7 +288,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<MemoryResponsePayload>(response);
       expect(parsed.id).toBe(MEMORY_ID);
       expect(parsed.type).toBe('short-term');
     });
@@ -280,7 +305,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<MemoryResponsePayload>(response);
       expect(parsed.id).toBe(MEMORY_ID);
       expect(parsed.type).toBe('long-term');
     });
@@ -341,7 +366,7 @@ describe('MCP Tools Integration', () => {
 
       const response = await controller.listMemories({ userId: USER_ID });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed).toHaveProperty('memories');
       expect(parsed).toHaveProperty('pagination');
       expect(parsed.memories).toHaveLength(2);
@@ -354,7 +379,7 @@ describe('MCP Tools Integration', () => {
 
       const response = await controller.listMemories({ userId: USER_ID });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed.memories).toHaveLength(0);
       expect(parsed.pagination.totalCount).toBe(0);
       expect(parsed.pagination.hasNextPage).toBe(false);
@@ -376,7 +401,7 @@ describe('MCP Tools Integration', () => {
         limit: 10,
       });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed.memories).toHaveLength(3);
     });
 
@@ -589,7 +614,7 @@ describe('MCP Tools Integration', () => {
         type: 'short-term',
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(response.content[0].text).toContain('Created short-term memory');
+      expect(text(response)).toContain('Created short-term memory');
     });
 
     it('get_memory handler should return not-found when memory absent', async () => {
@@ -606,7 +631,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(response.content[0].text).toBe(`Memory ${MEMORY_ID} not found`);
+      expect(text(response)).toBe(`Memory ${MEMORY_ID} not found`);
     });
 
     it('delete_memory handler should return success message', async () => {
@@ -621,9 +646,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(response.content[0].text).toBe(
-        `Successfully deleted memory ${MEMORY_ID}`,
-      );
+      expect(text(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
     });
 
     it('list_memories handler should return paginated response', async () => {
@@ -635,9 +658,9 @@ describe('MCP Tools Integration', () => {
 
       const response = (await listTool.handler({
         userId: USER_ID,
-      })) as { content: Array<{ type: string; text: string }> };
+      })) as ToolTextResponse;
 
-      const parsed = JSON.parse(response.content[0].text);
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed).toHaveProperty('memories');
       expect(parsed).toHaveProperty('pagination');
     });
@@ -648,11 +671,13 @@ describe('MCP Tools Integration', () => {
   // -------------------------------------------------------------------------
   describe('concurrent operations', () => {
     it('should handle 10 simultaneous create_memory calls', async () => {
-      stmService.create.mockImplementation(async (dto) =>
-        makeStmMemory({
-          id: `stm-concurrent-${Date.now()}`,
-          content: dto.content,
-        }),
+      stmService.create.mockImplementation((dto) =>
+        Promise.resolve(
+          makeStmMemory({
+            id: `stm-concurrent-${Date.now()}`,
+            content: dto.content,
+          }),
+        ),
       );
 
       const responses = await Promise.all(
