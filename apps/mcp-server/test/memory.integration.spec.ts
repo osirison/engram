@@ -1,3 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { MemoryService } from '../src/memory/memory.service';
@@ -282,28 +288,26 @@ describe('MemoryService Integration', () => {
         new Error('Redis connection error'),
       );
 
-      await expect(
-        service.getMemory(TEST_USER_ID, STM_ID),
-      ).rejects.toThrow('Redis connection error');
+      await expect(service.getMemory(TEST_USER_ID, STM_ID)).rejects.toThrow(
+        'Redis connection error',
+      );
     });
 
     it('should propagate non-not-found LTM errors on getMemory', async () => {
-      stmService.findById.mockRejectedValue(
-        new StmMemoryNotFoundError(LTM_ID),
-      );
+      stmService.findById.mockRejectedValue(new StmMemoryNotFoundError(LTM_ID));
       ltmService.get.mockRejectedValue(new Error('Database unreachable'));
 
-      await expect(
-        service.getMemory(TEST_USER_ID, LTM_ID),
-      ).rejects.toThrow('Database unreachable');
+      await expect(service.getMemory(TEST_USER_ID, LTM_ID)).rejects.toThrow(
+        'Database unreachable',
+      );
     });
 
     it('should propagate non-not-found STM errors on deleteMemory', async () => {
       stmService.delete.mockRejectedValue(new Error('Redis connection error'));
 
-      await expect(
-        service.deleteMemory(TEST_USER_ID, STM_ID),
-      ).rejects.toThrow('Redis connection error');
+      await expect(service.deleteMemory(TEST_USER_ID, STM_ID)).rejects.toThrow(
+        'Redis connection error',
+      );
     });
   });
 

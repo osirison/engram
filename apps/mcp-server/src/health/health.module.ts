@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 import { PrismaModule } from '@engram/database';
+import { EmbeddingsModule } from '@engram/embeddings';
 import { RedisModule } from '@engram/redis';
 import { QdrantModule } from '@engram/vector-store';
 import { HealthController } from './health.controller';
@@ -14,6 +15,7 @@ import { QdrantHealthIndicator } from './qdrant.health';
     TerminusModule,
     HttpModule,
     PrismaModule,
+    EmbeddingsModule,
     RedisModule,
     QdrantModule,
   ],

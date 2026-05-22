@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { QdrantHealthIndicator } from './qdrant.health';
 import { QdrantService } from '@engram/vector-store';
@@ -5,23 +7,25 @@ import { HealthCheckError } from '@nestjs/terminus';
 
 describe('QdrantHealthIndicator', () => {
   let indicator: QdrantHealthIndicator;
-  let qdrantService: QdrantService;
+  let qdrantService: { healthCheck: jest.Mock<Promise<boolean>, []> };
 
   beforeEach(async () => {
+    const qdrantServiceMock = {
+      healthCheck: jest.fn<Promise<boolean>, []>(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QdrantHealthIndicator,
         {
           provide: QdrantService,
-          useValue: {
-            healthCheck: jest.fn(),
-          } as Partial<QdrantService>,
+          useValue: qdrantServiceMock as Partial<QdrantService>,
         },
       ],
     }).compile();
 
     indicator = module.get<QdrantHealthIndicator>(QdrantHealthIndicator);
-    qdrantService = module.get<QdrantService>(QdrantService);
+    qdrantService = qdrantServiceMock;
   });
 
   it('should be defined', () => {
@@ -29,7 +33,7 @@ describe('QdrantHealthIndicator', () => {
   });
 
   it('should return healthy status when Qdrant is accessible', async () => {
-    jest.spyOn(qdrantService, 'healthCheck').mockResolvedValue(true);
+    qdrantService.healthCheck.mockResolvedValue(true);
 
     const result = await indicator.isHealthy('qdrant');
 
@@ -41,7 +45,7 @@ describe('QdrantHealthIndicator', () => {
   });
 
   it('should throw HealthCheckError when Qdrant is not accessible', async () => {
-    jest.spyOn(qdrantService, 'healthCheck').mockResolvedValue(false);
+    qdrantService.healthCheck.mockResolvedValue(false);
 
     await expect(indicator.isHealthy('qdrant')).rejects.toThrow(
       HealthCheckError,

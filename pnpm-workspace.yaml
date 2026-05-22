@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Allow openai to use zod v4 (openai declares a peer dep on zod ^3 but only uses
+# it for its optional structured-output helpers, which we don't use).
+peerDependencyRules:
+  allowedVersions:
+    openai>zod: "4"

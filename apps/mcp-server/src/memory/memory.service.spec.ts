@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MemoryService } from './memory.service';
@@ -75,8 +80,8 @@ describe('MemoryService', () => {
     }).compile();
 
     service = module.get<MemoryService>(MemoryService);
-    stmService = module.get(MemoryStmService);
-    ltmService = module.get(MemoryLtmService);
+    stmService = module.get<jest.Mocked<MemoryStmService>>(MemoryStmService);
+    ltmService = module.get<jest.Mocked<MemoryLtmService>>(MemoryLtmService);
   });
 
   it('should be defined', () => {

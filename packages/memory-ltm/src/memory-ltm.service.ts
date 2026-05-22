@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
 import { MemoryType, PaginatedResult } from '@engram/database';
 import { MemoryStmService } from '@engram/memory-stm';
+import { EmbeddingsService } from '@engram/embeddings';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -29,6 +30,7 @@ type PrismaMemory = {
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
+  embedding: number[];
 };
 
 @Injectable()
@@ -38,7 +40,8 @@ export class MemoryLtmService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly stmService?: MemoryStmService
+    @Optional() private readonly stmService?: MemoryStmService,
+    @Optional() private readonly embeddingsService?: EmbeddingsService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -59,6 +62,16 @@ export class MemoryLtmService {
       // Check if user has exceeded quota
       await this.checkQuota(validatedInput.userId);
 
+      // Generate embedding (non-fatal — memory creation succeeds even if this
+      // fails or the API key is absent).
+      let embedding: number[] = [];
+      if (this.embeddingsService) {
+        const result = await this.embeddingsService
+          .generate({ text: validatedInput.content })
+          .catch(() => null);
+        embedding = result?.embedding ?? [];
+      }
+
       // Create memory in database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const memory = await (this.prisma as any).memory.create({
@@ -70,6 +83,7 @@ export class MemoryLtmService {
           tags: validatedInput.tags || [],
           type: MemoryType.LONG_TERM,
           expiresAt: null,
+          embedding,
         },
       });
 
@@ -449,6 +463,7 @@ export class MemoryLtmService {
       type: 'long-term' as const,
       expiresAt: null,
       metadata: memory.metadata as Record<string, unknown> | null,
+      embedding: memory.embedding ?? [],
     };
   }
 }

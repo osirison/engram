@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@engram/database';
-import { MemoryLtmService } from './memory-ltm.service';
+import { EmbeddingsModule } from '@engram/embeddings';
+import { MemoryLtmService } from './memory-ltm.service.js';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, EmbeddingsModule],
   providers: [MemoryLtmService],
   exports: [MemoryLtmService],
 })

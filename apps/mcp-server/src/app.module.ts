@@ -10,10 +10,15 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { MemoryModule } from './memory/memory.module';
 
+const runValidateEnv = validateEnv as (
+  config: Record<string, unknown>,
+) => Record<string, unknown>;
+
 @Module({
   imports: [
     ConfigModule.forRoot({
-      validate: (config: Record<string, unknown>) => validateEnv(config),
+      validate: (config: Record<string, unknown>): Record<string, unknown> =>
+        runValidateEnv(config),
       isGlobal: true,
       envFilePath: '../../.env',
     }),

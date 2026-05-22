@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
 import { Injectable } from '@nestjs/common';
 import {
   HealthIndicator,
@@ -13,7 +16,9 @@ export class QdrantHealthIndicator extends HealthIndicator {
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    const isHealthy: boolean = await this.qdrantService.healthCheck();
+    const healthCheck = this.qdrantService
+      .healthCheck as () => Promise<boolean>;
+    const isHealthy = await healthCheck();
     const result = this.getStatus(key, isHealthy);
 
     if (isHealthy) {

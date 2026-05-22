@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { RedisModule } from '@engram/redis';
-import { MemoryStmService } from './memory-stm.service';
+import { EmbeddingsModule } from '@engram/embeddings';
+import { MemoryStmService } from './memory-stm.service.js';
 
 @Module({
-  imports: [RedisModule],
+  imports: [RedisModule, EmbeddingsModule],
   providers: [MemoryStmService],
   exports: [MemoryStmService],
 })

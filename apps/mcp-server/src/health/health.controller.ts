@@ -1,5 +1,11 @@
-import { Controller, Get } from '@nestjs/common';
-import { HealthCheck, HealthCheckService } from '@nestjs/terminus';
+import { Controller, Get, Header, Optional } from '@nestjs/common';
+import { EmbeddingsService } from '@engram/embeddings';
+import {
+  HealthCheck,
+  HealthCheckService,
+  type HealthCheckResult,
+  type HealthIndicatorResult,
+} from '@nestjs/terminus';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
@@ -11,15 +17,30 @@ export class HealthController {
     private readonly prismaHealth: PrismaHealthIndicator,
     private readonly redisHealth: RedisHealthIndicator,
     private readonly qdrantHealth: QdrantHealthIndicator,
+    @Optional() private readonly embeddingsService?: EmbeddingsService,
   ) {}
 
   @Get()
   @HealthCheck()
-  async check() {
+  async check(): Promise<HealthCheckResult> {
     return this.health.check([
-      () => this.prismaHealth.isHealthy('database'),
-      () => this.redisHealth.isHealthy('redis'),
-      () => this.qdrantHealth.isHealthy('qdrant'),
+      (): Promise<HealthIndicatorResult> =>
+        this.prismaHealth.isHealthy('database'),
+      (): Promise<HealthIndicatorResult> => this.redisHealth.isHealthy('redis'),
+      (): Promise<HealthIndicatorResult> =>
+        this.qdrantHealth.isHealthy('qdrant'),
     ]);
+  }
+
+  @Get('metrics')
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  getMetrics(): string {
+    if (!this.embeddingsService) {
+      return '';
+    }
+
+    const getPrometheusMetrics = this.embeddingsService
+      .getPrometheusMetrics as () => string;
+    return getPrometheusMetrics();
   }
 }

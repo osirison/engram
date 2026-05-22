@@ -106,6 +106,25 @@ export class QdrantService {
       payload?: Record<string, unknown>;
     }>
   ): Promise<void> {
+    this.assertCollectionName(collectionName);
+    if (points.length === 0) {
+      throw new Error('Points array must not be empty');
+    }
+
+    const expectedLength = points[0]?.vector.length ?? 0;
+    if (expectedLength <= 0) {
+      throw new Error('Point vectors must contain at least one dimension');
+    }
+
+    points.forEach((point, index) => {
+      this.assertVector(point.vector, `points[${index}].vector`);
+      if (point.vector.length !== expectedLength) {
+        throw new Error(
+          `All point vectors must have equal length. Expected ${expectedLength}, got ${point.vector.length} at index ${index}`
+        );
+      }
+    });
+
     try {
       this.logger.log(`Upserting ${points.length} points to ${collectionName}`);
       await this.client.upsert(collectionName, {
@@ -137,6 +156,10 @@ export class QdrantService {
       payload?: Record<string, unknown>;
     }>
   > {
+    this.assertCollectionName(collectionName);
+    this.assertVector(vector, 'vector');
+    this.assertLimit(limit);
+
     try {
       this.logger.log(`Searching in ${collectionName} with limit ${limit}`);
       const results = await this.client.search(collectionName, {
@@ -163,5 +186,29 @@ export class QdrantService {
    */
   getClient(): QdrantClient {
     return this.client;
+  }
+
+  private assertCollectionName(collectionName: string): void {
+    if (!collectionName.trim()) {
+      throw new Error('Collection name must not be empty');
+    }
+  }
+
+  private assertVector(vector: number[], source: string): void {
+    if (vector.length === 0) {
+      throw new Error(`${source} must contain at least one dimension`);
+    }
+
+    vector.forEach((value, index) => {
+      if (!Number.isFinite(value)) {
+        throw new Error(`${source}[${index}] must be a finite number`);
+      }
+    });
+  }
+
+  private assertLimit(limit: number): void {
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new Error('Limit must be a positive integer');
+    }
   }
 }
