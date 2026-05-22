@@ -83,3 +83,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
           REDIS_URL: redis://localhost:6379
+
+      - name: Test coverage (enforce thresholds)
+        run: pnpm --filter mcp-server test:cov
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+          REDIS_URL: redis://localhost:6379
