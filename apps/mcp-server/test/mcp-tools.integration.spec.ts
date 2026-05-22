@@ -1,3 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/require-await */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryController } from '../src/memory/memory.controller';
@@ -105,8 +112,8 @@ describe('MCP Tools Integration', () => {
     }).compile();
 
     controller = module.get<MemoryController>(MemoryController);
-    stmService = module.get(MemoryStmService);
-    ltmService = module.get(MemoryLtmService);
+    stmService = module.get<jest.Mocked<MemoryStmService>>(MemoryStmService);
+    ltmService = module.get<jest.Mocked<MemoryLtmService>>(MemoryLtmService);
   });
 
   // -------------------------------------------------------------------------
@@ -158,7 +165,9 @@ describe('MCP Tools Integration', () => {
         ttl: 3600,
       });
 
-      expect(text(response)).toBe(`Created short-term memory with ID: ${MEMORY_ID}`);
+      expect(text(response)).toBe(
+        `Created short-term memory with ID: ${MEMORY_ID}`,
+      );
     });
 
     it('should create a long-term memory and return its ID', async () => {
@@ -171,7 +180,9 @@ describe('MCP Tools Integration', () => {
         type: 'long-term',
       });
 
-      expect(text(response)).toBe(`Created long-term memory with ID: ${MEMORY_ID}`);
+      expect(text(response)).toBe(
+        `Created long-term memory with ID: ${MEMORY_ID}`,
+      );
     });
 
     it('should throw wrapped error for invalid userId (non-CUID)', async () => {
@@ -259,7 +270,9 @@ describe('MCP Tools Integration', () => {
 
     it('should return memory JSON when found via LTM fallback', async () => {
       const memory = makeLtmMemory();
-      stmService.findById.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.get.mockResolvedValue(memory);
 
       const response = await controller.getMemory({
@@ -273,7 +286,9 @@ describe('MCP Tools Integration', () => {
     });
 
     it('should return not-found message when memory does not exist', async () => {
-      stmService.findById.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.get.mockRejectedValue(new LtmMemoryNotFoundError(MEMORY_ID));
 
       const response = await controller.getMemory({
@@ -366,9 +381,9 @@ describe('MCP Tools Integration', () => {
     });
 
     it('should throw wrapped error for invalid userId', async () => {
-      await expect(
-        controller.listMemories({ userId: 'bad' }),
-      ).rejects.toThrow('Failed to list memories');
+      await expect(controller.listMemories({ userId: 'bad' })).rejects.toThrow(
+        'Failed to list memories',
+      );
     });
   });
 
@@ -395,7 +410,9 @@ describe('MCP Tools Integration', () => {
     it('should update LTM memory via fallback path', async () => {
       const original = makeLtmMemory();
       const updated = makeLtmMemory({ content: 'Updated LTM content' });
-      stmService.findById.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.get.mockResolvedValue(original);
       ltmService.update.mockResolvedValue(updated);
 
@@ -419,7 +436,9 @@ describe('MCP Tools Integration', () => {
     });
 
     it('should throw wrapped error when memory not found', async () => {
-      stmService.findById.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.get.mockResolvedValue(null);
 
       await expect(
@@ -449,7 +468,9 @@ describe('MCP Tools Integration', () => {
     });
 
     it('should return success message when memory deleted from LTM', async () => {
-      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.delete.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.delete.mockResolvedValue(true);
 
       const response = await controller.deleteMemory({
@@ -461,7 +482,9 @@ describe('MCP Tools Integration', () => {
     });
 
     it('should return not-found message when memory does not exist in either store', async () => {
-      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.delete.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.delete.mockResolvedValue(false);
 
       const response = await controller.deleteMemory({
@@ -570,7 +593,9 @@ describe('MCP Tools Integration', () => {
     });
 
     it('get_memory handler should return not-found when memory absent', async () => {
-      stmService.findById.mockRejectedValue(new StmMemoryNotFoundError(MEMORY_ID));
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError(MEMORY_ID),
+      );
       ltmService.get.mockRejectedValue(new LtmMemoryNotFoundError(MEMORY_ID));
 
       const tools = controller.getMcpTools();
@@ -624,7 +649,10 @@ describe('MCP Tools Integration', () => {
   describe('concurrent operations', () => {
     it('should handle 10 simultaneous create_memory calls', async () => {
       stmService.create.mockImplementation(async (dto) =>
-        makeStmMemory({ id: `stm-concurrent-${Date.now()}`, content: dto.content }),
+        makeStmMemory({
+          id: `stm-concurrent-${Date.now()}`,
+          content: dto.content,
+        }),
       );
 
       const responses = await Promise.all(

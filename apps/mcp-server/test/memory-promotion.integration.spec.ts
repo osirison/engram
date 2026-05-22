@@ -1,3 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/require-await */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryService } from '../src/memory/memory.service';
@@ -131,23 +138,19 @@ describe('MemoryService Promotion Integration', () => {
   // -------------------------------------------------------------------------
   describe('promotion error handling', () => {
     it('should propagate LtmMemoryNotFoundError when STM memory does not exist', async () => {
-      ltmService.promote.mockRejectedValue(
-        new LtmMemoryNotFoundError(STM_ID),
-      );
+      ltmService.promote.mockRejectedValue(new LtmMemoryNotFoundError(STM_ID));
 
-      await expect(
-        service.promoteMemory(TEST_USER_ID, STM_ID),
-      ).rejects.toThrow(LtmMemoryNotFoundError);
+      await expect(service.promoteMemory(TEST_USER_ID, STM_ID)).rejects.toThrow(
+        LtmMemoryNotFoundError,
+      );
     });
 
     it('should propagate LtmMemoryNotFoundError when STM memory not found', async () => {
-      ltmService.promote.mockRejectedValue(
-        new StmMemoryNotFoundError(STM_ID),
-      );
+      ltmService.promote.mockRejectedValue(new StmMemoryNotFoundError(STM_ID));
 
-      await expect(
-        service.promoteMemory(TEST_USER_ID, STM_ID),
-      ).rejects.toThrow(StmMemoryNotFoundError);
+      await expect(service.promoteMemory(TEST_USER_ID, STM_ID)).rejects.toThrow(
+        StmMemoryNotFoundError,
+      );
     });
 
     it('should propagate unexpected LTM service errors', async () => {
@@ -155,9 +158,9 @@ describe('MemoryService Promotion Integration', () => {
         new Error('Database connection error'),
       );
 
-      await expect(
-        service.promoteMemory(TEST_USER_ID, STM_ID),
-      ).rejects.toThrow('Database connection error');
+      await expect(service.promoteMemory(TEST_USER_ID, STM_ID)).rejects.toThrow(
+        'Database connection error',
+      );
     });
   });
 

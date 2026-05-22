@@ -3,6 +3,71 @@ import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
 import { MemoryLtmService, LtmMemoryNotFoundError } from '@engram/memory-ltm';
 import { Memory } from '@engram/database';
 
+type MemoryListResult = {
+  items: Memory[];
+  totalCount: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor?: string;
+  endCursor?: string;
+};
+
+type StmServiceContract = {
+  create: (input: {
+    userId: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+    tags?: string[];
+    ttl?: number;
+  }) => Promise<Memory>;
+  findById: (userId: string, memoryId: string) => Promise<Memory>;
+  update: (
+    userId: string,
+    memoryId: string,
+    input: {
+      content?: string;
+      metadata?: Record<string, unknown>;
+      tags?: string[];
+      ttl?: number;
+    },
+  ) => Promise<Memory>;
+  delete: (userId: string, memoryId: string) => Promise<void>;
+  list: (
+    userId: string,
+    options: { limit: number },
+  ) => Promise<MemoryListResult>;
+};
+
+type LtmServiceContract = {
+  create: (input: {
+    userId: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+    tags?: string[];
+  }) => Promise<Memory>;
+  get: (userId: string, memoryId: string) => Promise<Memory | null>;
+  update: (
+    userId: string,
+    memoryId: string,
+    input: {
+      content?: string;
+      metadata?: Record<string, unknown>;
+      tags?: string[];
+    },
+  ) => Promise<Memory>;
+  delete: (userId: string, memoryId: string) => Promise<boolean>;
+  list: (
+    userId: string,
+    options: {
+      limit: number;
+      cursor?: string;
+      tags?: string[];
+      search?: string;
+    },
+  ) => Promise<MemoryListResult>;
+  promote: (userId: string, memoryId: string) => Promise<Memory>;
+};
+
 export interface CreateMemoryDto {
   userId: string;
   content: string;
@@ -38,11 +103,16 @@ export interface PaginatedMemories {
 @Injectable()
 export class MemoryService {
   private readonly logger = new Logger(MemoryService.name);
+  private readonly stm: StmServiceContract;
+  private readonly ltm: LtmServiceContract;
 
   constructor(
     private readonly stmService: MemoryStmService,
     private readonly ltmService: MemoryLtmService,
-  ) {}
+  ) {
+    this.stm = this.stmService as unknown as StmServiceContract;
+    this.ltm = this.ltmService as unknown as LtmServiceContract;
+  }
 
   /**
    * Create a memory - routes to STM or LTM based on type
@@ -52,7 +122,7 @@ export class MemoryService {
 
     if (dto.type === 'short-term') {
       // Create short-term memory with TTL
-      return await this.stmService.create({
+      return await this.stm.create({
         userId: dto.userId,
         content: dto.content,
         metadata: dto.metadata,
@@ -61,7 +131,7 @@ export class MemoryService {
       });
     } else {
       // Create long-term memory
-      return await this.ltmService.create({
+      return await this.ltm.create({
         userId: dto.userId,
         content: dto.content,
         metadata: dto.metadata,
@@ -78,14 +148,14 @@ export class MemoryService {
 
     try {
       // Try STM first (faster access)
-      const stmMemory = await this.stmService.findById(userId, memoryId);
+      const stmMemory = await this.stm.findById(userId, memoryId);
       return stmMemory;
     } catch (error) {
       if (error instanceof StmMemoryNotFoundError) {
         // Not in STM, try LTM
         this.logger.debug(`Memory ${memoryId} not found in STM, checking LTM`);
         try {
-          const ltmMemory = await this.ltmService.get(userId, memoryId);
+          const ltmMemory = await this.ltm.get(userId, memoryId);
           return ltmMemory;
         } catch (ltmError) {
           if (ltmError instanceof LtmMemoryNotFoundError) {
@@ -116,10 +186,10 @@ export class MemoryService {
     // Get memories from both services
     // Note: STM list is not fully implemented yet, but we'll call it anyway
     const [stmResult, ltmResult] = await Promise.all([
-      this.stmService
+      this.stm
         .list(userId, { limit })
         .catch(() => ({ items: [] as Memory[], totalCount: 0 })),
-      this.ltmService.list(userId, {
+      this.ltm.list(userId, {
         limit,
         cursor: options.cursor,
         tags: options.tags,
@@ -171,10 +241,10 @@ export class MemoryService {
     // Try to find the memory first to determine which service to use
     try {
       // Try STM first
-      await this.stmService.findById(userId, memoryId);
+      await this.stm.findById(userId, memoryId);
 
       // Found in STM, update it
-      return await this.stmService.update(userId, memoryId, {
+      return await this.stm.update(userId, memoryId, {
         content: updates.content,
         metadata: updates.metadata,
         tags: updates.tags ?? ([] as string[]),
@@ -185,13 +255,13 @@ export class MemoryService {
         // Not in STM, try LTM
         this.logger.debug(`Memory ${memoryId} not in STM, trying LTM`);
 
-        const ltmMemory = await this.ltmService.get(userId, memoryId);
+        const ltmMemory = await this.ltm.get(userId, memoryId);
         if (!ltmMemory) {
           throw new NotFoundException(`Memory ${memoryId} not found`);
         }
 
         // Update in LTM (TTL is ignored for LTM)
-        return await this.ltmService.update(userId, memoryId, {
+        return await this.ltm.update(userId, memoryId, {
           content: updates.content,
           metadata: updates.metadata,
           tags: updates.tags,
@@ -212,7 +282,7 @@ export class MemoryService {
 
     // Try to delete from STM
     try {
-      await this.stmService.delete(userId, memoryId);
+      await this.stm.delete(userId, memoryId);
       deletedFromStm = true;
       this.logger.debug(`Memory ${memoryId} deleted from STM`);
     } catch (error) {
@@ -223,7 +293,7 @@ export class MemoryService {
 
     // Try to delete from LTM
     try {
-      deletedFromLtm = await this.ltmService.delete(userId, memoryId);
+      deletedFromLtm = await this.ltm.delete(userId, memoryId);
       if (deletedFromLtm) {
         this.logger.debug(`Memory ${memoryId} deleted from LTM`);
       }
@@ -246,6 +316,6 @@ export class MemoryService {
     );
 
     // Use LTM service's promote method which handles the transfer
-    return await this.ltmService.promote(userId, memoryId);
+    return await this.ltm.promote(userId, memoryId);
   }
 }

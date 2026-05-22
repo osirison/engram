@@ -4,6 +4,18 @@ import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
 import { MemoryController } from './memory/memory.controller';
 
+type McpHandlerContract = {
+  registerAdditionalTools: (
+    tools: ReturnType<MemoryController['getMcpTools']>,
+  ) => void;
+  start: (options: {
+    name: string;
+    version: string;
+    capabilities: { tools: Record<string, never> };
+    instructions: string;
+  }) => Promise<void>;
+};
+
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
@@ -21,8 +33,8 @@ async function bootstrap(): Promise<void> {
   );
 
   // Initialize MCP handler with memory tools
-  const mcpHandler = app.get(McpHandler);
-  const memoryController = app.get(MemoryController);
+  const mcpHandler = app.get<McpHandlerContract>(McpHandler);
+  const memoryController = app.get<MemoryController>(MemoryController);
 
   try {
     // Register memory tools before initializing MCP server
