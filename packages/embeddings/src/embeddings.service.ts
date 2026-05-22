@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { RedisService } from '@engram/redis';
 import {
@@ -7,7 +7,8 @@ import {
   type GenerateEmbeddingInput,
   generateEmbeddingSchema,
 } from './types.js';
-import { OpenAIEmbeddingProvider } from './providers/openai-embedding.provider.js';
+import type { EmbeddingProvider } from './providers/embedding-provider.interface.js';
+import { EMBEDDING_PROVIDER_TOKEN } from './providers/provider.tokens.js';
 
 @Injectable()
 export class EmbeddingsService {
@@ -15,7 +16,7 @@ export class EmbeddingsService {
 
   constructor(
     @Optional() private readonly redis?: RedisService,
-    private readonly provider: OpenAIEmbeddingProvider = new OpenAIEmbeddingProvider(),
+    @Optional() @Inject(EMBEDDING_PROVIDER_TOKEN) private readonly provider?: EmbeddingProvider,
   ) {}
 
   /**
@@ -53,7 +54,10 @@ export class EmbeddingsService {
     }
 
     // Generate via provider
-    const embedding = await this.provider.generate(text, model);
+    const embedding = await this.provider?.generate(text, model).catch((error) => {
+      this.logger.warn('Embedding provider call failed', error);
+      return null;
+    });
     if (!embedding) {
       this.logger.warn('Embedding provider returned no vector');
       return null;

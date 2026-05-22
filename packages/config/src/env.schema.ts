@@ -12,6 +12,8 @@ export const envSchema = z.object({
   QDRANT_URL: z.string().url(),
   /** Optional — when absent, embedding generation is silently disabled. */
   OPENAI_API_KEY: z.string().optional(),
+  /** Optional embedding provider selection, defaults to OpenAI. */
+  EMBEDDING_PROVIDER: z.enum(['openai', 'disabled']).optional().default('openai'),
 });
 
 /**

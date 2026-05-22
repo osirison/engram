@@ -66,6 +66,7 @@ if (result) {
 | Environment variable | Required | Default | Description |
 |---|---|---|---|
 | `OPENAI_API_KEY` | No | — | OpenAI API key. Embeddings are disabled when not set. |
+| `EMBEDDING_PROVIDER` | No | `openai` | Embedding provider selection (`openai` or `disabled`). |
 
 ## Models
 
@@ -80,6 +81,24 @@ if (result) {
 - TTL: 30 days (configurable via `EMBEDDING_CACHE_TTL`)
 - Normalisation: `text.trim().toLowerCase()` before hashing
 - Cache failures are silently ignored — the service falls through to a fresh API call
+
+## Backfill existing long-term memories
+
+The package ships with a batch backfill script for PostgreSQL long-term memories where `embedding` is still empty.
+
+```bash
+# 1) Build the package
+npx pnpm --filter @engram/embeddings build
+
+# 2) Run backfill (reads DATABASE_URL + OPENAI_API_KEY)
+npx pnpm --filter @engram/embeddings backfill:ltm
+```
+
+Optional controls:
+
+- `BACKFILL_BATCH_SIZE` (default: `100`)
+- `BACKFILL_MAX_BATCHES` (default: unlimited)
+- `BACKFILL_DRY_RUN=true` (calculate candidates without persisting updates)
 
 ## Error handling
 

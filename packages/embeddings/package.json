@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "backfill:ltm": "node dist/scripts/backfill-ltm-embeddings.js"
   },
   "keywords": [
     "engram",
@@ -30,6 +31,7 @@
     "vitest": "^4.0.9"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.0",
     "@engram/redis": "workspace:*",
     "@nestjs/common": "^11.1.9",
     "openai": "^4.0.0",

@@ -1,7 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
-  "globalEnv": ["NODE_ENV", "LOG_LEVEL", "PORT", "DATABASE_URL", "REDIS_URL", "QDRANT_URL", "OPENAI_API_KEY"],
+  "globalEnv": ["NODE_ENV", "LOG_LEVEL", "PORT", "DATABASE_URL", "REDIS_URL", "QDRANT_URL", "OPENAI_API_KEY", "EMBEDDING_PROVIDER"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
