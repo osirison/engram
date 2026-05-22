@@ -25,6 +25,7 @@
     "@engram/config": "workspace:^",
     "@engram/core": "workspace:^",
     "@engram/database": "workspace:^",
+    "@engram/embeddings": "workspace:^",
     "@engram/memory-ltm": "workspace:^",
     "@engram/memory-stm": "workspace:^",
     "@engram/redis": "workspace:^",
@@ -99,6 +100,7 @@
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@engram/database$": "<rootDir>/../../packages/database/src/index.ts",
+      "^@engram/embeddings$": "<rootDir>/../../packages/embeddings/src/index.ts",
       "^@engram/redis$": "<rootDir>/src/__mocks__/@engram/redis.ts",
       "^@engram/vector-store$": "<rootDir>/../../packages/vector-store/src/index.ts",
       "^@engram/config$": "<rootDir>/../../packages/config/src/index.ts",

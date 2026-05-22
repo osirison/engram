@@ -139,6 +139,27 @@ describe('QdrantService', () => {
         points,
       });
     });
+
+    it('should reject empty points array', async () => {
+      await expect(service.upsertPoints('test-collection', [])).rejects.toThrow(
+        'Points array must not be empty'
+      );
+    });
+
+    it('should reject inconsistent vector dimensions', async () => {
+      await expect(
+        service.upsertPoints('test-collection', [
+          { id: '1', vector: [0.1, 0.2] },
+          { id: '2', vector: [0.2] },
+        ])
+      ).rejects.toThrow('All point vectors must have equal length');
+    });
+
+    it('should reject non-finite vector values', async () => {
+      await expect(
+        service.upsertPoints('test-collection', [{ id: '1', vector: [0.1, Number.NaN] }])
+      ).rejects.toThrow('points[0].vector[1] must be a finite number');
+    });
   });
 
   describe('search', () => {
@@ -168,6 +189,24 @@ describe('QdrantService', () => {
         vector: [0.1, 0.2],
         limit: 10,
       });
+    });
+
+    it('should reject empty vectors', async () => {
+      await expect(service.search('test-collection', [])).rejects.toThrow(
+        'vector must contain at least one dimension'
+      );
+    });
+
+    it('should reject non-finite vector values', async () => {
+      await expect(
+        service.search('test-collection', [0.1, Number.POSITIVE_INFINITY])
+      ).rejects.toThrow('vector[1] must be a finite number');
+    });
+
+    it('should reject invalid limits', async () => {
+      await expect(service.search('test-collection', [0.1, 0.2], 0)).rejects.toThrow(
+        'Limit must be a positive integer'
+      );
     });
   });
 

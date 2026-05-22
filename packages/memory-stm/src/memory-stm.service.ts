@@ -26,7 +26,7 @@ export class MemoryStmService {
 
   constructor(
     private readonly redisService: RedisService,
-    @Optional() private readonly embeddingsService?: EmbeddingsService,
+    @Optional() private readonly embeddingsService?: EmbeddingsService
   ) {
     this.config = { ...DEFAULT_STM_CONFIG };
     this.keyBuilder = new StmKeyBuilder(this.config.keyPrefix);
@@ -51,12 +51,12 @@ export class MemoryStmService {
 
     // Generate embedding (non-fatal — memory creation succeeds even if this
     // fails or the API key is absent).
-    let embedding: number[] = [];
+    let embedding: number[] | null = null;
     if (this.embeddingsService) {
       const result = await this.embeddingsService
         .generate({ text: validatedInput.content })
         .catch(() => null);
-      embedding = result?.embedding ?? [];
+      embedding = result?.embedding ?? null;
     }
 
     // Create memory object

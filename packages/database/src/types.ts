@@ -15,7 +15,7 @@ export interface Memory {
   content: string;
   metadata?: Record<string, unknown> | null;
   tags: string[];
-  embedding: number[];
+  embedding: number[] | null;
   type: string;
   createdAt: Date;
   updatedAt: Date;

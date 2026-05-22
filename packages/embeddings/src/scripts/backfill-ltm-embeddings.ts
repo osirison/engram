@@ -10,6 +10,8 @@ import {
 import type { EmbeddingProvider } from '../providers/embedding-provider.interface.js';
 
 const DEFAULT_BATCH_SIZE = 100;
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_BASE_DELAY_MS = 250;
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -40,6 +42,47 @@ function logError(event: string, metadata: Record<string, unknown>): void {
   console.error(JSON.stringify({ event, ...metadata }));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function withRetry<T>(
+  operation: string,
+  fn: () => Promise<T>,
+  retryAttempts: number,
+  retryBaseDelayMs: number,
+  metadata: Record<string, unknown>
+): Promise<T> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt < retryAttempts) {
+    attempt += 1;
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retryAttempts) {
+        break;
+      }
+
+      const delayMs = retryBaseDelayMs * 2 ** (attempt - 1);
+      logError(`embedding.backfill.${operation}_retry`, {
+        ...metadata,
+        attempt,
+        retryAttempts,
+        delayMs,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 async function backfill(): Promise<void> {
   const prisma = new PrismaClient();
   const providerName =
@@ -50,6 +93,14 @@ async function backfill(): Promise<void> {
   const batchSize = parsePositiveInt(process.env['BACKFILL_BATCH_SIZE'], DEFAULT_BATCH_SIZE);
   const maxBatches = parsePositiveInt(process.env['BACKFILL_MAX_BATCHES'], Number.MAX_SAFE_INTEGER);
   const dryRun = process.env['BACKFILL_DRY_RUN'] === 'true';
+  const retryAttempts = parsePositiveInt(
+    process.env['BACKFILL_RETRY_ATTEMPTS'],
+    DEFAULT_RETRY_ATTEMPTS
+  );
+  const retryBaseDelayMs = parsePositiveInt(
+    process.env['BACKFILL_RETRY_BASE_DELAY_MS'],
+    DEFAULT_RETRY_BASE_DELAY_MS
+  );
 
   let totalScanned = 0;
   let totalUpdated = 0;
@@ -63,6 +114,8 @@ async function backfill(): Promise<void> {
     maxBatches,
     dryRun,
     providerName,
+    retryAttempts,
+    retryBaseDelayMs,
   });
 
   try {
@@ -97,17 +150,21 @@ async function backfill(): Promise<void> {
       cursorId = memories[memories.length - 1]?.id;
 
       for (const memory of memories) {
-        const embedding = await provider
-          .generate(memory.content, DEFAULT_EMBEDDING_MODEL)
-          .catch((error) => {
-            totalProviderErrors += 1;
-            logError('embedding.backfill.provider_error', {
-              memoryId: memory.id,
-              error: error instanceof Error ? error.message : String(error),
-              totalProviderErrors,
-            });
-            return null;
+        const embedding = await withRetry(
+          'provider',
+          async () => provider.generate(memory.content, DEFAULT_EMBEDDING_MODEL),
+          retryAttempts,
+          retryBaseDelayMs,
+          { memoryId: memory.id }
+        ).catch((error) => {
+          totalProviderErrors += 1;
+          logError('embedding.backfill.provider_error', {
+            memoryId: memory.id,
+            error: error instanceof Error ? error.message : String(error),
+            totalProviderErrors,
           });
+          return null;
+        });
 
         if (!embedding || embedding.length === 0) {
           totalSkipped += 1;
@@ -115,10 +172,17 @@ async function backfill(): Promise<void> {
         }
 
         if (!dryRun) {
-          await prisma.memory.update({
-            where: { id: memory.id },
-            data: { embedding },
-          });
+          await withRetry(
+            'db_update',
+            async () =>
+              prisma.memory.update({
+                where: { id: memory.id },
+                data: { embedding },
+              }),
+            retryAttempts,
+            retryBaseDelayMs,
+            { memoryId: memory.id }
+          );
         }
 
         totalUpdated += 1;

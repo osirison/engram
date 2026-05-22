@@ -61,6 +61,9 @@ The `/health` endpoint provides comprehensive health status for all service depe
 # Check overall health (all services)
 curl http://localhost:3000/health
 
+# Scrape Prometheus metrics for embeddings counters
+curl http://localhost:3000/health/metrics
+
 # Response when healthy (HTTP 200):
 # {
 #   "status": "ok",
@@ -119,6 +122,8 @@ curl http://localhost:3000/health
 - **Qdrant** - Vector database connection
 
 **Performance:** Health checks are optimized for fast response times (<100ms) using simple connectivity tests.
+
+The `/health/metrics` endpoint returns Prometheus text-format counters from the embeddings service.
 
 ### Additional Endpoints
 

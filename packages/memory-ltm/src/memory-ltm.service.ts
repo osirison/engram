@@ -30,7 +30,7 @@ type PrismaMemory = {
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
-  embedding: number[];
+  embedding: number[] | null;
 };
 
 @Injectable()
@@ -41,7 +41,7 @@ export class MemoryLtmService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly stmService?: MemoryStmService,
-    @Optional() private readonly embeddingsService?: EmbeddingsService,
+    @Optional() private readonly embeddingsService?: EmbeddingsService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -64,12 +64,12 @@ export class MemoryLtmService {
 
       // Generate embedding (non-fatal — memory creation succeeds even if this
       // fails or the API key is absent).
-      let embedding: number[] = [];
+      let embedding: number[] | null = null;
       if (this.embeddingsService) {
         const result = await this.embeddingsService
           .generate({ text: validatedInput.content })
           .catch(() => null);
-        embedding = result?.embedding ?? [];
+        embedding = result?.embedding ?? null;
       }
 
       // Create memory in database
@@ -463,7 +463,7 @@ export class MemoryLtmService {
       type: 'long-term' as const,
       expiresAt: null,
       metadata: memory.metadata as Record<string, unknown> | null,
-      embedding: memory.embedding ?? [],
+      embedding: memory.embedding ?? null,
     };
   }
 }

@@ -22,7 +22,7 @@ describe('MemoryLtmModule integration', () => {
             createdAt: new Date('2026-01-01T00:00:00.000Z'),
             updatedAt: new Date('2026-01-01T00:00:00.000Z'),
             ...data,
-          }),
+          })
         ),
       },
     };
@@ -45,7 +45,7 @@ describe('MemoryLtmModule integration', () => {
               prisma as any,
               undefined,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              embeddings as any,
+              embeddings as any
             ),
         },
       ],
@@ -72,7 +72,7 @@ describe('MemoryLtmModule integration', () => {
     });
   });
 
-  it('stores an empty embedding vector when provider fails', async () => {
+  it('stores a null embedding when provider fails', async () => {
     embeddings.generate.mockRejectedValueOnce(new Error('provider down'));
 
     await service.create({
@@ -82,7 +82,7 @@ describe('MemoryLtmModule integration', () => {
 
     expect(prisma.memory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        embedding: [],
+        embedding: null,
       }),
     });
   });

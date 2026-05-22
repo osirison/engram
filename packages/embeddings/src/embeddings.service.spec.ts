@@ -81,8 +81,11 @@ describe('EmbeddingsService', () => {
 
       expect(redis.set).toHaveBeenCalledOnce();
       const [key, value, ttl] = redis.set.mock.calls[0] as [string, string, number];
-      expect(key).toMatch(/^embedding:[0-9a-f]{32}$/);
-      expect(JSON.parse(value)).toEqual(FAKE_VECTOR);
+      expect(key).toMatch(/^embedding:text-embedding-3-small:[0-9a-f]{32}$/);
+      expect(JSON.parse(value)).toEqual({
+        embedding: FAKE_VECTOR,
+        model: DEFAULT_EMBEDDING_MODEL,
+      });
       expect(ttl).toBe(60 * 60 * 24 * 30);
     });
   });
@@ -90,21 +93,29 @@ describe('EmbeddingsService', () => {
   describe('generate - cache hit', () => {
     it('returns cached embedding without calling provider', async () => {
       const redis = makeRedis({
-        get: vi.fn().mockResolvedValue(JSON.stringify(FAKE_VECTOR)),
+        get: vi
+          .fn()
+          .mockResolvedValue(
+            JSON.stringify({ embedding: FAKE_VECTOR, model: 'text-embedding-3-large' })
+          ),
       });
       const service = new EmbeddingsService(redis as never, provider);
 
-      const result = await service.generate({ text: 'cached text' });
+      const result = await service.generate({
+        text: 'cached text',
+        model: 'text-embedding-3-large',
+      });
 
       expect(result).not.toBeNull();
       expect(result!.embedding).toEqual(FAKE_VECTOR);
       expect(result!.cached).toBe(true);
+      expect(result!.model).toBe('text-embedding-3-large');
       expect(provider.generate).not.toHaveBeenCalled();
     });
   });
 
-  describe('cache key normalization', () => {
-    it('produces the same key for text with different casing/whitespace', async () => {
+  describe('cache key behavior', () => {
+    it('uses exact input text in key hashing', async () => {
       const redis = makeRedis();
       const service = new EmbeddingsService(redis as never, provider);
 
@@ -113,7 +124,19 @@ describe('EmbeddingsService', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       const keys = redis.set.mock.calls.map((call: unknown[]) => call[0] as string);
-      expect(keys[0]).toBe(keys[1]);
+      expect(keys[0]).not.toBe(keys[1]);
+    });
+
+    it('includes model in the key to isolate model-specific vectors', async () => {
+      const redis = makeRedis();
+      const service = new EmbeddingsService(redis as never, provider);
+
+      await service.generate({ text: 'same text', model: 'text-embedding-3-small' });
+      await service.generate({ text: 'same text', model: 'text-embedding-3-large' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const keys = redis.set.mock.calls.map((call: unknown[]) => call[0] as string);
+      expect(keys[0]).not.toBe(keys[1]);
     });
   });
 
@@ -184,6 +207,28 @@ describe('EmbeddingsService', () => {
 
       expect(result?.model).toBe('text-embedding-3-large');
       expect(provider.generate).toHaveBeenCalledWith('large model', 'text-embedding-3-large');
+    });
+  });
+
+  describe('prometheus metrics export', () => {
+    it('exports counters in prometheus format', async () => {
+      const redis = makeRedis({
+        get: vi
+          .fn()
+          .mockResolvedValue(
+            JSON.stringify({ embedding: FAKE_VECTOR, model: DEFAULT_EMBEDDING_MODEL })
+          ),
+      });
+      const service = new EmbeddingsService(redis as never, provider);
+
+      await service.generate({ text: 'metric 1' });
+
+      const metrics = service.getPrometheusMetrics();
+
+      expect(metrics).toContain('# TYPE engram_embeddings_requests_total counter');
+      expect(metrics).toContain('engram_embeddings_requests_total 1');
+      expect(metrics).toContain('engram_embeddings_cacheHits_total 1');
+      expect(metrics).toContain('engram_embeddings_providerSuccess_total 0');
     });
   });
 });

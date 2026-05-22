@@ -5,7 +5,7 @@ NestJS module for generating semantic embeddings via OpenAI, with transparent Re
 ## Features
 
 - Generates vector embeddings using OpenAI `text-embedding-3-small` (1 536 dims) or `text-embedding-3-large` (3 072 dims)
-- Caches embeddings in Redis for 30 days — normalises the input text before hashing to maximise cache hits
+- Caches embeddings in Redis for 30 days with exact-input hashing and model-aware keys
 - Degrades gracefully: returns `null` instead of throwing when the API key is absent or OpenAI is unavailable, so that callers (memory services) are never blocked by an embedding failure
 - Input validation with Zod (max 8 191 characters)
 
@@ -75,9 +75,9 @@ if (result) {
 
 ## Cache behaviour
 
-- Keys: `embedding:<sha256(normalised_text).slice(0,32)>`
+- Keys: `embedding:<model>:<sha256(text).slice(0,32)>`
 - TTL: 30 days (configurable via `EMBEDDING_CACHE_TTL`)
-- Normalisation: `text.trim().toLowerCase()` before hashing
+- Input matching: cache keys are generated from exact text bytes, no trimming or case folding
 - Cache failures are silently ignored — the service falls through to a fresh API call
 
 ## Backfill existing long-term memories
@@ -97,6 +97,8 @@ Optional controls:
 - `BACKFILL_BATCH_SIZE` (default: `100`)
 - `BACKFILL_MAX_BATCHES` (default: unlimited)
 - `BACKFILL_DRY_RUN=true` (calculate candidates without persisting updates)
+- `BACKFILL_RETRY_ATTEMPTS` (default: `3`)
+- `BACKFILL_RETRY_BASE_DELAY_MS` (default: `250`, exponential backoff per retry)
 
 ## Error handling
 
@@ -125,3 +127,10 @@ It also tracks in-memory counters (`getCounters()`) for:
 - `providerNull`
 - `cacheReadErrors`
 - `cacheWriteErrors`
+
+For metrics scraping, use `getPrometheusMetrics()` to expose counters in Prometheus text format:
+
+```typescript
+const metricsText = embeddingsService.getPrometheusMetrics();
+// Example line: engram_embeddings_requests_total 42
+```

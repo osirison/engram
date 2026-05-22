@@ -3,7 +3,9 @@ import { createHash } from 'crypto';
 import { RedisService } from '@engram/redis';
 import {
   EMBEDDING_CACHE_TTL,
+  EMBEDDING_MODELS,
   type EmbeddingResult,
+  type EmbeddingModel,
   type GenerateEmbeddingInput,
   generateEmbeddingSchema,
 } from './types.js';
@@ -22,6 +24,8 @@ export class EmbeddingsService {
     cacheReadErrors: 0,
     cacheWriteErrors: 0,
   };
+
+  private static readonly METRIC_PREFIX = 'engram_embeddings';
 
   constructor(
     @Optional() private readonly redis?: RedisService,
@@ -45,23 +49,32 @@ export class EmbeddingsService {
 
     const { text, model } = parsed.data;
 
-    const cacheKey = this.buildCacheKey(text);
+    const cacheKey = this.buildCacheKey(text, model);
 
     // Try cache first
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) {
-          this.counters.cacheHits += 1;
-          this.logStructured('debug', 'embedding.generate.cache_hit', {
+          const parsedCached = this.parseCachedEmbedding(cached, model);
+          if (parsedCached) {
+            this.counters.cacheHits += 1;
+            this.logStructured('debug', 'embedding.generate.cache_hit', {
+              cacheKey,
+              counters: this.counters,
+            });
+            return {
+              embedding: parsedCached.embedding,
+              model: parsedCached.model,
+              cached: true,
+            };
+          }
+
+          this.counters.cacheReadErrors += 1;
+          this.logStructured('warn', 'embedding.generate.cache_parse_error', {
             cacheKey,
             counters: this.counters,
           });
-          return {
-            embedding: JSON.parse(cached) as number[],
-            model,
-            cached: true,
-          };
         }
       } catch (err) {
         this.counters.cacheReadErrors += 1;
@@ -95,7 +108,7 @@ export class EmbeddingsService {
 
     // Persist to cache asynchronously — don't block the response
     if (this.redis) {
-      void this.cacheEmbedding(cacheKey, embedding);
+      void this.cacheEmbedding(cacheKey, embedding, model);
     }
 
     this.logStructured('debug', 'embedding.generate.success', {
@@ -112,9 +125,27 @@ export class EmbeddingsService {
     return { ...this.counters };
   }
 
-  private async cacheEmbedding(key: string, embedding: number[]): Promise<void> {
+  getPrometheusMetrics(): string {
+    const counters = this.getCounters();
+    const lines = Object.entries(counters).flatMap(([name, value]) => {
+      const metricName = `${EmbeddingsService.METRIC_PREFIX}_${name}_total`;
+      return [
+        `# HELP ${metricName} Total number of embedding ${name} events.`,
+        `# TYPE ${metricName} counter`,
+        `${metricName} ${value}`,
+      ];
+    });
+
+    return `${lines.join('\n')}\n`;
+  }
+
+  private async cacheEmbedding(
+    key: string,
+    embedding: number[],
+    model: EmbeddingModel
+  ): Promise<void> {
     try {
-      await this.redis!.set(key, JSON.stringify(embedding), EMBEDDING_CACHE_TTL);
+      await this.redis!.set(key, JSON.stringify({ embedding, model }), EMBEDDING_CACHE_TTL);
       this.logStructured('debug', 'embedding.generate.cache_write_success', {
         cacheKey: key,
       });
@@ -128,10 +159,45 @@ export class EmbeddingsService {
     }
   }
 
-  private buildCacheKey(text: string): string {
-    const normalized = text.trim().toLowerCase();
-    const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 32);
-    return `embedding:${hash}`;
+  private buildCacheKey(text: string, model: EmbeddingModel): string {
+    const hash = createHash('sha256').update(text).digest('hex').slice(0, 32);
+    return `embedding:${model}:${hash}`;
+  }
+
+  private parseCachedEmbedding(
+    cachedPayload: string,
+    requestedModel: EmbeddingModel
+  ): { embedding: number[]; model: EmbeddingModel } | null {
+    const parsed = JSON.parse(cachedPayload) as unknown;
+
+    // Backward compatibility for old cache entries that stored only the vector array.
+    if (Array.isArray(parsed) && parsed.every((value) => typeof value === 'number')) {
+      return {
+        embedding: parsed,
+        model: requestedModel,
+      };
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    const model = (parsed as { model?: unknown }).model;
+    const embedding = (parsed as { embedding?: unknown }).embedding;
+
+    if (
+      !Array.isArray(embedding) ||
+      !embedding.every((value) => typeof value === 'number') ||
+      typeof model !== 'string' ||
+      !EMBEDDING_MODELS.includes(model as EmbeddingModel)
+    ) {
+      return null;
+    }
+
+    return {
+      embedding,
+      model: model as EmbeddingModel,
+    };
   }
 
   private logStructured(
