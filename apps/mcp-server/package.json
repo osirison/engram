@@ -18,7 +18,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e:docker": "docker compose -f ../../docker-compose.test.yml up -d --wait && DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test REDIS_URL=redis://localhost:6380 QDRANT_URL=http://localhost:6335 NODE_ENV=test E2E_ENABLED=true jest --config ./test/jest-e2e.json; docker compose -f ../../docker-compose.test.yml down -v"
   },
   "dependencies": {
     "@engram/config": "workspace:^",
@@ -87,6 +88,14 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
+    "coverageThreshold": {
+      "global": {
+        "statements": 80,
+        "branches": 75,
+        "functions": 80,
+        "lines": 80
+      }
+    },
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@engram/database$": "<rootDir>/../../packages/database/src/index.ts",

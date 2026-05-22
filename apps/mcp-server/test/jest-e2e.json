@@ -5,5 +5,16 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "moduleNameMapper": {
+    "^@engram/database$": "<rootDir>/../../../packages/database/src/index.ts",
+    "^@engram/redis$": "<rootDir>/../../../packages/redis/src/index.ts",
+    "^@engram/vector-store$": "<rootDir>/../../../packages/vector-store/src/index.ts",
+    "^@engram/config$": "<rootDir>/../../../packages/config/src/index.ts",
+    "^@engram/core$": "<rootDir>/../../../packages/core/src/index.ts",
+    "^@engram/memory-stm$": "<rootDir>/../../../packages/memory-stm/src/index.ts",
+    "^@engram/memory-ltm$": "<rootDir>/../../../packages/memory-ltm/src/index.ts",
+    "^(.*)\\.js$": "$1"
+  },
+  "testTimeout": 30000
 }

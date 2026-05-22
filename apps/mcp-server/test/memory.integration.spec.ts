@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { MemoryService } from '../src/memory/memory.service';
 import {
   MemoryStmService,
@@ -60,6 +60,12 @@ describe('MemoryService Integration', () => {
   let service: MemoryService;
   let stmService: jest.Mocked<MemoryStmService>;
   let ltmService: jest.Mocked<MemoryLtmService>;
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => jest.restoreAllMocks());
 
   beforeEach(async () => {
     const stmMock: Partial<jest.Mocked<MemoryStmService>> = {
