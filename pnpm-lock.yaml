@@ -112,6 +112,9 @@ importers:
       '@engram/database':
         specifier: workspace:^
         version: link:../../packages/database
+      '@engram/embeddings':
+        specifier: workspace:^
+        version: link:../../packages/embeddings
       '@engram/memory-ltm':
         specifier: workspace:^
         version: link:../../packages/memory-ltm
