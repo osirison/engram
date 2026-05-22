@@ -10,6 +10,8 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   QDRANT_URL: z.string().url(),
+  /** Optional — when absent, embedding generation is silently disabled. */
+  OPENAI_API_KEY: z.string().optional(),
 });
 
 /**

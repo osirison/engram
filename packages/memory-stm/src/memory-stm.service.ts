@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { RedisService } from '@engram/redis';
+import { EmbeddingsService } from '@engram/embeddings';
 import {
   StmMemory,
   StmConfig,
@@ -23,7 +24,10 @@ export class MemoryStmService {
   private readonly keyBuilder: StmKeyBuilder;
   private readonly config: StmConfig;
 
-  constructor(private readonly redisService: RedisService) {
+  constructor(
+    private readonly redisService: RedisService,
+    @Optional() private readonly embeddingsService?: EmbeddingsService,
+  ) {
     this.config = { ...DEFAULT_STM_CONFIG };
     this.keyBuilder = new StmKeyBuilder(this.config.keyPrefix);
   }
@@ -45,6 +49,16 @@ export class MemoryStmService {
     const memoryId = randomUUID();
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
+    // Generate embedding (non-fatal — memory creation succeeds even if this
+    // fails or the API key is absent).
+    let embedding: number[] = [];
+    if (this.embeddingsService) {
+      const result = await this.embeddingsService
+        .generate({ text: validatedInput.content })
+        .catch(() => null);
+      embedding = result?.embedding ?? [];
+    }
+
     // Create memory object
     const memory: StmMemory = {
       id: memoryId,
@@ -57,6 +71,7 @@ export class MemoryStmService {
       updatedAt: new Date(),
       expiresAt,
       ttl,
+      embedding,
     };
 
     // Store in Redis with TTL
