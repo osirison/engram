@@ -37,9 +37,7 @@ import { EmbeddingsService } from '@engram/embeddings';
 
 @Injectable()
 export class YourService {
-  constructor(
-    @Optional() private readonly embeddings?: EmbeddingsService,
-  ) {}
+  constructor(@Optional() private readonly embeddings?: EmbeddingsService) {}
 
   async doSomething(text: string) {
     const result = await this.embeddings?.generate({ text });
@@ -55,25 +53,25 @@ export class YourService {
 const result = await embeddingsService.generate({ text: 'Hello, ENGRAM!' });
 
 if (result) {
-  console.log(result.model);    // 'text-embedding-3-small'
-  console.log(result.cached);   // true | false
+  console.log(result.model); // 'text-embedding-3-small'
+  console.log(result.cached); // true | false
   console.log(result.embedding.length); // 1536
 }
 ```
 
 ## Configuration
 
-| Environment variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENAI_API_KEY` | No | — | OpenAI API key. Embeddings are disabled when not set. |
-| `EMBEDDING_PROVIDER` | No | `openai` | Embedding provider selection (`openai` or `disabled`). |
+| Environment variable | Required | Default  | Description                                                      |
+| -------------------- | -------- | -------- | ---------------------------------------------------------------- |
+| `OPENAI_API_KEY`     | No       | —        | OpenAI API key. Embeddings are disabled when not set.            |
+| `EMBEDDING_PROVIDER` | No       | `openai` | Embedding provider selection (`openai`, `local`, or `disabled`). |
 
 ## Models
 
-| Model | Dimensions | Use case |
-|---|---|---|
-| `text-embedding-3-small` | 1 536 | Default. Cost-efficient, strong general performance. |
-| `text-embedding-3-large` | 3 072 | Higher accuracy for demanding retrieval tasks. |
+| Model                    | Dimensions | Use case                                             |
+| ------------------------ | ---------- | ---------------------------------------------------- |
+| `text-embedding-3-small` | 1 536      | Default. Cost-efficient, strong general performance. |
+| `text-embedding-3-large` | 3 072      | Higher accuracy for demanding retrieval tasks.       |
 
 ## Cache behaviour
 
@@ -108,3 +106,22 @@ Optional controls:
 - Input validation fails
 - The OpenAI API call fails
 - The API returns an empty response
+
+## Observability
+
+`EmbeddingsService` emits structured logs for:
+
+- request validation failures
+- cache hit/read/write events
+- provider errors and null-vector returns
+- successful generation events with model and dimensions
+
+It also tracks in-memory counters (`getCounters()`) for:
+
+- `requests`
+- `cacheHits`
+- `providerSuccess`
+- `providerErrors`
+- `providerNull`
+- `cacheReadErrors`
+- `cacheWriteErrors`

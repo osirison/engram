@@ -1,6 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import { DEFAULT_EMBEDDING_MODEL } from '../types.js';
+import { DisabledEmbeddingProvider } from '../providers/disabled-embedding.provider.js';
+import { LocalEmbeddingProvider } from '../providers/local-embedding.provider.js';
 import { OpenAIEmbeddingProvider } from '../providers/openai-embedding.provider.js';
+import {
+  DEFAULT_EMBEDDING_PROVIDER,
+  type EmbeddingProviderName,
+} from '../providers/provider.tokens.js';
+import type { EmbeddingProvider } from '../providers/embedding-provider.interface.js';
 
 const DEFAULT_BATCH_SIZE = 100;
 
@@ -13,9 +20,32 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function selectProvider(name: EmbeddingProviderName): EmbeddingProvider {
+  switch (name) {
+    case 'disabled':
+      return new DisabledEmbeddingProvider();
+    case 'local':
+      return new LocalEmbeddingProvider();
+    case 'openai':
+    default:
+      return new OpenAIEmbeddingProvider();
+  }
+}
+
+function logInfo(event: string, metadata: Record<string, unknown>): void {
+  process.stdout.write(`${JSON.stringify({ event, ...metadata })}\n`);
+}
+
+function logError(event: string, metadata: Record<string, unknown>): void {
+  console.error(JSON.stringify({ event, ...metadata }));
+}
+
 async function backfill(): Promise<void> {
   const prisma = new PrismaClient();
-  const provider = new OpenAIEmbeddingProvider();
+  const providerName =
+    (process.env['EMBEDDING_PROVIDER'] as EmbeddingProviderName | undefined) ??
+    DEFAULT_EMBEDDING_PROVIDER;
+  const provider = selectProvider(providerName);
 
   const batchSize = parsePositiveInt(process.env['BACKFILL_BATCH_SIZE'], DEFAULT_BATCH_SIZE);
   const maxBatches = parsePositiveInt(process.env['BACKFILL_MAX_BATCHES'], Number.MAX_SAFE_INTEGER);
@@ -24,12 +54,16 @@ async function backfill(): Promise<void> {
   let totalScanned = 0;
   let totalUpdated = 0;
   let totalSkipped = 0;
+  let totalProviderErrors = 0;
   let batches = 0;
   let cursorId: string | undefined;
 
-  console.log(
-    `[backfill] starting long-term memory embeddings backfill (batchSize=${batchSize}, maxBatches=${maxBatches}, dryRun=${dryRun})`,
-  );
+  logInfo('embedding.backfill.start', {
+    batchSize,
+    maxBatches,
+    dryRun,
+    providerName,
+  });
 
   try {
     while (batches < maxBatches) {
@@ -63,7 +97,18 @@ async function backfill(): Promise<void> {
       cursorId = memories[memories.length - 1]?.id;
 
       for (const memory of memories) {
-        const embedding = await provider.generate(memory.content, DEFAULT_EMBEDDING_MODEL);
+        const embedding = await provider
+          .generate(memory.content, DEFAULT_EMBEDDING_MODEL)
+          .catch((error) => {
+            totalProviderErrors += 1;
+            logError('embedding.backfill.provider_error', {
+              memoryId: memory.id,
+              error: error instanceof Error ? error.message : String(error),
+              totalProviderErrors,
+            });
+            return null;
+          });
+
         if (!embedding || embedding.length === 0) {
           totalSkipped += 1;
           continue;
@@ -79,20 +124,32 @@ async function backfill(): Promise<void> {
         totalUpdated += 1;
       }
 
-      console.log(
-        `[backfill] batch ${batches} complete (scanned=${totalScanned}, updated=${totalUpdated}, skipped=${totalSkipped})`,
-      );
+      logInfo('embedding.backfill.batch_complete', {
+        batch: batches,
+        scanned: totalScanned,
+        updated: totalUpdated,
+        skipped: totalSkipped,
+        providerErrors: totalProviderErrors,
+      });
     }
 
-    console.log(
-      `[backfill] done (batches=${batches}, scanned=${totalScanned}, updated=${totalUpdated}, skipped=${totalSkipped}, dryRun=${dryRun})`,
-    );
+    logInfo('embedding.backfill.complete', {
+      batches,
+      scanned: totalScanned,
+      updated: totalUpdated,
+      skipped: totalSkipped,
+      providerErrors: totalProviderErrors,
+      dryRun,
+      providerName,
+    });
   } finally {
     await prisma.$disconnect();
   }
 }
 
 void backfill().catch((error) => {
-  console.error('[backfill] failed', error);
+  logError('embedding.backfill.failed', {
+    error: error instanceof Error ? error.message : String(error),
+  });
   process.exitCode = 1;
 });

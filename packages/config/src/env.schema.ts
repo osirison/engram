@@ -13,7 +13,7 @@ export const envSchema = z.object({
   /** Optional — when absent, embedding generation is silently disabled. */
   OPENAI_API_KEY: z.string().optional(),
   /** Optional embedding provider selection, defaults to OpenAI. */
-  EMBEDDING_PROVIDER: z.enum(['openai', 'disabled']).optional().default('openai'),
+  EMBEDDING_PROVIDER: z.enum(['openai', 'disabled', 'local']).optional().default('openai'),
 });
 
 /**

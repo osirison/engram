@@ -66,6 +66,10 @@ describe('EmbeddingsService', () => {
       expect(result!.model).toBe(DEFAULT_EMBEDDING_MODEL);
       expect(result!.cached).toBe(false);
       expect(provider.generate).toHaveBeenCalledWith('remember this', DEFAULT_EMBEDDING_MODEL);
+      expect(service.getCounters()).toMatchObject({
+        requests: 1,
+        providerSuccess: 1,
+      });
     });
 
     it('caches the embedding in redis after generation', async () => {
