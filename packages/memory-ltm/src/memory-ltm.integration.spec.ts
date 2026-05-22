@@ -72,7 +72,7 @@ describe('MemoryLtmModule integration', () => {
     });
   });
 
-  it('stores a null embedding when provider fails', async () => {
+  it('stores an empty embedding vector when provider fails', async () => {
     embeddings.generate.mockRejectedValueOnce(new Error('provider down'));
 
     await service.create({
@@ -82,7 +82,7 @@ describe('MemoryLtmModule integration', () => {
 
     expect(prisma.memory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        embedding: null,
+        embedding: [],
       }),
     });
   });

@@ -51,12 +51,12 @@ export class MemoryStmService {
 
     // Generate embedding (non-fatal — memory creation succeeds even if this
     // fails or the API key is absent).
-    let embedding: number[] | null = null;
+    let embedding: number[] = [];
     if (this.embeddingsService) {
       const result = await this.embeddingsService
         .generate({ text: validatedInput.content })
         .catch(() => null);
-      embedding = result?.embedding ?? null;
+      embedding = result?.embedding ?? [];
     }
 
     // Create memory object

@@ -32,7 +32,7 @@ model Memory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   expiresAt DateTime? // For short-term memories only
-  embedding Float[]?  // Vector embedding when available
+  embedding Float[]   // Vector embedding (1536 dims for text-embedding-3-small)
 
   // Relationships
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)

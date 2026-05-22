@@ -63,7 +63,7 @@ describe('MemoryStmModule integration', () => {
     expect(parsed.embedding).toEqual([0.5, 0.6, 0.7]);
   });
 
-  it('stores a null embedding in Redis when provider fails', async () => {
+  it('stores an empty embedding vector in Redis when provider fails', async () => {
     embeddings.generate.mockResolvedValueOnce(null);
 
     await service.create({
@@ -75,6 +75,6 @@ describe('MemoryStmModule integration', () => {
     const [, payload] = redis.set.mock.calls[0] as [string, string, number];
     const parsed = JSON.parse(payload);
 
-    expect(parsed.embedding).toBeNull();
+    expect(parsed.embedding).toEqual([]);
   });
 });
