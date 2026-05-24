@@ -51,7 +51,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: 8.9.0
+          version: 8.15.0
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -68,7 +68,7 @@ jobs:
       - name: Setup database
         run: |
           pnpm db:generate
-          pnpm db:migrate deploy
+          pnpm db:migrate:deploy
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
 

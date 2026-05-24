@@ -14,11 +14,12 @@ docs linked from the root README.
 Run from the repository root:
 
 ```bash
-pnpm install
-pnpm --filter docs dev
+npm exec --yes pnpm@8.15.0 -- install
+npm exec --yes pnpm@8.15.0 -- --filter docs dev
 ```
 
 Open `http://localhost:3001`.
+Command tables use the shorter `pnpm` form after pnpm is installed.
 
 ## Commands
 

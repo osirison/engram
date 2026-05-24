@@ -7,22 +7,26 @@ description: Local development and MCP client setup for ENGRAM
 
 Install these tools before starting:
 
-- Node.js 20 or newer
-- pnpm 8 or newer
-- Docker and Docker Compose
+- Node.js 20 or newer with npm
+- Docker and Docker Compose v2
 - Git
+- Optional: pnpm 8.15.0 on your `PATH`
+
+The repository pins `pnpm@8.15.0`. When `pnpm` is not installed, replace the
+leading `pnpm` in any command with `npm exec --yes pnpm@8.15.0 --`.
 
 ## First Run
 
 Run all commands from the repository root.
 
 ```bash
-pnpm install
-cp .env.example .env
-pnpm docker:up
-pnpm db:generate
-pnpm db:migrate
-pnpm --filter mcp-server dev
+npm exec --yes pnpm@8.15.0 -- install
+test -f .env || cp .env.example .env
+npm exec --yes pnpm@8.15.0 -- docker:up
+npm exec --yes pnpm@8.15.0 -- db:generate
+npm exec --yes pnpm@8.15.0 -- db:migrate
+npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
 ```
 
 Open a second terminal and verify the server:
@@ -53,21 +57,25 @@ Docker Compose starts the backing services used by the MCP server.
 
 | Task                          | Command               |
 | ----------------------------- | --------------------- |
-| Start services                | `pnpm docker:up`      |
+| Start services and wait       | `pnpm docker:up`      |
 | Show service status           | `pnpm docker:ps`      |
 | Tail service logs             | `pnpm docker:logs`    |
 | Restart services              | `pnpm docker:restart` |
 | Stop services and keep data   | `pnpm docker:down`    |
 | Stop services and delete data | `pnpm docker:clean`   |
 
-Service ports:
+Default host ports:
 
-| Service     | Port   |
-| ----------- | ------ |
-| PostgreSQL  | `5432` |
-| Redis       | `6379` |
-| Qdrant HTTP | `6333` |
-| Qdrant gRPC | `6334` |
+| Service     | Environment setting | Default |
+| ----------- | ------------------- | ------- |
+| PostgreSQL  | `POSTGRES_PORT`     | `5432`  |
+| Redis       | `REDIS_PORT`        | `6379`  |
+| Qdrant HTTP | `QDRANT_HTTP_PORT`  | `6333`  |
+| Qdrant gRPC | `QDRANT_GRPC_PORT`  | `6334`  |
+
+If Docker reports that a port is already allocated, edit `.env` before starting
+services. Keep each service URL aligned with the host port. For example,
+`POSTGRES_PORT=5433` also needs `DATABASE_URL` to use `localhost:5433`.
 
 ## Database Commands
 
@@ -88,7 +96,7 @@ Use `pnpm db:migrate` for schema changes that should be committed. Use
 Build the server first:
 
 ```bash
-pnpm build
+npm exec --yes pnpm@8.15.0 -- build
 ```
 
 Copy the example client config:
@@ -116,22 +124,22 @@ the `ping` tool.
 Check Docker service health:
 
 ```bash
-pnpm docker:ps
-pnpm docker:logs
+npm exec --yes pnpm@8.15.0 -- docker:ps
+npm exec --yes pnpm@8.15.0 -- docker:logs
 ```
 
 Regenerate Prisma after schema or dependency changes:
 
 ```bash
-pnpm db:generate
+npm exec --yes pnpm@8.15.0 -- db:generate
 ```
 
 Reset local infrastructure data when a development database is no longer useful:
 
 ```bash
-pnpm docker:clean
-pnpm docker:up
-pnpm db:migrate
+npm exec --yes pnpm@8.15.0 -- docker:clean
+npm exec --yes pnpm@8.15.0 -- docker:up
+npm exec --yes pnpm@8.15.0 -- db:migrate
 ```
 
 Check direct service health:

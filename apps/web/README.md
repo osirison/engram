@@ -13,11 +13,12 @@ shares the monorepo UI and TypeScript configuration packages.
 Run from the repository root:
 
 ```bash
-pnpm install
-pnpm --filter web dev
+npm exec --yes pnpm@8.15.0 -- install
+npm exec --yes pnpm@8.15.0 -- --filter web dev
 ```
 
 Open `http://localhost:3000`.
+Command tables use the shorter `pnpm` form after pnpm is installed.
 
 ## Commands
 

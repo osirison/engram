@@ -14,15 +14,17 @@ workspace packages.
 Run from the repository root:
 
 ```bash
-pnpm install
-cp .env.example .env
-pnpm docker:up
-pnpm db:generate
-pnpm db:migrate
-pnpm --filter mcp-server dev
+npm exec --yes pnpm@8.15.0 -- install
+test -f .env || cp .env.example .env
+npm exec --yes pnpm@8.15.0 -- docker:up
+npm exec --yes pnpm@8.15.0 -- db:generate
+npm exec --yes pnpm@8.15.0 -- db:migrate
+npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
 ```
 
 The server listens on `http://localhost:3000` by default.
+Command tables use the shorter `pnpm` form after pnpm is installed.
 
 ## Environment
 

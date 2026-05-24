@@ -7,7 +7,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "pino": "9",
-    "pino-http": "10"
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0"
   }
 }

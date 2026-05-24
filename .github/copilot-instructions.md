@@ -27,20 +27,21 @@ changes focused on the user's request.
 ## Common Commands
 
 ```bash
-pnpm install
-cp .env.example .env
-pnpm docker:up
-pnpm db:generate
-pnpm db:migrate
-pnpm --filter mcp-server dev
+npm exec --yes pnpm@8.15.0 -- install
+test -f .env || cp .env.example .env
+npm exec --yes pnpm@8.15.0 -- docker:up
+npm exec --yes pnpm@8.15.0 -- db:generate
+npm exec --yes pnpm@8.15.0 -- db:migrate
+npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
 ```
 
 Run quality checks from the repository root:
 
 ```bash
-pnpm build
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm docs:check
+npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@8.15.0 -- lint
+npm exec --yes pnpm@8.15.0 -- typecheck
+npm exec --yes pnpm@8.15.0 -- test
+npm exec --yes pnpm@8.15.0 -- docs:check
 ```

@@ -31,6 +31,7 @@ process.env.QDRANT_URL = process.env.QDRANT_URL ?? 'http://localhost:6335';
 
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import type { Server } from 'node:http';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 
@@ -48,6 +49,7 @@ const suite: (name: string, fn: () => void) => void = E2E_ENABLED
 // ---------------------------------------------------------------------------
 suite('Memory System E2E', () => {
   let app: INestApplication;
+  let httpServer: Server;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -56,6 +58,7 @@ suite('Memory System E2E', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+    httpServer = app.getHttpServer() as Server;
   });
 
   afterAll(async () => {
@@ -67,11 +70,11 @@ suite('Memory System E2E', () => {
   // -------------------------------------------------------------------------
   describe('App bootstrap', () => {
     it('should respond to GET /', () => {
-      return request(app.getHttpServer()).get('/').expect(200);
+      return request(httpServer).get('/').expect(200);
     });
 
     it('should expose health endpoint', () => {
-      return request(app.getHttpServer())
+      return request(httpServer)
         .get('/health')
         .expect((res) => {
           expect([200, 503]).toContain(res.status);

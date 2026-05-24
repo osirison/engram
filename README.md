@@ -11,22 +11,27 @@ semantic search, and health checks.
 
 ## Prerequisites
 
-- Node.js 20 or newer
-- pnpm 8 or newer
-- Docker and Docker Compose
+- Node.js 20 or newer with npm
+- Docker and Docker Compose v2
 - Git
+- Optional: pnpm 8.15.0 on your `PATH`
+
+ENGRAM pins `pnpm@8.15.0` in [package.json](package.json). The quick start
+uses npm to run that pinned pnpm version, so it works even when `pnpm` is not
+installed globally.
 
 ## Quick Start
 
 Run these commands from the repository root.
 
 ```bash
-pnpm install
-cp .env.example .env
-pnpm docker:up
-pnpm db:generate
-pnpm db:migrate
-pnpm --filter mcp-server dev
+npm exec --yes pnpm@8.15.0 -- install
+test -f .env || cp .env.example .env
+npm exec --yes pnpm@8.15.0 -- docker:up
+npm exec --yes pnpm@8.15.0 -- db:generate
+npm exec --yes pnpm@8.15.0 -- db:migrate
+npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000` by default. Check it with:
@@ -38,32 +43,35 @@ curl http://localhost:3000/health
 To stop local infrastructure without deleting data:
 
 ```bash
-pnpm docker:down
+npm exec --yes pnpm@8.15.0 -- docker:down
 ```
 
 To remove containers and local volumes:
 
 ```bash
-pnpm docker:clean
+npm exec --yes pnpm@8.15.0 -- docker:clean
 ```
+
+After installing pnpm globally, you can use the shorter `pnpm <command>` form
+shown in the command table below.
 
 ## Common Commands
 
-| Task                                | Command                        |
-| ----------------------------------- | ------------------------------ |
-| Start PostgreSQL, Redis, and Qdrant | `pnpm docker:up`               |
-| Start the MCP server                | `pnpm --filter mcp-server dev` |
-| Start the web app                   | `pnpm --filter web dev`        |
-| Start the docs app                  | `pnpm --filter docs dev`       |
-| Generate Prisma client              | `pnpm db:generate`             |
-| Run Prisma migrations               | `pnpm db:migrate`              |
-| Open Prisma Studio                  | `pnpm db:studio`               |
-| Build all workspaces                | `pnpm build`                   |
-| Lint all workspaces                 | `pnpm lint`                    |
-| Type-check all workspaces           | `pnpm typecheck`               |
-| Test all workspaces                 | `pnpm test`                    |
-| Check documentation links           | `pnpm docs:check`              |
-| Format source files                 | `pnpm format`                  |
+| Task                                           | Command                        |
+| ---------------------------------------------- | ------------------------------ |
+| Start PostgreSQL, Redis, and Qdrant, then wait | `pnpm docker:up`               |
+| Start the MCP server                           | `pnpm --filter mcp-server dev` |
+| Start the web app                              | `pnpm --filter web dev`        |
+| Start the docs app                             | `pnpm --filter docs dev`       |
+| Generate Prisma client                         | `pnpm db:generate`             |
+| Run Prisma migrations                          | `pnpm db:migrate`              |
+| Open Prisma Studio                             | `pnpm db:studio`               |
+| Build all workspaces                           | `pnpm build`                   |
+| Lint all workspaces                            | `pnpm lint`                    |
+| Type-check all workspaces                      | `pnpm typecheck`               |
+| Test all workspaces                            | `pnpm test`                    |
+| Check documentation links                      | `pnpm docs:check`              |
+| Format source files                            | `pnpm format`                  |
 
 ## Project Layout
 
@@ -102,21 +110,25 @@ pnpm docker:clean
 
 ## Environment
 
-Local defaults live in [.env.example](.env.example). The Docker Compose setup
-uses these services and ports:
+Local defaults live in [.env.example](.env.example). Docker Compose uses these
+host port settings by default:
 
-| Service    | Port           | Purpose                             |
-| ---------- | -------------- | ----------------------------------- |
-| PostgreSQL | `5432`         | Primary relational database         |
-| Redis      | `6379`         | Cache and short-term memory support |
-| Qdrant     | `6333`, `6334` | Vector search storage               |
+| Service    | Host port setting                         | Purpose                             |
+| ---------- | ----------------------------------------- | ----------------------------------- |
+| PostgreSQL | `POSTGRES_PORT`, defaults to `5432`       | Primary relational database         |
+| Redis      | `REDIS_PORT`, defaults to `6379`          | Cache and short-term memory support |
+| Qdrant     | `QDRANT_HTTP_PORT` and `QDRANT_GRPC_PORT` | Vector search storage               |
+
+When a host port is already in use, update the matching port value and URL in
+`.env` before starting Docker. For PostgreSQL, change both `POSTGRES_PORT` and
+the port inside `DATABASE_URL`.
 
 ## MCP Client Setup
 
 Build the server before connecting it to an MCP client:
 
 ```bash
-pnpm build
+npm exec --yes pnpm@8.15.0 -- build
 ```
 
 Then copy [claude_desktop_config.json.example](claude_desktop_config.json.example)
