@@ -45,3 +45,10 @@ npm exec --yes pnpm@8.15.0 -- typecheck
 npm exec --yes pnpm@8.15.0 -- test
 npm exec --yes pnpm@8.15.0 -- docs:check
 ```
+
+<!-- SPECKIT START -->
+
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+
+<!-- SPECKIT END -->
