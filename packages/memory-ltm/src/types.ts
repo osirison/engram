@@ -47,6 +47,65 @@ export interface LtmQueryOptions {
   sortOrder?: 'asc' | 'desc';
 }
 
+// Options for semantic (vector) recall
+export interface SemanticSearchOptions {
+  /** Maximum number of results to return. */
+  limit?: number;
+  /** Optional logical namespace filter (agent / session / project). */
+  scope?: string;
+  /** Restrict results to memories carrying all of these tags. */
+  tags?: string[];
+  /** Only return memories created on or after this time. */
+  createdFrom?: Date;
+  /** Only return memories created on or before this time. */
+  createdTo?: Date;
+}
+
+// A semantic-search hit: a memory plus its similarity score
+export interface SemanticSearchResult {
+  memory: LtmMemory;
+  /** Similarity score from the vector store (higher is more similar). */
+  score: number;
+}
+
+// Options for backfilling / reindexing the vector store from Postgres
+export interface ReindexOptions {
+  /** Restrict the reindex to a single user. Omit to reindex every user. */
+  userId?: string;
+  /** Number of memories to load per page. Defaults to 100. */
+  batchSize?: number;
+  /**
+   * When true (default), memories that already have an embedding are reused and
+   * only mirrored into the vector store. When false, embeddings are regenerated
+   * for every memory (useful after an embedding-model change).
+   */
+  reuseExistingEmbeddings?: boolean;
+  /**
+   * Resume from a previously returned cursor. Pair with `batchSize` to process
+   * large datasets across multiple invocations.
+   */
+  cursor?: string;
+  /** Stop after processing at most this many memories. */
+  maxMemories?: number;
+  /** Invoked after each batch with cumulative progress. */
+  onProgress?: (progress: ReindexProgress) => void;
+}
+
+// Cumulative progress emitted during a reindex run
+export interface ReindexProgress {
+  processed: number;
+  indexed: number;
+  skipped: number;
+  failed: number;
+  /** Cursor to resume from, or null when the run is complete. */
+  cursor: string | null;
+}
+
+// Final summary returned by a reindex run
+export interface ReindexResult extends ReindexProgress {
+  cursor: string | null;
+}
+
 // Zod validation schemas
 
 // Create LTM memory schema

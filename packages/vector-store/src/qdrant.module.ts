@@ -9,6 +9,7 @@ import { QdrantService } from './qdrant.service';
       useFactory: () => {
         return new QdrantClient({
           url: process.env.QDRANT_URL || 'http://localhost:6333',
+          checkCompatibility: false,
         });
       },
     },

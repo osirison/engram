@@ -14,6 +14,18 @@ export const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   /** Optional embedding provider selection, defaults to OpenAI. */
   EMBEDDING_PROVIDER: z.enum(['openai', 'disabled', 'local']).optional().default('openai'),
+  /** Vector backend selection. Both `qdrant` and `pgvector` are implemented. */
+  VECTOR_BACKEND: z.enum(['qdrant', 'pgvector']).default('qdrant'),
+  /** Optional override for the vector collection/table name. */
+  VECTOR_COLLECTION: z.string().min(1).optional(),
+  /** Optional override for embedding dimensionality (defaults to the provider's model dimension). */
+  VECTOR_DIMENSIONS: z.coerce.number().int().positive().optional(),
+  /** Optional pgvector HNSW build-time `m` (max connections per layer). */
+  PGVECTOR_HNSW_M: z.coerce.number().int().min(2).max(100).optional(),
+  /** Optional pgvector HNSW build-time `ef_construction` (candidate list size). */
+  PGVECTOR_HNSW_EF_CONSTRUCTION: z.coerce.number().int().min(4).max(1000).optional(),
+  /** Optional pgvector HNSW query-time `ef_search` (recall/latency tuning). */
+  PGVECTOR_HNSW_EF_SEARCH: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
 /**

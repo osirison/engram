@@ -21,6 +21,8 @@ describe('envSchema', () => {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
         QDRANT_URL: 'http://localhost:6333',
+        EMBEDDING_PROVIDER: 'openai',
+        VECTOR_BACKEND: 'qdrant',
       });
     });
 
@@ -75,6 +77,70 @@ describe('envSchema', () => {
       const result = envSchema.parse(config);
 
       expect(result.NODE_ENV).toBe('test');
+    });
+  });
+
+  describe('vector backend configuration', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+      REDIS_URL: 'redis://localhost:6379',
+      QDRANT_URL: 'http://localhost:6333',
+    };
+
+    it('should default VECTOR_BACKEND to qdrant', () => {
+      const result = envSchema.parse(base);
+      expect(result.VECTOR_BACKEND).toBe('qdrant');
+    });
+
+    it('should accept pgvector as a backend', () => {
+      const result = envSchema.parse({ ...base, VECTOR_BACKEND: 'pgvector' });
+      expect(result.VECTOR_BACKEND).toBe('pgvector');
+    });
+
+    it('should reject an unknown backend', () => {
+      expect(() => envSchema.parse({ ...base, VECTOR_BACKEND: 'pinecone' })).toThrow(ZodError);
+    });
+
+    it('should coerce VECTOR_DIMENSIONS to a positive integer', () => {
+      const result = envSchema.parse({ ...base, VECTOR_DIMENSIONS: '768' });
+      expect(result.VECTOR_DIMENSIONS).toBe(768);
+    });
+
+    it('should reject a non-positive VECTOR_DIMENSIONS', () => {
+      expect(() => envSchema.parse({ ...base, VECTOR_DIMENSIONS: '0' })).toThrow(ZodError);
+    });
+
+    it('should accept a custom VECTOR_COLLECTION', () => {
+      const result = envSchema.parse({ ...base, VECTOR_COLLECTION: 'custom' });
+      expect(result.VECTOR_COLLECTION).toBe('custom');
+    });
+
+    it('should coerce pgvector HNSW tuning values', () => {
+      const result = envSchema.parse({
+        ...base,
+        PGVECTOR_HNSW_M: '16',
+        PGVECTOR_HNSW_EF_CONSTRUCTION: '64',
+        PGVECTOR_HNSW_EF_SEARCH: '100',
+      });
+      expect(result.PGVECTOR_HNSW_M).toBe(16);
+      expect(result.PGVECTOR_HNSW_EF_CONSTRUCTION).toBe(64);
+      expect(result.PGVECTOR_HNSW_EF_SEARCH).toBe(100);
+    });
+
+    it('should leave HNSW tuning values undefined by default', () => {
+      const result = envSchema.parse(base);
+      expect(result.PGVECTOR_HNSW_M).toBeUndefined();
+      expect(result.PGVECTOR_HNSW_EF_CONSTRUCTION).toBeUndefined();
+      expect(result.PGVECTOR_HNSW_EF_SEARCH).toBeUndefined();
+    });
+
+    it('should reject an out-of-range PGVECTOR_HNSW_M', () => {
+      expect(() => envSchema.parse({ ...base, PGVECTOR_HNSW_M: '1' })).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, PGVECTOR_HNSW_M: '101' })).toThrow(ZodError);
+    });
+
+    it('should reject an out-of-range PGVECTOR_HNSW_EF_SEARCH', () => {
+      expect(() => envSchema.parse({ ...base, PGVECTOR_HNSW_EF_SEARCH: '0' })).toThrow(ZodError);
     });
   });
 

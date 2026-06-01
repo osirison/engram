@@ -1,173 +1,116 @@
-# ENGRAM MCP Server
+---
+title: ENGRAM MCP Server
+description: Local development guide for the ENGRAM NestJS MCP server
+---
 
-The Model Context Protocol (MCP) server for ENGRAM - provides the core API for AI agent memory management.
+## Overview
 
-## Description
+The MCP server is the main ENGRAM runtime. It is a NestJS app that exposes
+health endpoints and MCP tools backed by PostgreSQL, Redis, Qdrant, and shared
+workspace packages.
 
-This NestJS application serves as the main API server for ENGRAM, implementing the Model Context Protocol for seamless integration with AI agents and applications.
+## Start
 
-## Configuration
-
-The server uses environment variables for configuration. See `.env.example` in the project root for all available options.
-
-**Key Configuration:**
-
-- `PORT` - Server port (default: 3000)
-- `NODE_ENV` - Environment (development/production/test)
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `QDRANT_URL` - Qdrant vector database URL
-
-## Development
-
-### Prerequisites
-
-Ensure all infrastructure services are running:
+Run from the repository root:
 
 ```bash
-# From project root
-pnpm docker:up
+npm exec --yes pnpm@11.4.0 -- install
+test -f .env || cp .env.example .env
+npm exec --yes pnpm@11.4.0 -- docker:up
+npm exec --yes pnpm@11.4.0 -- db:generate
+npm exec --yes pnpm@11.4.0 -- db:migrate
+npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
-This starts:
+The server listens on `http://localhost:3000` by default.
+Command tables use the shorter `pnpm` form after pnpm is installed.
 
-- PostgreSQL (port 5432)
-- Redis (port 6379)
-- Qdrant (port 6333)
+## Environment
 
-### Running the Server
+Configuration is loaded from the root `.env` file. The most important values
+are:
+
+| Variable             | Purpose                                              |
+| -------------------- | ---------------------------------------------------- |
+| `PORT`               | HTTP port, defaults to `3000`                        |
+| `DATABASE_URL`       | PostgreSQL connection string                         |
+| `REDIS_URL`          | Redis connection string                              |
+| `QDRANT_URL`         | Qdrant HTTP URL                                      |
+| `OPENAI_API_KEY`     | Optional key for remote embeddings                   |
+| `EMBEDDING_PROVIDER` | Embedding provider: `openai`, `local`, or `disabled` |
+| `MCP_ADMIN_TOKEN`    | Required token for admin maintenance MCP tools       |
+
+## Commands
+
+| Task                      | Command                                    |
+| ------------------------- | ------------------------------------------ |
+| Start development server  | `pnpm --filter mcp-server dev`             |
+| Build                     | `pnpm --filter mcp-server build`           |
+| Start built server        | `pnpm --filter mcp-server start:prod`      |
+| Run lint                  | `pnpm --filter mcp-server lint`            |
+| Type-check                | `pnpm --filter mcp-server typecheck`       |
+| Run unit tests            | `pnpm --filter mcp-server test`            |
+| Run coverage              | `pnpm --filter mcp-server test:cov`        |
+| Run e2e tests with Docker | `pnpm --filter mcp-server test:e2e:docker` |
+| Reindex memory embeddings | `pnpm --filter mcp-server reindex`         |
+
+## Reindex / Backfill
+
+The server exposes `reindex_memories`, `queue_reindex_memories`,
+`get_reindex_status`, `cancel_reindex_job`, and `retry_reindex_job` MCP tools
+plus a standalone CLI that backfill long-term memory vector embeddings. Use
+them after enabling a new vector backend, changing the embedding model, or
+recovering from a vector store outage.
+
+Maintenance tools are admin-guarded: each call must include `adminToken`, and
+the server validates it against `MCP_ADMIN_TOKEN`.
+
+The `reindex_memories` tool accepts optional `userId` (scopes the run to one
+user), `batchSize` (1-1000), `reuseExistingEmbeddings` (reuse stored vectors
+instead of regenerating), `cursor` (resume from a previous run), and
+`maxMemories` (cap the number processed). It returns a summary of processed,
+indexed, skipped, and failed counts plus the next resumable `cursor`.
+
+For large datasets, `queue_reindex_memories` enqueues a background reindex job
+and returns a `jobId`; poll `get_reindex_status` with the same id to observe
+state (`queued`, `running`, `completed`, `failed`, `cancelled`) and cumulative
+progress. Use `cancel_reindex_job` to request cancellation and
+`retry_reindex_job` to continue from the last saved cursor.
+
+Run the CLI directly:
 
 ```bash
-# Development mode with hot reload
-pnpm start:dev
-
-# Production mode
-pnpm build
-pnpm start:prod
-
-# Debug mode
-pnpm start:debug
+pnpm --filter mcp-server reindex -- --user <userId> --batch-size 200
+pnpm --filter mcp-server reindex -- --regenerate --max 1000
 ```
 
-The server will be available at `http://localhost:3000`
+| Flag           | Purpose                                            |
+| -------------- | -------------------------------------------------- |
+| `--user`       | Restrict reindexing to a single user id            |
+| `--batch-size` | Memories to process per batch (1-1000)             |
+| `--max`        | Maximum number of memories to process              |
+| `--cursor`     | Resume from a memory id returned by a previous run |
+| `--regenerate` | Regenerate embeddings instead of reusing stored    |
 
-## API Endpoints
+## Health Endpoints
 
-### Health Check
+| Endpoint              | Purpose                                              |
+| --------------------- | ---------------------------------------------------- |
+| `GET /health`         | Reports database, Redis, and Qdrant health           |
+| `GET /health/ready`   | Readiness probe using the same backend health checks |
+| `GET /health/metrics` | Returns embedding counters in Prometheus text format |
 
-The `/health` endpoint provides comprehensive health status for all service dependencies using [@nestjs/terminus](https://docs.nestjs.com/recipes/terminus).
+Check the server locally:
 
 ```bash
-# Check overall health (all services)
 curl http://localhost:3000/health
-
-# Scrape Prometheus metrics for embeddings counters
+curl http://localhost:3000/health/ready
 curl http://localhost:3000/health/metrics
-
-# Response when healthy (HTTP 200):
-# {
-#   "status": "ok",
-#   "info": {
-#     "database": {
-#       "status": "up"
-#     },
-#     "redis": {
-#       "status": "up"
-#     },
-#     "qdrant": {
-#       "status": "up"
-#     }
-#   },
-#   "error": {},
-#   "details": {
-#     "database": {
-#       "status": "up"
-#     },
-#     "redis": {
-#       "status": "up"
-#     },
-#     "qdrant": {
-#       "status": "up"
-#     }
-#   }
-# }
-
-# Response when unhealthy (HTTP 503):
-# {
-#   "status": "error",
-#   "info": {},
-#   "error": {
-#     "database": {
-#       "status": "down"
-#     }
-#   },
-#   "details": {
-#     "database": {
-#       "status": "down"
-#     },
-#     "redis": {
-#       "status": "up"
-#     },
-#     "qdrant": {
-#       "status": "up"
-#     }
-#   }
-# }
 ```
 
-**Monitored Services:**
+## Related Docs
 
-- **PostgreSQL** - Database connection via Prisma
-- **Redis** - Cache connection
-- **Qdrant** - Vector database connection
-
-**Performance:** Health checks are optimized for fast response times (<100ms) using simple connectivity tests.
-
-The `/health/metrics` endpoint returns Prometheus text-format counters from the embeddings service.
-
-### Additional Endpoints
-
-As the project develops, additional MCP endpoints will be documented here.
-
-## Testing
-
-```bash
-# Unit tests
-pnpm test
-
-# E2E tests
-pnpm test:e2e
-
-# Test coverage
-pnpm test:cov
-
-# Watch mode
-pnpm test:watch
-```
-
-## Project Structure
-
-```
-src/
-├── app.module.ts      # Main application module
-├── app.controller.ts  # Root controller
-├── app.service.ts     # Root service
-├── health.controller.ts # Health check endpoints
-└── main.ts            # Application entry point
-```
-
-## Features
-
-- ✅ **Structured Logging** - Pino logger with JSON output
-- ✅ **Health Checks** - Monitor service dependencies
-- ✅ **Vector Store** - Qdrant integration for semantic search
-- ✅ **Configuration** - Environment-based config with validation
-- 🚧 **MCP Protocol** - Memory management endpoints (in progress)
-
-## Deployment
-
-See the main [ENGRAM README](../../README.md) for deployment instructions.
-
-## License
-
-MIT
+- Root setup: [../../README.md](../../README.md)
+- Detailed setup: [../../docs/SETUP.md](../../docs/SETUP.md)
+- MCP tool development: [../../packages/core/src/mcp/tools/README.md](../../packages/core/src/mcp/tools/README.md)

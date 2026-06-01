@@ -1,14 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/require-await */
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryController } from '../src/memory/memory.controller';
 import { MemoryService } from '../src/memory/memory.service';
+import { ReindexQueueService } from '../src/memory/reindex-queue.service';
 import {
   MemoryStmService,
   StmMemory,
@@ -26,6 +20,7 @@ import {
 const USER_ID = 'cjld2cyuq0000t3rmniod1foy';
 const MEMORY_ID = 'cjld2cjxh0000qzrmn831i7rn';
 const MEMORY_ID_2 = 'cjld2cjxh0001qzrmn831i7rp';
+const ADMIN_TOKEN = 'integration-admin-token-12345';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -36,6 +31,7 @@ const makeStmMemory = (overrides: Partial<StmMemory> = {}): StmMemory => ({
   content: 'STM tool test content',
   metadata: null,
   tags: ['tool-test'],
+  embedding: [],
   type: 'short-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -50,6 +46,7 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   content: 'LTM tool test content',
   metadata: null,
   tags: ['tool-test'],
+  embedding: [],
   type: 'long-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -57,7 +54,16 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   ...overrides,
 });
 
-const emptyPaginated = <T>() => ({
+type PaginatedFixture<T> = {
+  items: T[];
+  totalCount: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor?: string;
+  endCursor?: string;
+};
+
+const emptyPaginated = <T>(): PaginatedFixture<T> => ({
   items: [] as T[],
   totalCount: 0,
   hasNextPage: false,
@@ -66,9 +72,30 @@ const emptyPaginated = <T>() => ({
   endCursor: undefined,
 });
 
+type ToolTextResponse = { content: Array<{ type: string; text: string }> };
+type MemoryResponsePayload = { id: string; type: string };
+type ListResponsePayload = {
+  memories: unknown[];
+  pagination: {
+    totalCount: number;
+    hasNextPage: boolean;
+  };
+};
+
 /** Extract text from a tool response */
-const text = (response: { content: Array<{ type: string; text: string }> }) =>
-  response.content[0].text;
+const text = (response: ToolTextResponse): string => {
+  const firstContent = response.content[0];
+
+  if (!firstContent) {
+    throw new Error('Tool response did not include text content');
+  }
+
+  return firstContent.text;
+};
+
+const parseToolResponse = <T>(response: ToolTextResponse): T => {
+  return JSON.parse(text(response)) as T;
+};
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -77,6 +104,7 @@ describe('MCP Tools Integration', () => {
   let controller: MemoryController;
   let stmService: jest.Mocked<MemoryStmService>;
   let ltmService: jest.Mocked<MemoryLtmService>;
+  let reindexQueue: jest.Mocked<ReindexQueueService>;
 
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
@@ -85,6 +113,8 @@ describe('MCP Tools Integration', () => {
   afterEach(() => jest.restoreAllMocks());
 
   beforeEach(async () => {
+    process.env.MCP_ADMIN_TOKEN = ADMIN_TOKEN;
+
     const stmMock: Partial<jest.Mocked<MemoryStmService>> = {
       create: jest.fn(),
       findById: jest.fn(),
@@ -100,6 +130,14 @@ describe('MCP Tools Integration', () => {
       delete: jest.fn(),
       list: jest.fn(),
       promote: jest.fn(),
+      reindex: jest.fn(),
+    };
+
+    const queueMock: Partial<jest.Mocked<ReindexQueueService>> = {
+      enqueue: jest.fn(),
+      get: jest.fn(),
+      cancel: jest.fn(),
+      retry: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -108,21 +146,24 @@ describe('MCP Tools Integration', () => {
         MemoryService,
         { provide: MemoryStmService, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
+        { provide: ReindexQueueService, useValue: queueMock },
       ],
     }).compile();
 
     controller = module.get<MemoryController>(MemoryController);
     stmService = module.get<jest.Mocked<MemoryStmService>>(MemoryStmService);
     ltmService = module.get<jest.Mocked<MemoryLtmService>>(MemoryLtmService);
+    reindexQueue =
+      module.get<jest.Mocked<ReindexQueueService>>(ReindexQueueService);
   });
 
   // -------------------------------------------------------------------------
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 6 tools', () => {
+    it('should register exactly 12 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(12);
     });
 
     it('should register all expected tool names', () => {
@@ -133,6 +174,12 @@ describe('MCP Tools Integration', () => {
       expect(names).toContain('update_memory');
       expect(names).toContain('delete_memory');
       expect(names).toContain('promote_memory');
+      expect(names).toContain('recall');
+      expect(names).toContain('reindex_memories');
+      expect(names).toContain('queue_reindex_memories');
+      expect(names).toContain('get_reindex_status');
+      expect(names).toContain('cancel_reindex_job');
+      expect(names).toContain('retry_reindex_job');
     });
 
     it('should attach a callable handler to each tool', () => {
@@ -263,7 +310,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<MemoryResponsePayload>(response);
       expect(parsed.id).toBe(MEMORY_ID);
       expect(parsed.type).toBe('short-term');
     });
@@ -280,7 +327,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<MemoryResponsePayload>(response);
       expect(parsed.id).toBe(MEMORY_ID);
       expect(parsed.type).toBe('long-term');
     });
@@ -341,7 +388,7 @@ describe('MCP Tools Integration', () => {
 
       const response = await controller.listMemories({ userId: USER_ID });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed).toHaveProperty('memories');
       expect(parsed).toHaveProperty('pagination');
       expect(parsed.memories).toHaveLength(2);
@@ -354,7 +401,7 @@ describe('MCP Tools Integration', () => {
 
       const response = await controller.listMemories({ userId: USER_ID });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed.memories).toHaveLength(0);
       expect(parsed.pagination.totalCount).toBe(0);
       expect(parsed.pagination.hasNextPage).toBe(false);
@@ -376,7 +423,7 @@ describe('MCP Tools Integration', () => {
         limit: 10,
       });
 
-      const parsed = JSON.parse(text(response));
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed.memories).toHaveLength(3);
     });
 
@@ -589,7 +636,7 @@ describe('MCP Tools Integration', () => {
         type: 'short-term',
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(response.content[0].text).toContain('Created short-term memory');
+      expect(text(response)).toContain('Created short-term memory');
     });
 
     it('get_memory handler should return not-found when memory absent', async () => {
@@ -606,7 +653,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(response.content[0].text).toBe(`Memory ${MEMORY_ID} not found`);
+      expect(text(response)).toBe(`Memory ${MEMORY_ID} not found`);
     });
 
     it('delete_memory handler should return success message', async () => {
@@ -621,9 +668,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(response.content[0].text).toBe(
-        `Successfully deleted memory ${MEMORY_ID}`,
-      );
+      expect(text(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
     });
 
     it('list_memories handler should return paginated response', async () => {
@@ -635,11 +680,134 @@ describe('MCP Tools Integration', () => {
 
       const response = (await listTool.handler({
         userId: USER_ID,
-      })) as { content: Array<{ type: string; text: string }> };
+      })) as ToolTextResponse;
 
-      const parsed = JSON.parse(response.content[0].text);
+      const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed).toHaveProperty('memories');
       expect(parsed).toHaveProperty('pagination');
+    });
+
+    it('reindex_memories handler should reject missing adminToken', async () => {
+      const tools = controller.getMcpTools();
+      const reindexTool = tools.find((t) => t.name === 'reindex_memories');
+
+      await expect(
+        reindexTool?.handler({
+          batchSize: 100,
+        }),
+      ).rejects.toThrow('Failed to reindex memories');
+    });
+
+    it('reindex_memories handler should reject wrong adminToken', async () => {
+      const tools = controller.getMcpTools();
+      const reindexTool = tools.find((t) => t.name === 'reindex_memories');
+
+      await expect(
+        reindexTool?.handler({
+          adminToken: 'wrong-admin-token-12345',
+          batchSize: 100,
+        }),
+      ).rejects.toThrow(
+        'Failed to reindex memories: Unauthorized maintenance operation',
+      );
+    });
+
+    it('queue/cancel/retry/status handlers should work with valid admin token', async () => {
+      reindexQueue.enqueue.mockResolvedValue({
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        state: 'queued',
+        createdAt: new Date().toISOString(),
+        options: { batchSize: 100 },
+        summary: {
+          processed: 0,
+          indexed: 0,
+          skipped: 0,
+          failed: 0,
+          cursor: null,
+        },
+        events: [],
+      });
+      reindexQueue.get.mockResolvedValue({
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        state: 'running',
+        createdAt: new Date().toISOString(),
+        options: { batchSize: 100 },
+        summary: {
+          processed: 10,
+          indexed: 10,
+          skipped: 0,
+          failed: 0,
+          cursor: 'c10',
+        },
+        events: [],
+      });
+      reindexQueue.cancel.mockResolvedValue({
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        state: 'cancelled',
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        terminalReason: 'cancelled_by_request',
+        options: { batchSize: 100 },
+        summary: {
+          processed: 10,
+          indexed: 10,
+          skipped: 0,
+          failed: 0,
+          cursor: 'c10',
+        },
+        events: [],
+      });
+      reindexQueue.retry.mockResolvedValue({
+        jobId: '65d852b0-d40f-4dfd-b4f9-bb7b597f44ef',
+        state: 'queued',
+        createdAt: new Date().toISOString(),
+        retryOfJobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        options: { batchSize: 100, cursor: 'c10' },
+        summary: {
+          processed: 0,
+          indexed: 0,
+          skipped: 0,
+          failed: 0,
+          cursor: 'c10',
+        },
+        events: [],
+      });
+
+      const tools = controller.getMcpTools();
+      const queueTool = tools.find((t) => t.name === 'queue_reindex_memories');
+      const statusTool = tools.find((t) => t.name === 'get_reindex_status');
+      const cancelTool = tools.find((t) => t.name === 'cancel_reindex_job');
+      const retryTool = tools.find((t) => t.name === 'retry_reindex_job');
+
+      const queued = (await queueTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        batchSize: 100,
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(queued).state).toBe('queued');
+
+      const status = (await statusTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(status).state).toBe(
+        'running',
+      );
+
+      const cancelled = (await cancelTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(cancelled).state).toBe(
+        'cancelled',
+      );
+
+      const retried = (await retryTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(retried).state).toBe(
+        'queued',
+      );
     });
   });
 
@@ -648,11 +816,13 @@ describe('MCP Tools Integration', () => {
   // -------------------------------------------------------------------------
   describe('concurrent operations', () => {
     it('should handle 10 simultaneous create_memory calls', async () => {
-      stmService.create.mockImplementation(async (dto) =>
-        makeStmMemory({
-          id: `stm-concurrent-${Date.now()}`,
-          content: dto.content,
-        }),
+      stmService.create.mockImplementation((dto) =>
+        Promise.resolve(
+          makeStmMemory({
+            id: `stm-concurrent-${Date.now()}`,
+            content: dto.content,
+          }),
+        ),
       );
 
       const responses = await Promise.all(

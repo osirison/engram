@@ -1,136 +1,92 @@
-# @engram/embeddings
+---
+title: ENGRAM Embeddings Package
+description: Embedding generation and cache support for ENGRAM memory services
+---
 
-NestJS module for generating semantic embeddings via OpenAI, with transparent Redis caching.
+## Overview
 
-## Features
+`@engram/embeddings` provides a NestJS module for semantic embeddings. It can
+use OpenAI, a local deterministic provider, or a disabled provider, and it can
+cache generated embeddings in Redis.
 
-- Generates vector embeddings using OpenAI `text-embedding-3-small` (1 536 dims) or `text-embedding-3-large` (3 072 dims)
-- Caches embeddings in Redis for 30 days with exact-input hashing and model-aware keys
-- Degrades gracefully: returns `null` instead of throwing when the API key is absent or OpenAI is unavailable, so that callers (memory services) are never blocked by an embedding failure
-- Input validation with Zod (max 8 191 characters)
+The service returns `null` instead of throwing when embeddings are unavailable,
+so memory workflows can continue without a vector.
 
-## Setup
+## Configuration
+
+| Variable              | Required | Default  | Purpose                                              |
+| --------------------- | -------- | -------- | ---------------------------------------------------- |
+| `OPENAI_API_KEY`      | No       | None     | Enables OpenAI embeddings when set                   |
+| `EMBEDDING_PROVIDER`  | No       | `openai` | Provider selection: `openai`, `local`, or `disabled` |
+| `EMBEDDING_CACHE_TTL` | No       | 30 days  | Redis cache lifetime in seconds                      |
+
+Set OpenAI credentials only in local environment files or secret stores:
 
 ```bash
-# Set the API key (optional — embeddings are disabled when absent)
-export OPENAI_API_KEY="sk-..."
+export OPENAI_API_KEY="<openai-api-key>"
 ```
 
-## Usage
-
-### Import the module
+## Use the Module
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { EmbeddingsModule } from '@engram/embeddings';
 
 @Module({
   imports: [EmbeddingsModule],
 })
-export class YourModule {}
+export class MemoryModule {}
 ```
 
-### Inject the service
+Inject the service where embeddings are optional:
 
 ```typescript
 import { Injectable, Optional } from '@nestjs/common';
 import { EmbeddingsService } from '@engram/embeddings';
 
 @Injectable()
-export class YourService {
+export class MemoryVectorService {
   constructor(@Optional() private readonly embeddings?: EmbeddingsService) {}
 
-  async doSomething(text: string) {
+  async generateVector(text: string): Promise<number[] | null> {
     const result = await this.embeddings?.generate({ text });
-    // result is null when embeddings are disabled or the API call failed
-    const vector = result?.embedding ?? null;
+    return result?.embedding ?? null;
   }
 }
 ```
 
-### Direct use
-
-```typescript
-const result = await embeddingsService.generate({ text: 'Hello, ENGRAM!' });
-
-if (result) {
-  console.log(result.model); // 'text-embedding-3-small'
-  console.log(result.cached); // true | false
-  console.log(result.embedding.length); // 1536
-}
-```
-
-## Configuration
-
-| Environment variable | Required | Default  | Description                                                      |
-| -------------------- | -------- | -------- | ---------------------------------------------------------------- |
-| `OPENAI_API_KEY`     | No       | —        | OpenAI API key. Embeddings are disabled when not set.            |
-| `EMBEDDING_PROVIDER` | No       | `openai` | Embedding provider selection (`openai`, `local`, or `disabled`). |
-
 ## Models
 
-| Model                    | Dimensions | Use case                                             |
-| ------------------------ | ---------- | ---------------------------------------------------- |
-| `text-embedding-3-small` | 1 536      | Default. Cost-efficient, strong general performance. |
-| `text-embedding-3-large` | 3 072      | Higher accuracy for demanding retrieval tasks.       |
+| Model                    | Dimensions | Purpose                      |
+| ------------------------ | ---------- | ---------------------------- |
+| `text-embedding-3-small` | 1,536      | Default OpenAI model         |
+| `text-embedding-3-large` | 3,072      | Higher-accuracy OpenAI model |
 
-## Cache behaviour
+## Backfill Long-Term Memory Embeddings
 
-- Keys: `embedding:<model>:<sha256(text).slice(0,32)>`
-- TTL: 30 days (configurable via `EMBEDDING_CACHE_TTL`)
-- Input matching: cache keys are generated from exact text bytes, no trimming or case folding
-- Cache failures are silently ignored — the service falls through to a fresh API call
-
-## Backfill existing long-term memories
-
-The package ships with a batch backfill script for PostgreSQL long-term memories where `embedding` is still empty.
+Build the package before running the backfill script:
 
 ```bash
-# 1) Build the package
-npx pnpm --filter @engram/embeddings build
-
-# 2) Run backfill (reads DATABASE_URL + OPENAI_API_KEY)
-npx pnpm --filter @engram/embeddings backfill:ltm
+pnpm --filter @engram/embeddings build
+pnpm --filter @engram/embeddings backfill:ltm
 ```
 
 Optional controls:
 
-- `BACKFILL_BATCH_SIZE` (default: `100`)
-- `BACKFILL_MAX_BATCHES` (default: unlimited)
-- `BACKFILL_DRY_RUN=true` (calculate candidates without persisting updates)
-- `BACKFILL_RETRY_ATTEMPTS` (default: `3`)
-- `BACKFILL_RETRY_BASE_DELAY_MS` (default: `250`, exponential backoff per retry)
+| Variable                       | Purpose                                     |
+| ------------------------------ | ------------------------------------------- |
+| `BACKFILL_BATCH_SIZE`          | Number of memories processed per batch      |
+| `BACKFILL_MAX_BATCHES`         | Maximum number of batches to process        |
+| `BACKFILL_DRY_RUN=true`        | Count candidates without persisting updates |
+| `BACKFILL_RETRY_ATTEMPTS`      | Provider retry count                        |
+| `BACKFILL_RETRY_BASE_DELAY_MS` | Base delay for retry backoff                |
 
-## Error handling
+## Commands
 
-`EmbeddingsService.generate()` never throws. It returns `null` and logs a warning when:
-
-- `OPENAI_API_KEY` is not set
-- Input validation fails
-- The OpenAI API call fails
-- The API returns an empty response
-
-## Observability
-
-`EmbeddingsService` emits structured logs for:
-
-- request validation failures
-- cache hit/read/write events
-- provider errors and null-vector returns
-- successful generation events with model and dimensions
-
-It also tracks in-memory counters (`getCounters()`) for:
-
-- `requests`
-- `cacheHits`
-- `providerSuccess`
-- `providerErrors`
-- `providerNull`
-- `cacheReadErrors`
-- `cacheWriteErrors`
-
-For metrics scraping, use `getPrometheusMetrics()` to expose counters in Prometheus text format:
-
-```typescript
-const metricsText = embeddingsService.getPrometheusMetrics();
-// Example line: engram_embeddings_requests_total 42
-```
+| Task                    | Command                                         |
+| ----------------------- | ----------------------------------------------- |
+| Build                   | `pnpm --filter @engram/embeddings build`        |
+| Run lint                | `pnpm --filter @engram/embeddings lint`         |
+| Type-check              | `pnpm --filter @engram/embeddings typecheck`    |
+| Run tests               | `pnpm --filter @engram/embeddings test`         |
+| Backfill LTM embeddings | `pnpm --filter @engram/embeddings backfill:ltm` |

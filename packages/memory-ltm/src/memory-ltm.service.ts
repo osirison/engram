@@ -1,8 +1,9 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
 import { MemoryType, PaginatedResult } from '@engram/database';
 import { MemoryStmService } from '@engram/memory-stm';
 import { EmbeddingsService } from '@engram/embeddings';
+import { VECTOR_STORE_TOKEN, type VectorStore, type VectorPayload } from '@engram/vector-store';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -14,6 +15,10 @@ import {
   LtmMemoryQuotaExceededError,
   LtmPromotionError,
   LtmDatabaseError,
+  SemanticSearchOptions,
+  SemanticSearchResult,
+  ReindexOptions,
+  ReindexResult,
   validateCreateLtmMemory,
   validateUpdateLtmMemory,
   validateLtmQueryOptions,
@@ -41,7 +46,10 @@ export class MemoryLtmService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly stmService?: MemoryStmService,
-    @Optional() private readonly embeddingsService?: EmbeddingsService
+    @Optional() private readonly embeddingsService?: EmbeddingsService,
+    @Optional()
+    @Inject(VECTOR_STORE_TOKEN)
+    private readonly vectorStore?: VectorStore
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -88,7 +96,13 @@ export class MemoryLtmService {
       });
 
       this.logger.debug(`LTM memory created: ${memory.id}`);
-      return this.mapToLtmMemory(memory);
+      const ltmMemory = this.mapToLtmMemory(memory);
+
+      // Mirror the embedding into the vector store for semantic recall
+      // (non-fatal — Postgres remains the source of truth).
+      await this.indexVector(ltmMemory, embedding);
+
+      return ltmMemory;
     } catch (error) {
       if (error instanceof LtmMemoryQuotaExceededError) {
         throw error;
@@ -154,6 +168,19 @@ export class MemoryLtmService {
         updateData.tags = validatedInput.tags || [];
       }
 
+      // Re-embed when the content changes so the vector stays consistent with
+      // the stored text (non-fatal — falls back to the existing embedding).
+      let newEmbedding: number[] | undefined;
+      if (validatedInput.content !== undefined && this.embeddingsService) {
+        const result = await this.embeddingsService
+          .generate({ text: validatedInput.content })
+          .catch(() => null);
+        if (result?.embedding) {
+          newEmbedding = result.embedding;
+          updateData.embedding = newEmbedding;
+        }
+      }
+
       // Update memory in database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const memory = await (this.prisma as any).memory.update({
@@ -166,7 +193,20 @@ export class MemoryLtmService {
       });
 
       this.logger.debug(`LTM memory updated: ${memoryId}`);
-      return this.mapToLtmMemory(memory);
+      const ltmMemory = this.mapToLtmMemory(memory);
+
+      // Re-index whenever the embedding, tags, or scope-bearing metadata change.
+      const embeddingToIndex = newEmbedding ?? ltmMemory.embedding;
+      if (
+        embeddingToIndex.length > 0 &&
+        (newEmbedding !== undefined ||
+          validatedInput.tags !== undefined ||
+          validatedInput.metadata !== undefined)
+      ) {
+        await this.indexVector(ltmMemory, embeddingToIndex);
+      }
+
+      return ltmMemory;
     } catch (error) {
       if (error instanceof LtmMemoryNotFoundError) {
         throw error;
@@ -195,6 +235,8 @@ export class MemoryLtmService {
       const deleted = result.count > 0;
       if (deleted) {
         this.logger.debug(`LTM memory deleted: ${memoryId}`);
+        // Best-effort removal from the vector store (non-fatal).
+        await this.removeVector([memoryId]);
       } else {
         this.logger.debug(`LTM memory not found for deletion: ${memoryId}`);
       }
@@ -452,6 +494,279 @@ export class MemoryLtmService {
     if (currentCount >= this.config.maxMemoriesPerUser) {
       throw new LtmMemoryQuotaExceededError(userId, this.config.maxMemoriesPerUser);
     }
+  }
+
+  /**
+   * Perform a semantic (vector) recall over a user's long-term memories.
+   *
+   * Embeds the query, runs a tenant-scoped kNN search in the vector store, then
+   * hydrates the matching memories from Postgres and attaches similarity scores.
+   * Returns an empty array when embeddings or the vector store are unavailable.
+   */
+  async semanticSearch(
+    userId: string,
+    query: string,
+    options?: SemanticSearchOptions
+  ): Promise<SemanticSearchResult[]> {
+    this.logger.debug(`Semantic search for user: ${userId}`);
+
+    if (!this.vectorStore) {
+      this.logger.warn('Semantic search requested but no vector store is configured');
+      return [];
+    }
+    if (!this.embeddingsService) {
+      this.logger.warn('Semantic search requested but no embeddings service is configured');
+      return [];
+    }
+
+    const trimmedQuery = query?.trim();
+    if (!trimmedQuery) {
+      return [];
+    }
+
+    const limit = options?.limit ?? 10;
+
+    try {
+      const embeddingResult = await this.embeddingsService
+        .generate({ text: trimmedQuery })
+        .catch(() => null);
+      const queryVector = embeddingResult?.embedding ?? [];
+      if (queryVector.length === 0) {
+        this.logger.warn('Semantic search produced no query embedding');
+        return [];
+      }
+
+      const hits = await this.vectorStore.search(
+        queryVector,
+        {
+          userId,
+          type: MemoryType.LONG_TERM,
+          scope: options?.scope,
+          tags: options?.tags,
+          createdFrom: options?.createdFrom,
+          createdTo: options?.createdTo,
+        },
+        limit
+      );
+
+      if (hits.length === 0) {
+        return [];
+      }
+
+      const ids = hits.map((hit) => hit.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const memories = await (this.prisma as any).memory.findMany({
+        where: {
+          id: { in: ids },
+          userId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
+
+      const byId = new Map<string, PrismaMemory>(
+        memories.map((memory: PrismaMemory) => [memory.id, memory])
+      );
+
+      // Preserve vector-store ranking order and drop hits without a backing row.
+      return hits
+        .map((hit) => {
+          const memory = byId.get(hit.id);
+          if (!memory) {
+            return null;
+          }
+          return { memory: this.mapToLtmMemory(memory), score: hit.score };
+        })
+        .filter((result): result is SemanticSearchResult => result !== null);
+    } catch (error) {
+      this.logger.error(`Semantic search failed for user ${userId}: ${error}`);
+      throw new LtmDatabaseError(
+        'semanticSearch',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  /**
+   * Backfill / reindex the vector store from Postgres.
+   *
+   * Pages through long-term memories using a stable cursor, (re)generates
+   * embeddings as needed, and upserts them into the configured vector store.
+   * The operation is idempotent and cursor-resumable: re-running it is safe and
+   * picks up where a prior run stopped when a cursor is supplied. Postgres
+   * remains the source of truth, so per-item failures are counted and skipped
+   * rather than aborting the whole run.
+   */
+  async reindex(options: ReindexOptions = {}): Promise<ReindexResult> {
+    if (!this.vectorStore) {
+      this.logger.warn('Reindex requested but no vector store is configured');
+      return { processed: 0, indexed: 0, skipped: 0, failed: 0, cursor: null };
+    }
+
+    const batchSize = this.normalizeBatchSize(options.batchSize);
+    const reuseExisting = options.reuseExistingEmbeddings ?? true;
+    const maxMemories = options.maxMemories;
+
+    let cursor = options.cursor;
+    let processed = 0;
+    let indexed = 0;
+    let skipped = 0;
+    let failed = 0;
+    let exhausted = false;
+
+    try {
+      for (;;) {
+        const take =
+          maxMemories !== undefined ? Math.min(batchSize, maxMemories - processed) : batchSize;
+        if (take <= 0) {
+          break;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const batch: PrismaMemory[] = await (this.prisma as any).memory.findMany({
+          where: {
+            type: MemoryType.LONG_TERM,
+            ...(options.userId ? { userId: options.userId } : {}),
+          },
+          orderBy: { id: 'asc' },
+          take,
+          ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        });
+
+        if (batch.length === 0) {
+          break;
+        }
+
+        for (const row of batch) {
+          processed += 1;
+          const memory = this.mapToLtmMemory(row);
+          try {
+            const embedding = await this.resolveEmbedding(memory, reuseExisting);
+            if (embedding.length === 0) {
+              skipped += 1;
+              continue;
+            }
+            await this.vectorStore.upsert([
+              {
+                id: memory.id,
+                vector: embedding,
+                payload: this.buildPayload(memory),
+              },
+            ]);
+            indexed += 1;
+          } catch (error) {
+            failed += 1;
+            this.logger.warn(`Reindex failed for memory ${memory.id}: ${error}`);
+          }
+        }
+
+        const lastRow = batch[batch.length - 1];
+        cursor = lastRow ? lastRow.id : cursor;
+
+        options.onProgress?.({ processed, indexed, skipped, failed, cursor: cursor ?? null });
+
+        if (batch.length < take) {
+          exhausted = true;
+          break;
+        }
+      }
+
+      this.logger.log(
+        `Reindex complete: processed=${processed} indexed=${indexed} skipped=${skipped} failed=${failed}`
+      );
+      const resumableCursor = exhausted ? null : (cursor ?? null);
+      return { processed, indexed, skipped, failed, cursor: resumableCursor };
+    } catch (error) {
+      this.logger.error(`Reindex aborted: ${error}`);
+      throw new LtmDatabaseError('reindex', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Resolve the embedding to index for a memory, reusing the stored embedding
+   * when present and permitted, otherwise regenerating via the embeddings
+   * service. Returns an empty array when no embedding can be produced.
+   */
+  private async resolveEmbedding(memory: LtmMemory, reuseExisting: boolean): Promise<number[]> {
+    if (reuseExisting && memory.embedding && memory.embedding.length > 0) {
+      return memory.embedding;
+    }
+    if (!this.embeddingsService) {
+      return memory.embedding ?? [];
+    }
+    const result = await this.embeddingsService
+      .generate({ text: memory.content })
+      .catch(() => null);
+    return result?.embedding ?? memory.embedding ?? [];
+  }
+
+  /**
+   * Clamp the reindex batch size to a sane range.
+   */
+  private normalizeBatchSize(batchSize?: number): number {
+    if (!batchSize || !Number.isInteger(batchSize) || batchSize <= 0) {
+      return 100;
+    }
+    return Math.min(batchSize, 1000);
+  }
+
+  /**
+   * Upsert a memory's embedding into the vector store. Non-fatal: failures are
+   * logged and swallowed so Postgres remains the source of truth.
+   */
+  private async indexVector(memory: LtmMemory, embedding: number[]): Promise<void> {
+    if (!this.vectorStore || embedding.length === 0) {
+      return;
+    }
+    try {
+      await this.vectorStore.upsert([
+        {
+          id: memory.id,
+          vector: embedding,
+          payload: this.buildPayload(memory),
+        },
+      ]);
+    } catch (error) {
+      this.logger.warn(`Failed to index memory ${memory.id} in vector store: ${error}`);
+    }
+  }
+
+  /**
+   * Remove memories from the vector store. Non-fatal.
+   */
+  private async removeVector(ids: string[]): Promise<void> {
+    if (!this.vectorStore || ids.length === 0) {
+      return;
+    }
+    try {
+      await this.vectorStore.delete(ids);
+    } catch (error) {
+      this.logger.warn(`Failed to remove ${ids.length} vector(s) from vector store: ${error}`);
+    }
+  }
+
+  /**
+   * Build the filterable payload stored alongside a memory's vector.
+   */
+  private buildPayload(memory: LtmMemory): VectorPayload {
+    const payload: VectorPayload = {
+      userId: memory.userId,
+      type: MemoryType.LONG_TERM,
+      tags: memory.tags ?? [],
+      createdAt: memory.createdAt.getTime(),
+    };
+    const scope = this.extractScope(memory.metadata);
+    if (scope) {
+      payload.scope = scope;
+    }
+    return payload;
+  }
+
+  /**
+   * Derive an optional `scope` namespace from a memory's metadata.
+   */
+  private extractScope(metadata: Record<string, unknown> | null | undefined): string | undefined {
+    const scope = metadata?.scope;
+    return typeof scope === 'string' && scope.length > 0 ? scope : undefined;
   }
 
   /**

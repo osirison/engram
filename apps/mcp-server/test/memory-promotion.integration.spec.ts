@@ -1,10 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/require-await */
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryService } from '../src/memory/memory.service';
@@ -28,6 +21,7 @@ const makePromotedLtm = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   content: 'Promoted memory content',
   metadata: { source: 'promotion' },
   tags: ['important', 'promoted'],
+  embedding: [],
   type: 'long-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -222,8 +216,8 @@ describe('MemoryService Promotion Integration', () => {
   describe('concurrent promotions', () => {
     it('should handle multiple concurrent promotion requests independently', async () => {
       const ids = ['stm-a', 'stm-b', 'stm-c'];
-      ltmService.promote.mockImplementation(async (_userId, memoryId) =>
-        makePromotedLtm({ id: `ltm-${memoryId}` }),
+      ltmService.promote.mockImplementation((_userId, memoryId) =>
+        Promise.resolve(makePromotedLtm({ id: `ltm-${memoryId}` })),
       );
 
       const results = await Promise.all(
@@ -232,8 +226,8 @@ describe('MemoryService Promotion Integration', () => {
 
       expect(results).toHaveLength(3);
       expect(ltmService.promote).toHaveBeenCalledTimes(3);
-      ids.forEach((id, i) => {
-        expect(results[i].id).toBe(`ltm-${id}`);
+      results.forEach((result, index) => {
+        expect(result.id).toBe(`ltm-${ids[index]}`);
       });
     });
   });

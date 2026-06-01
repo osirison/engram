@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/create-next-app).
+---
+title: ENGRAM Web App
+description: Local development guide for the ENGRAM web workspace
+---
 
-## Getting Started
+## Overview
 
-First, run the development server:
+The web workspace is a Next.js app for future ENGRAM user-facing workflows. It
+shares the monorepo UI and TypeScript configuration packages.
+
+## Start
+
+Run from the repository root:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm exec --yes pnpm@11.4.0 -- install
+npm exec --yes pnpm@11.4.0 -- --filter web dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
+Command tables use the shorter `pnpm` form after pnpm is installed.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Inter, a custom Google Font.
+| Task                     | Command                         |
+| ------------------------ | ------------------------------- |
+| Start development server | `pnpm --filter web dev`         |
+| Build                    | `pnpm --filter web build`       |
+| Run lint                 | `pnpm --filter web lint`        |
+| Type-check               | `pnpm --filter web check-types` |
 
-## Learn More
+The web app uses port `3000`, the same default port as the MCP server. Run one
+of them at a time or change the port for one process.
 
-To learn more about Next.js, take a look at the following resources:
+## Related Docs
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Root setup: [../../README.md](../../README.md)
+- Local environment: [../../docs/SETUP.md](../../docs/SETUP.md)
+- Shared UI package: [../../packages/ui](../../packages/ui)

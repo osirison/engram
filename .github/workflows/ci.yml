@@ -21,7 +21,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: engram_test
           POSTGRES_USER: test
@@ -44,6 +44,16 @@ jobs:
         ports:
           - 6379:6379
 
+      qdrant:
+        image: qdrant/qdrant:v1.13.6
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:6333/collections || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 6333:6333
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,7 +61,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: 8.9.0
+          version: 11.4.0
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -62,10 +72,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check docs
+        run: pnpm docs:check
+
       - name: Setup database
         run: |
           pnpm db:generate
-          pnpm db:migrate deploy
+          pnpm db:migrate:deploy
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
 
@@ -83,6 +96,40 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
           REDIS_URL: redis://localhost:6379
+          PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
+
+      - name: Run retrieval eval (baseline regression)
+        run: pnpm eval
+
+      - name: Run pgvector integration tests
+        run: pnpm --filter @engram/vector-store test
+        env:
+          PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
+
+      - name: Run vector backend benchmark gate
+        run: pnpm bench:ci
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+          QDRANT_URL: http://localhost:6333
+
+      - name: Fetch baseline benchmark artifact (main)
+        run: pnpm bench:baseline:fetch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compare benchmark trend against main baseline
+        run: pnpm bench:trend:check
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vector-backend-benchmark-${{ matrix.node-version }}
+          path: |
+            artifacts/bench-results.json
+            artifacts/bench-baseline.json
+            artifacts/bench-trend-summary.json
+          if-no-files-found: ignore
 
       - name: Test coverage (enforce thresholds)
         run: pnpm --filter mcp-server test:cov

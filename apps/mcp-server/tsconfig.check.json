@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@engram/config": ["../../packages/config/src/index.ts"],
+      "@engram/core": ["../../packages/core/src/index.ts"],
+      "@engram/database": ["../../packages/database/src/index.ts"],
+      "@engram/embeddings": ["../../packages/embeddings/src/index.ts"],
+      "@engram/memory-ltm": ["../../packages/memory-ltm/src/index.ts"],
+      "@engram/memory-stm": ["../../packages/memory-stm/src/index.ts"],
+      "@engram/redis": ["../../packages/redis/src/index.ts"],
+      "@engram/vector-store": ["../../packages/vector-store/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

@@ -1,9 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { MemoryService } from '../src/memory/memory.service';
@@ -31,6 +25,7 @@ const makeStmMemory = (overrides: Partial<StmMemory> = {}): StmMemory => ({
   content: 'STM integration test content',
   metadata: null,
   tags: ['integration', 'stm'],
+  embedding: [],
   type: 'short-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -45,6 +40,7 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   content: 'LTM integration test content',
   metadata: null,
   tags: ['integration', 'ltm'],
+  embedding: [],
   type: 'long-term',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -52,7 +48,14 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   ...overrides,
 });
 
-const emptyPaginated = <T>() => ({
+type PaginatedFixture<T> = {
+  items: T[];
+  totalCount: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+
+const emptyPaginated = <T>(): PaginatedFixture<T> => ({
   items: [] as T[],
   totalCount: 0,
   hasNextPage: false,
@@ -343,8 +346,8 @@ describe('MemoryService Integration', () => {
       expect(result.items).toHaveLength(2);
       expect(result.totalCount).toBe(2);
       // STM memory is newer — should appear first
-      expect(result.items[0].id).toBe('stm-1');
-      expect(result.items[1].id).toBe('ltm-1');
+      expect(result.items[0]?.id).toBe('stm-1');
+      expect(result.items[1]?.id).toBe('ltm-1');
     });
 
     it('should return empty result when both stores are empty', async () => {
@@ -371,7 +374,7 @@ describe('MemoryService Integration', () => {
       const result = await service.listMemories(TEST_USER_ID);
 
       expect(result.items).toHaveLength(1);
-      expect(result.items[0].id).toBe(LTM_ID);
+      expect(result.items[0]?.id).toBe(LTM_ID);
     });
 
     it('should respect the limit option', async () => {

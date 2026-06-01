@@ -1,7 +1,22 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
-  "globalEnv": ["NODE_ENV", "LOG_LEVEL", "PORT", "DATABASE_URL", "REDIS_URL", "QDRANT_URL", "OPENAI_API_KEY", "EMBEDDING_PROVIDER"],
+  "globalEnv": [
+    "NODE_ENV",
+    "LOG_LEVEL",
+    "PORT",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "QDRANT_URL",
+    "OPENAI_API_KEY",
+    "EMBEDDING_PROVIDER",
+    "VECTOR_BACKEND",
+    "VECTOR_COLLECTION",
+    "VECTOR_DIMENSIONS",
+    "PGVECTOR_HNSW_M",
+    "PGVECTOR_HNSW_EF_CONSTRUCTION",
+    "PGVECTOR_HNSW_EF_SEARCH"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -15,6 +30,10 @@
       "dependsOn": ["^typecheck"]
     },
     "test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "eval": {
       "dependsOn": ["^build"],
       "cache": false
     },

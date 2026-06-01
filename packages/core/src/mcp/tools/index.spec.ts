@@ -10,6 +10,11 @@ import { registerTools } from './index';
 describe('MCP Tools Registry', () => {
   let server: Server;
 
+  const getRequestMethod = (schema: unknown): string | undefined => {
+    return (schema as { def?: { shape?: { method?: { def?: { values?: string[] } } } } })?.def
+      ?.shape?.method?.def?.values?.[0];
+  };
+
   beforeEach(() => {
     // Create a minimal mock server for testing
     server = new Server({ name: 'test', version: '1.0.0' }, { capabilities: { tools: {} } });
@@ -45,7 +50,7 @@ describe('MCP Tools Registry', () => {
 
       // Capture the handler function
       vi.spyOn(server, 'setRequestHandler').mockImplementation((schema: any, handler: any) => {
-        if (schema.shape?.method?._def?.value === 'tools/list') {
+        if (getRequestMethod(schema) === 'tools/list') {
           listToolsHandler = handler;
         }
       });
@@ -67,7 +72,7 @@ describe('MCP Tools Registry', () => {
       let listToolsHandler: ((request: any) => Promise<any>) | undefined;
 
       vi.spyOn(server, 'setRequestHandler').mockImplementation((schema: any, handler: any) => {
-        if (schema.shape?.method?._def?.value === 'tools/list') {
+        if (getRequestMethod(schema) === 'tools/list') {
           listToolsHandler = handler;
         }
       });
@@ -91,7 +96,7 @@ describe('MCP Tools Registry', () => {
       let callToolHandler: ((request: any) => Promise<any>) | undefined;
 
       vi.spyOn(server, 'setRequestHandler').mockImplementation((schema: any, handler: any) => {
-        if (schema.shape?.method?._def?.value === 'tools/call') {
+        if (getRequestMethod(schema) === 'tools/call') {
           callToolHandler = handler;
         }
       });
@@ -122,7 +127,7 @@ describe('MCP Tools Registry', () => {
       let callToolHandler: ((request: any) => Promise<any>) | undefined;
 
       vi.spyOn(server, 'setRequestHandler').mockImplementation((schema: any, handler: any) => {
-        if (schema.shape?.method?._def?.value === 'tools/call') {
+        if (getRequestMethod(schema) === 'tools/call') {
           callToolHandler = handler;
         }
       });
@@ -148,7 +153,7 @@ describe('MCP Tools Registry', () => {
       let callToolHandler: ((request: any) => Promise<any>) | undefined;
 
       vi.spyOn(server, 'setRequestHandler').mockImplementation((schema: any, handler: any) => {
-        if (schema.shape?.method?._def?.value === 'tools/call') {
+        if (getRequestMethod(schema) === 'tools/call') {
           callToolHandler = handler;
         }
       });
