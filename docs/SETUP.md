@@ -10,23 +10,23 @@ Install these tools before starting:
 - Node.js 20 or newer with npm
 - Docker and Docker Compose v2
 - Git
-- Optional: pnpm 8.15.0 on your `PATH`
+- Optional: pnpm 11.4.0 on your `PATH`
 
-The repository pins `pnpm@8.15.0`. When `pnpm` is not installed, replace the
-leading `pnpm` in any command with `npm exec --yes pnpm@8.15.0 --`.
+The repository pins `pnpm@11.4.0`. When `pnpm` is not installed, replace the
+leading `pnpm` in any command with `npm exec --yes pnpm@11.4.0 --`.
 
 ## First Run
 
 Run all commands from the repository root.
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- install
+npm exec --yes pnpm@11.4.0 -- install
 test -f .env || cp .env.example .env
-npm exec --yes pnpm@8.15.0 -- docker:up
-npm exec --yes pnpm@8.15.0 -- db:generate
-npm exec --yes pnpm@8.15.0 -- db:migrate
-npm exec --yes pnpm@8.15.0 -- build
-npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.4.0 -- docker:up
+npm exec --yes pnpm@11.4.0 -- db:generate
+npm exec --yes pnpm@11.4.0 -- db:migrate
+npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
 Open a second terminal and verify the server:
@@ -96,7 +96,7 @@ Use `pnpm db:migrate` for schema changes that should be committed. Use
 Build the server first:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@11.4.0 -- build
 ```
 
 Copy the example client config:
@@ -124,22 +124,22 @@ the `ping` tool.
 Check Docker service health:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- docker:ps
-npm exec --yes pnpm@8.15.0 -- docker:logs
+npm exec --yes pnpm@11.4.0 -- docker:ps
+npm exec --yes pnpm@11.4.0 -- docker:logs
 ```
 
 Regenerate Prisma after schema or dependency changes:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- db:generate
+npm exec --yes pnpm@11.4.0 -- db:generate
 ```
 
 Reset local infrastructure data when a development database is no longer useful:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- docker:clean
-npm exec --yes pnpm@8.15.0 -- docker:up
-npm exec --yes pnpm@8.15.0 -- db:migrate
+npm exec --yes pnpm@11.4.0 -- docker:clean
+npm exec --yes pnpm@11.4.0 -- docker:up
+npm exec --yes pnpm@11.4.0 -- db:migrate
 ```
 
 Check direct service health:

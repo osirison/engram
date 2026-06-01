@@ -14,13 +14,13 @@
 
 ## Validation Summary
 
-- `npm exec --yes pnpm@8.15.0 -- up -r --latest`
-- `npm exec --yes pnpm@8.15.0 -- install`
-- `npm exec --yes pnpm@8.15.0 -- --filter web build`
-- `npm exec --yes pnpm@8.15.0 -- --filter docs build`
-- `npm exec --yes pnpm@8.15.0 -- --filter @engram/core test -- src/mcp/tools/index.spec.ts`
-- `npm exec --yes pnpm@8.15.0 -- --filter @engram/core test`
-- `npm exec --yes pnpm@8.15.0 -- --filter @engram/embeddings test`
+- `npm exec --yes pnpm@11.4.0 -- up -r --latest`
+- `npm exec --yes pnpm@11.4.0 -- install`
+- `npm exec --yes pnpm@11.4.0 -- --filter web build`
+- `npm exec --yes pnpm@11.4.0 -- --filter docs build`
+- `npm exec --yes pnpm@11.4.0 -- --filter @engram/core test -- src/mcp/tools/index.spec.ts`
+- `npm exec --yes pnpm@11.4.0 -- --filter @engram/core test`
+- `npm exec --yes pnpm@11.4.0 -- --filter @engram/embeddings test`
 
 ## Findings
 

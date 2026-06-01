@@ -32,7 +32,7 @@ Use a workspace-wide pnpm update to refresh dependency manifests and the lockfil
 
 ## Dependencies
 
-- pnpm via `npm exec --yes pnpm@8.15.0 --`
+- pnpm via `npm exec --yes pnpm@11.4.0 --`
 - Existing workspace scripts and package manifests
 
 ## Success Criteria

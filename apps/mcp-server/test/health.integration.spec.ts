@@ -3,6 +3,7 @@ import { HealthController } from '../src/health/health.controller';
 import { PrismaHealthIndicator } from '../src/health/prisma.health';
 import { RedisHealthIndicator } from '../src/health/redis.health';
 import { QdrantHealthIndicator } from '../src/health/qdrant.health';
+import { PgVectorHealthIndicator } from '../src/health/pgvector.health';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 
@@ -11,6 +12,7 @@ describe('Health Integration Tests', () => {
   let prismaHealthMock: jest.Mock;
   let redisHealthMock: jest.Mock;
   let qdrantHealthMock: jest.Mock;
+  let pgVectorHealthMock: jest.Mock;
 
   beforeEach(async () => {
     prismaHealthMock = jest.fn().mockResolvedValue({
@@ -21,6 +23,9 @@ describe('Health Integration Tests', () => {
     });
     qdrantHealthMock = jest.fn().mockResolvedValue({
       qdrant: { status: 'up' },
+    });
+    pgVectorHealthMock = jest.fn().mockResolvedValue({
+      pgvector: { status: 'up' },
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -43,6 +48,12 @@ describe('Health Integration Tests', () => {
           provide: QdrantHealthIndicator,
           useValue: {
             isHealthy: qdrantHealthMock,
+          },
+        },
+        {
+          provide: PgVectorHealthIndicator,
+          useValue: {
+            isHealthy: pgVectorHealthMock,
           },
         },
       ],

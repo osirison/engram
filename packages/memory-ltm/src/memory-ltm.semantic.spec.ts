@@ -1,0 +1,205 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { MemoryLtmService } from './memory-ltm.service';
+import { MemoryType } from '@engram/database';
+import type { VectorStore } from '@engram/vector-store';
+
+const mockUserId = 'cldx4k8xp000108l83h4y8v2q';
+const mockMemoryId = 'cldx4k8xp000208l84b5c9w3r';
+
+function buildMemory(overrides: Record<string, unknown> = {}) {
+  return {
+    id: mockMemoryId,
+    userId: mockUserId,
+    content: 'Test memory content',
+    metadata: { scope: 'session-1' },
+    tags: ['test'],
+    type: MemoryType.LONG_TERM,
+    createdAt: new Date('2025-01-01T00:00:00Z'),
+    updatedAt: new Date('2025-01-01T00:00:00Z'),
+    expiresAt: null,
+    embedding: [0.1, 0.2, 0.3],
+    ...overrides,
+  };
+}
+
+describe('MemoryLtmService — vector lifecycle & semantic search', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let prisma: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let embeddings: any;
+  let vectorStore: VectorStore & {
+    ensureReady: ReturnType<typeof vi.fn>;
+    upsert: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+    search: ReturnType<typeof vi.fn>;
+  };
+  let service: MemoryLtmService;
+
+  beforeEach(() => {
+    prisma = {
+      memory: {
+        create: vi.fn(),
+        findFirst: vi.fn(),
+        update: vi.fn(),
+        deleteMany: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      $transaction: vi.fn(),
+    };
+    embeddings = {
+      generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+    };
+    vectorStore = {
+      backend: 'qdrant',
+      ensureReady: vi.fn().mockResolvedValue(undefined),
+      upsert: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      search: vi.fn().mockResolvedValue([]),
+    } as unknown as typeof vectorStore;
+
+    service = new MemoryLtmService(prisma, undefined, embeddings, vectorStore);
+  });
+
+  describe('create', () => {
+    it('upserts the embedding into the vector store with a scoped payload', async () => {
+      prisma.memory.create.mockResolvedValue(buildMemory());
+
+      await service.create({
+        userId: mockUserId,
+        content: 'Test memory content',
+        metadata: { scope: 'session-1' },
+        tags: ['test'],
+      });
+
+      expect(vectorStore.upsert).toHaveBeenCalledWith([
+        {
+          id: mockMemoryId,
+          vector: [0.1, 0.2, 0.3],
+          payload: {
+            userId: mockUserId,
+            type: MemoryType.LONG_TERM,
+            tags: ['test'],
+            scope: 'session-1',
+            createdAt: new Date('2025-01-01T00:00:00Z').getTime(),
+          },
+        },
+      ]);
+    });
+
+    it('does not fail creation when the vector store upsert throws', async () => {
+      prisma.memory.create.mockResolvedValue(buildMemory());
+      vectorStore.upsert.mockRejectedValue(new Error('qdrant down'));
+
+      await expect(
+        service.create({ userId: mockUserId, content: 'Test memory content' })
+      ).resolves.toMatchObject({ id: mockMemoryId });
+    });
+  });
+
+  describe('delete', () => {
+    it('removes the vector after a successful delete', async () => {
+      prisma.memory.deleteMany.mockResolvedValue({ count: 1 });
+
+      const deleted = await service.delete(mockUserId, mockMemoryId);
+
+      expect(deleted).toBe(true);
+      expect(vectorStore.delete).toHaveBeenCalledWith([mockMemoryId]);
+    });
+
+    it('does not touch the vector store when nothing was deleted', async () => {
+      prisma.memory.deleteMany.mockResolvedValue({ count: 0 });
+
+      await service.delete(mockUserId, mockMemoryId);
+
+      expect(vectorStore.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('semanticSearch', () => {
+    it('embeds the query, searches with a tenant filter, and hydrates ranked results', async () => {
+      vectorStore.search.mockResolvedValue([
+        { id: mockMemoryId, score: 0.91, payload: { userId: mockUserId } },
+      ]);
+      prisma.memory.findMany.mockResolvedValue([buildMemory()]);
+
+      const results = await service.semanticSearch(mockUserId, 'what did I learn', {
+        limit: 5,
+        scope: 'session-1',
+        tags: ['test'],
+      });
+
+      expect(embeddings.generate).toHaveBeenCalledWith({ text: 'what did I learn' });
+      expect(vectorStore.search).toHaveBeenCalledWith(
+        [0.1, 0.2, 0.3],
+        {
+          userId: mockUserId,
+          type: MemoryType.LONG_TERM,
+          scope: 'session-1',
+          tags: ['test'],
+        },
+        5
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]?.score).toBe(0.91);
+      expect(results[0]?.memory.id).toBe(mockMemoryId);
+    });
+
+    it('forwards a created time range to the vector store filter', async () => {
+      vectorStore.search.mockResolvedValue([]);
+      prisma.memory.findMany.mockResolvedValue([]);
+
+      const createdFrom = new Date('2025-01-01T00:00:00Z');
+      const createdTo = new Date('2025-02-01T00:00:00Z');
+      await service.semanticSearch(mockUserId, 'query', { createdFrom, createdTo });
+
+      expect(vectorStore.search).toHaveBeenCalledWith(
+        [0.1, 0.2, 0.3],
+        {
+          userId: mockUserId,
+          type: MemoryType.LONG_TERM,
+          scope: undefined,
+          tags: undefined,
+          createdFrom,
+          createdTo,
+        },
+        10
+      );
+    });
+
+    it('preserves vector ranking order and drops hits without a backing row', async () => {
+      vectorStore.search.mockResolvedValue([
+        { id: 'b', score: 0.9 },
+        { id: 'missing', score: 0.8 },
+        { id: 'a', score: 0.7 },
+      ]);
+      prisma.memory.findMany.mockResolvedValue([
+        buildMemory({ id: 'a' }),
+        buildMemory({ id: 'b' }),
+      ]);
+
+      const results = await service.semanticSearch(mockUserId, 'query');
+
+      expect(results.map((r) => r.memory.id)).toEqual(['b', 'a']);
+    });
+
+    it('returns an empty array when the query is blank', async () => {
+      const results = await service.semanticSearch(mockUserId, '   ');
+      expect(results).toEqual([]);
+      expect(vectorStore.search).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty array when no query embedding is produced', async () => {
+      embeddings.generate.mockResolvedValue(null);
+      const results = await service.semanticSearch(mockUserId, 'query');
+      expect(results).toEqual([]);
+      expect(vectorStore.search).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty array when no vector store is configured', async () => {
+      const noVectorService = new MemoryLtmService(prisma, undefined, embeddings, undefined);
+      const results = await noVectorService.semanticSearch(mockUserId, 'query');
+      expect(results).toEqual([]);
+    });
+  });
+});

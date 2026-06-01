@@ -4,6 +4,7 @@ import { HealthCheckService } from '@nestjs/terminus';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
+import { PgVectorHealthIndicator } from './pgvector.health';
 import { EmbeddingsService } from '@engram/embeddings';
 
 describe('HealthController', () => {
@@ -19,6 +20,9 @@ describe('HealthController', () => {
     isHealthy: jest.fn(),
   };
   const qdrantHealthMock = {
+    isHealthy: jest.fn(),
+  };
+  const pgVectorHealthMock = {
     isHealthy: jest.fn(),
   };
   const embeddingsServiceMock = {
@@ -46,6 +50,10 @@ describe('HealthController', () => {
         {
           provide: QdrantHealthIndicator,
           useValue: qdrantHealthMock,
+        },
+        {
+          provide: PgVectorHealthIndicator,
+          useValue: pgVectorHealthMock,
         },
         {
           provide: EmbeddingsService,
@@ -78,9 +86,43 @@ describe('HealthController', () => {
       prismaHealthMock as unknown as PrismaHealthIndicator,
       redisHealthMock as unknown as RedisHealthIndicator,
       qdrantHealthMock as unknown as QdrantHealthIndicator,
+      pgVectorHealthMock as unknown as PgVectorHealthIndicator,
       undefined,
     );
 
     expect(noEmbeddingsController.getMetrics()).toBe('');
+  });
+
+  it('includes the pgvector check only when VECTOR_BACKEND is pgvector', async () => {
+    healthServiceMock.check.mockImplementation(
+      async (indicators: Array<() => Promise<unknown>>) => {
+        await Promise.all(indicators.map((indicator) => indicator()));
+        return { status: 'ok' };
+      },
+    );
+    prismaHealthMock.isHealthy.mockResolvedValue({
+      database: { status: 'up' },
+    });
+    redisHealthMock.isHealthy.mockResolvedValue({ redis: { status: 'up' } });
+    qdrantHealthMock.isHealthy.mockResolvedValue({ qdrant: { status: 'up' } });
+    pgVectorHealthMock.isHealthy.mockResolvedValue({
+      pgvector: { status: 'up' },
+    });
+
+    const previous = process.env.VECTOR_BACKEND;
+
+    process.env.VECTOR_BACKEND = 'qdrant';
+    await controller.check();
+    expect(pgVectorHealthMock.isHealthy).not.toHaveBeenCalled();
+
+    process.env.VECTOR_BACKEND = 'pgvector';
+    await controller.check();
+    expect(pgVectorHealthMock.isHealthy).toHaveBeenCalledWith('pgvector');
+
+    if (previous === undefined) {
+      delete process.env.VECTOR_BACKEND;
+    } else {
+      process.env.VECTOR_BACKEND = previous;
+    }
   });
 });

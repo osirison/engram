@@ -9,6 +9,7 @@ import {
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
+import { PgVectorHealthIndicator } from './pgvector.health';
 
 @Controller('health')
 export class HealthController {
@@ -17,19 +18,29 @@ export class HealthController {
     private readonly prismaHealth: PrismaHealthIndicator,
     private readonly redisHealth: RedisHealthIndicator,
     private readonly qdrantHealth: QdrantHealthIndicator,
+    private readonly pgVectorHealth: PgVectorHealthIndicator,
     @Optional() private readonly embeddingsService?: EmbeddingsService,
   ) {}
 
   @Get()
   @HealthCheck()
   async check(): Promise<HealthCheckResult> {
-    return this.health.check([
+    const indicators: Array<() => Promise<HealthIndicatorResult>> = [
       (): Promise<HealthIndicatorResult> =>
         this.prismaHealth.isHealthy('database'),
       (): Promise<HealthIndicatorResult> => this.redisHealth.isHealthy('redis'),
       (): Promise<HealthIndicatorResult> =>
         this.qdrantHealth.isHealthy('qdrant'),
-    ]);
+    ];
+
+    if ((process.env.VECTOR_BACKEND ?? 'qdrant').toLowerCase() === 'pgvector') {
+      indicators.push(
+        (): Promise<HealthIndicatorResult> =>
+          this.pgVectorHealth.isHealthy('pgvector'),
+      );
+    }
+
+    return this.health.check(indicators);
   }
 
   @Get('metrics')

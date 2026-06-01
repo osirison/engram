@@ -13,6 +13,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "eval": "turbo run eval --filter=@engram/eval",
     "docs:check": "node .github/check-docs.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
@@ -46,7 +47,7 @@
     "turbo": "^2.9.14",
     "typescript": "^6.0.3"
   },
-  "packageManager": "pnpm@8.15.0",
+  "packageManager": "pnpm@11.4.0",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=8.0.0"

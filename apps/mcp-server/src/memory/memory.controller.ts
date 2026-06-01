@@ -18,17 +18,21 @@ import {
   updateMemoryToolSchema,
   UpdateMemoryToolInput,
 } from './dto/update-memory.dto';
+import { recallToolSchema, RecallToolInput } from './dto/recall.dto';
+import { reindexToolSchema, ReindexToolInput } from './dto/reindex.dto';
 
 /**
  * MCP Memory Tools Controller
  *
- * Implements 6 MCP tools for memory management:
+ * Implements 8 MCP tools for memory management:
  * 1. create_memory - Create short-term or long-term memory
  * 2. get_memory - Retrieve memory by ID
  * 3. list_memories - List memories with pagination
  * 4. update_memory - Update existing memory
  * 5. delete_memory - Delete memory by ID
  * 6. promote_memory - Convert STM memory to LTM
+ * 7. recall - Semantic (vector) recall over long-term memories
+ * 8. reindex_memories - Backfill/rebuild the vector store from Postgres
  */
 @Controller('memory')
 @Injectable()
@@ -301,6 +305,101 @@ export class MemoryController {
   }
 
   /**
+   * MCP Tool: recall
+   * Semantic (vector) recall over a user's long-term memories
+   */
+  async recall(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('recall tool called');
+
+      // Validate input using Zod schema
+      const validatedInput: RecallToolInput = recallToolSchema.parse(input);
+
+      // Run semantic recall using service
+      const results = await this.memoryService.recall(
+        validatedInput.userId,
+        validatedInput.query,
+        {
+          limit: validatedInput.limit,
+          scope: validatedInput.scope,
+          tags: validatedInput.tags,
+        },
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                query: validatedInput.query,
+                count: results.length,
+                results: results.map((result) => ({
+                  score: result.score,
+                  memory: result.memory,
+                })),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in recall tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to recall memories: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * MCP Tool: reindex_memories
+   * Rebuild the vector store from Postgres (the source of truth). Idempotent
+   * and cursor-resumable; intended for operators backfilling a vector backend.
+   */
+  async reindexMemories(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('reindex_memories tool called');
+
+      const validatedInput: ReindexToolInput = reindexToolSchema.parse(input);
+
+      const summary = await this.memoryService.reindex({
+        userId: validatedInput.userId,
+        batchSize: validatedInput.batchSize,
+        reuseExistingEmbeddings: validatedInput.reuseExistingEmbeddings,
+        cursor: validatedInput.cursor,
+        maxMemories: validatedInput.maxMemories,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                scope: validatedInput.userId ?? 'all-users',
+                ...summary,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in reindex_memories tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to reindex memories: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Get MCP tools in the format required by the MCP handler
    * This method creates Tool objects that bind controller methods as handlers
    */
@@ -351,6 +450,22 @@ export class MemoryController {
         description: 'Promote short-term memory to long-term storage',
         inputSchema: getMemoryToolSchema, // Reuse get_memory schema
         handler: this.promoteMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'recall',
+        description:
+          'Semantically recall the most relevant long-term memories for a natural-language query',
+        inputSchema: recallToolSchema,
+        handler: this.recall.bind(this) as (input: unknown) => Promise<unknown>,
+      },
+      {
+        name: 'reindex_memories',
+        description:
+          'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable',
+        inputSchema: reindexToolSchema,
+        handler: this.reindexMemories.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
       },

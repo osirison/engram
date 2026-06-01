@@ -14,13 +14,13 @@ workspace packages.
 Run from the repository root:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- install
+npm exec --yes pnpm@11.4.0 -- install
 test -f .env || cp .env.example .env
-npm exec --yes pnpm@8.15.0 -- docker:up
-npm exec --yes pnpm@8.15.0 -- db:generate
-npm exec --yes pnpm@8.15.0 -- db:migrate
-npm exec --yes pnpm@8.15.0 -- build
-npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.4.0 -- docker:up
+npm exec --yes pnpm@11.4.0 -- db:generate
+npm exec --yes pnpm@11.4.0 -- db:migrate
+npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
 The server listens on `http://localhost:3000` by default.
@@ -52,6 +52,35 @@ are:
 | Run unit tests            | `pnpm --filter mcp-server test`            |
 | Run coverage              | `pnpm --filter mcp-server test:cov`        |
 | Run e2e tests with Docker | `pnpm --filter mcp-server test:e2e:docker` |
+| Reindex memory embeddings | `pnpm --filter mcp-server reindex`         |
+
+## Reindex / Backfill
+
+The server exposes a `reindex_memories` MCP tool and a standalone CLI that
+backfill long-term memory vector embeddings. Use them after enabling a new
+vector backend, changing the embedding model, or recovering from a vector store
+outage.
+
+The `reindex_memories` tool accepts optional `userId` (scopes the run to one
+user), `batchSize` (1-1000), `reuseExistingEmbeddings` (reuse stored vectors
+instead of regenerating), `cursor` (resume from a previous run), and
+`maxMemories` (cap the number processed). It returns a summary of processed,
+indexed, skipped, and failed counts plus the next `cursor`.
+
+Run the CLI directly:
+
+```bash
+pnpm --filter mcp-server reindex -- --user <userId> --batch-size 200
+pnpm --filter mcp-server reindex -- --regenerate --max 1000
+```
+
+| Flag           | Purpose                                            |
+| -------------- | -------------------------------------------------- |
+| `--user`       | Restrict reindexing to a single user id            |
+| `--batch-size` | Memories to process per batch (1-1000)             |
+| `--max`        | Maximum number of memories to process              |
+| `--cursor`     | Resume from a memory id returned by a previous run |
+| `--regenerate` | Regenerate embeddings instead of reusing stored    |
 
 ## Health Endpoints
 

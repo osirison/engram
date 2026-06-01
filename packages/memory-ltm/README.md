@@ -43,6 +43,28 @@ export class MemoryModule {}
 | Type-check | `pnpm --filter @engram/memory-ltm typecheck` |
 | Run tests  | `pnpm --filter @engram/memory-ltm test`      |
 
+## Backfill / Reindex
+
+`MemoryLtmService.reindex` rebuilds the vector store from Postgres. Use it to
+seed a freshly added vector backend or to re-embed after an embedding-model
+change. The operation is idempotent and cursor-resumable, and per-item failures
+are counted and skipped so Postgres remains the source of truth.
+
+```typescript
+const summary = await ltm.reindex({
+  userId, // optional: omit to reindex all users
+  batchSize: 100, // memories loaded per page (default 100, max 1000)
+  reuseExistingEmbeddings: true, // false to regenerate every embedding
+  cursor, // optional: resume from a prior run
+  maxMemories, // optional: cap total processed
+  onProgress: (p) => console.log(p), // { processed, indexed, skipped, failed, cursor }
+});
+// summary => { processed, indexed, skipped, failed, cursor: null }
+```
+
+To process a large dataset across multiple invocations, pass the `cursor` from
+the last `onProgress` callback (or a stored checkpoint) into the next call.
+
 ## Related Docs
 
 - Database package: [../database/README.md](../database/README.md)

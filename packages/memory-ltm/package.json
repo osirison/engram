@@ -37,6 +37,7 @@
     "@engram/database": "workspace:*",
     "@engram/embeddings": "workspace:*",
     "@engram/memory-stm": "workspace:*",
+    "@engram/vector-store": "workspace:*",
     "@nestjs/common": "^11.1.23",
     "@nestjs/config": "^4.0.4",
     "@prisma/client": "^6.19.3",

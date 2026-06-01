@@ -125,6 +125,7 @@ describe('MCP Tools Integration', () => {
       delete: jest.fn(),
       list: jest.fn(),
       promote: jest.fn(),
+      reindex: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -145,9 +146,9 @@ describe('MCP Tools Integration', () => {
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 6 tools', () => {
+    it('should register exactly 8 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(8);
     });
 
     it('should register all expected tool names', () => {
@@ -158,6 +159,8 @@ describe('MCP Tools Integration', () => {
       expect(names).toContain('update_memory');
       expect(names).toContain('delete_memory');
       expect(names).toContain('promote_memory');
+      expect(names).toContain('recall');
+      expect(names).toContain('reindex_memories');
     });
 
     it('should attach a callable handler to each tool', () => {

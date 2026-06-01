@@ -56,23 +56,23 @@ small utilities, and configuration files when no generator exists.
 Use root commands unless a package README says otherwise.
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- install
+npm exec --yes pnpm@11.4.0 -- install
 test -f .env || cp .env.example .env
-npm exec --yes pnpm@8.15.0 -- docker:up
-npm exec --yes pnpm@8.15.0 -- db:generate
-npm exec --yes pnpm@8.15.0 -- db:migrate
-npm exec --yes pnpm@8.15.0 -- build
-npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.4.0 -- docker:up
+npm exec --yes pnpm@11.4.0 -- db:generate
+npm exec --yes pnpm@11.4.0 -- db:migrate
+npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
 Quality checks:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- build
-npm exec --yes pnpm@8.15.0 -- lint
-npm exec --yes pnpm@8.15.0 -- typecheck
-npm exec --yes pnpm@8.15.0 -- test
-npm exec --yes pnpm@8.15.0 -- docs:check
+npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.4.0 -- lint
+npm exec --yes pnpm@11.4.0 -- typecheck
+npm exec --yes pnpm@11.4.0 -- test
+npm exec --yes pnpm@11.4.0 -- docs:check
 ```
 
 ## Coding Standards

@@ -66,7 +66,35 @@ type LtmServiceContract = {
     },
   ) => Promise<MemoryListResult>;
   promote: (userId: string, memoryId: string) => Promise<Memory>;
+  semanticSearch: (
+    userId: string,
+    query: string,
+    options?: { limit?: number; scope?: string; tags?: string[] },
+  ) => Promise<Array<{ memory: Memory; score: number }>>;
+  reindex: (options?: {
+    userId?: string;
+    batchSize?: number;
+    reuseExistingEmbeddings?: boolean;
+    cursor?: string;
+    maxMemories?: number;
+  }) => Promise<ReindexSummary>;
 };
+
+export interface ReindexSummary {
+  processed: number;
+  indexed: number;
+  skipped: number;
+  failed: number;
+  cursor: null;
+}
+
+export interface ReindexOptions {
+  userId?: string;
+  batchSize?: number;
+  reuseExistingEmbeddings?: boolean;
+  cursor?: string;
+  maxMemories?: number;
+}
 
 export interface CreateMemoryDto {
   userId: string;
@@ -91,6 +119,17 @@ export interface ListMemoryOptions {
   search?: string;
 }
 
+export interface RecallOptions {
+  limit?: number;
+  scope?: string;
+  tags?: string[];
+}
+
+export interface RecallResult {
+  memory: Memory;
+  score: number;
+}
+
 export interface PaginatedMemories {
   items: Memory[];
   totalCount: number;
@@ -111,7 +150,7 @@ export class MemoryService {
     private readonly ltmService: MemoryLtmService,
   ) {
     this.stm = this.stmService as unknown as StmServiceContract;
-    this.ltm = this.ltmService as unknown as LtmServiceContract;
+    this.ltm = this.ltmService;
   }
 
   /**
@@ -317,5 +356,35 @@ export class MemoryService {
 
     // Use LTM service's promote method which handles the transfer
     return await this.ltm.promote(userId, memoryId);
+  }
+
+  /**
+   * Semantic recall - finds the most relevant long-term memories for a query
+   * using vector similarity search.
+   */
+  async recall(
+    userId: string,
+    query: string,
+    options: RecallOptions = {},
+  ): Promise<RecallResult[]> {
+    this.logger.debug(`Recalling memories for user: ${userId}`);
+
+    return await this.ltm.semanticSearch(userId, query, {
+      limit: options.limit,
+      scope: options.scope,
+      tags: options.tags,
+    });
+  }
+
+  /**
+   * Rebuild the vector store from Postgres. Backfills embeddings for one user
+   * or every user. Idempotent and safe to re-run.
+   */
+  async reindex(options: ReindexOptions = {}): Promise<ReindexSummary> {
+    this.logger.debug(
+      `Reindexing vector store${options.userId ? ` for user: ${options.userId}` : ' for all users'}`,
+    );
+
+    return await this.ltm.reindex(options);
   }
 }

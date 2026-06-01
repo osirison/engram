@@ -1,0 +1,33 @@
+{
+  "name": "@engram/eval",
+  "version": "0.1.0",
+  "description": "Retrieval evaluation harness (precision@k, recall@k, MRR, nDCG) for ENGRAM memory recall",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "eval": "tsc && node dist/run.js",
+    "bench": "tsc && node dist/bench.js"
+  },
+  "keywords": [
+    "engram",
+    "evaluation",
+    "retrieval",
+    "metrics",
+    "recall"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^25.9.1",
+    "eslint": "^10.4.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

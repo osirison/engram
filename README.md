@@ -14,9 +14,9 @@ semantic search, and health checks.
 - Node.js 20 or newer with npm
 - Docker and Docker Compose v2
 - Git
-- Optional: pnpm 8.15.0 on your `PATH`
+- Optional: pnpm 11.4.0 on your `PATH`
 
-ENGRAM pins `pnpm@8.15.0` in [package.json](package.json). The quick start
+ENGRAM pins `pnpm@11.4.0` in [package.json](package.json). The quick start
 uses npm to run that pinned pnpm version, so it works even when `pnpm` is not
 installed globally.
 
@@ -25,13 +25,13 @@ installed globally.
 Run these commands from the repository root.
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- install
+npm exec --yes pnpm@11.4.0 -- install
 test -f .env || cp .env.example .env
-npm exec --yes pnpm@8.15.0 -- docker:up
-npm exec --yes pnpm@8.15.0 -- db:generate
-npm exec --yes pnpm@8.15.0 -- db:migrate
-npm exec --yes pnpm@8.15.0 -- build
-npm exec --yes pnpm@8.15.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.4.0 -- docker:up
+npm exec --yes pnpm@11.4.0 -- db:generate
+npm exec --yes pnpm@11.4.0 -- db:migrate
+npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000` by default. Check it with:
@@ -43,13 +43,13 @@ curl http://localhost:3000/health
 To stop local infrastructure without deleting data:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- docker:down
+npm exec --yes pnpm@11.4.0 -- docker:down
 ```
 
 To remove containers and local volumes:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- docker:clean
+npm exec --yes pnpm@11.4.0 -- docker:clean
 ```
 
 After installing pnpm globally, you can use the shorter `pnpm <command>` form
@@ -128,7 +128,7 @@ the port inside `DATABASE_URL`.
 Build the server before connecting it to an MCP client:
 
 ```bash
-npm exec --yes pnpm@8.15.0 -- build
+npm exec --yes pnpm@11.4.0 -- build
 ```
 
 Then copy [claude_desktop_config.json.example](claude_desktop_config.json.example)

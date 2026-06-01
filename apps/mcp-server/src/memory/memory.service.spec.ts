@@ -60,6 +60,8 @@ describe('MemoryService', () => {
       delete: jest.fn(),
       list: jest.fn(),
       promote: jest.fn(),
+      semanticSearch: jest.fn(),
+      reindex: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -302,6 +304,82 @@ describe('MemoryService', () => {
 
       expect(result).toEqual(mockLtmMemory);
       expect(ltmService.promote).toHaveBeenCalledWith('user-1', 'stm-123');
+    });
+  });
+
+  describe('recall', () => {
+    it('should delegate semantic recall to the LTM service', async () => {
+      const semanticResult = [{ memory: mockLtmMemory, score: 0.87 }];
+      ltmService.semanticSearch.mockResolvedValue(semanticResult);
+
+      const result = await service.recall('user-1', 'find my notes', {
+        limit: 5,
+        scope: 'project-a',
+        tags: ['notes'],
+      });
+
+      expect(result).toEqual(semanticResult);
+      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+        'user-1',
+        'find my notes',
+        { limit: 5, scope: 'project-a', tags: ['notes'] },
+      );
+    });
+
+    it('should default options when none are provided', async () => {
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      const result = await service.recall('user-1', 'query');
+
+      expect(result).toEqual([]);
+      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+        'user-1',
+        'query',
+        {
+          limit: undefined,
+          scope: undefined,
+          tags: undefined,
+        },
+      );
+    });
+  });
+
+  describe('reindex', () => {
+    it('should delegate reindex to the LTM service', async () => {
+      const summary = {
+        processed: 3,
+        indexed: 3,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      };
+
+      (ltmService.reindex as any).mockResolvedValue(summary);
+
+      const result = await service.reindex({ userId: 'user-1', batchSize: 50 });
+
+      expect(result).toEqual(summary);
+      expect(ltmService.reindex).toHaveBeenCalledWith({
+        userId: 'user-1',
+        batchSize: 50,
+      });
+    });
+
+    it('should default to all users when no options are provided', async () => {
+      const summary = {
+        processed: 0,
+        indexed: 0,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      };
+
+      (ltmService.reindex as any).mockResolvedValue(summary);
+
+      const result = await service.reindex();
+
+      expect(result).toEqual(summary);
+      expect(ltmService.reindex).toHaveBeenCalledWith({});
     });
   });
 });
