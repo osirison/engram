@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Memory } from '@engram/database';
+import { cursorIdSchema, Memory, userIdSchema } from '@engram/database';
 
 // LTM-specific configuration
 export interface LtmConfig {
@@ -110,7 +110,7 @@ export interface ReindexResult extends ReindexProgress {
 
 // Create LTM memory schema
 export const createLtmMemorySchema = z.object({
-  userId: z.string().cuid('Invalid user ID format'),
+  userId: userIdSchema,
   content: z.string().min(1, 'Content cannot be empty').max(10240, 'Content cannot exceed 10KB'),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   tags: z.array(z.string()).optional().default([]),
@@ -130,7 +130,7 @@ export const updateLtmMemorySchema = z.object({
 // LTM query options schema
 export const ltmQueryOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
-  cursor: z.string().cuid().optional(),
+  cursor: cursorIdSchema.optional(),
   tags: z.array(z.string()).optional(),
   dateFrom: z.date().optional(),
   dateTo: z.date().optional(),

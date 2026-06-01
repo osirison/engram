@@ -8,7 +8,7 @@
  *   pnpm --filter mcp-server reindex -- [options]
  *
  * Options:
- *   --user <cuid>        Reindex only this user (default: all users)
+ *   --user <id>          Reindex only this user (default: all users)
  *   --batch-size <n>     Memories per page (1-1000, default 100)
  *   --regenerate         Regenerate embeddings instead of reusing stored ones
  *   --max <n>            Stop after processing at most n memories

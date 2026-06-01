@@ -545,7 +545,7 @@ describe('MCP Tools Integration', () => {
     it('should throw wrapped error for invalid userId', async () => {
       await expect(
         controller.deleteMemory({
-          userId: 'invalid',
+          userId: 'INVALID!',
           memoryId: MEMORY_ID,
         }),
       ).rejects.toThrow('Failed to delete memory');

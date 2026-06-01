@@ -14,7 +14,7 @@ name: engram-test
 
 services:
   postgres-test:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     container_name: engram-postgres-test
     environment:
       POSTGRES_DB: engram_test
@@ -31,7 +31,7 @@ services:
       - engram-test-network
 
   redis-test:
-    image: redis:7-alpine
+    image: redis:latest
     container_name: engram-redis-test
     ports:
       - '6380:6379'
@@ -44,7 +44,7 @@ services:
       - engram-test-network
 
   qdrant-test:
-    image: qdrant/qdrant:v1.14.1
+    image: qdrant/qdrant:latest
     container_name: engram-qdrant-test
     ports:
       - '6335:6333'

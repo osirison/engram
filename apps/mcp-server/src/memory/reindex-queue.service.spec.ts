@@ -1,4 +1,7 @@
-import { ReindexQueueService } from './reindex-queue.service';
+import {
+  type ReindexJobStatus,
+  ReindexQueueService,
+} from './reindex-queue.service';
 
 describe('ReindexQueueService', () => {
   const redis = {
@@ -45,13 +48,14 @@ describe('ReindexQueueService', () => {
         cursor: null,
       });
 
-    let latest: Record<string, unknown> | null = null;
-    redis.set.mockImplementation(async (_key, value) => {
-      latest = JSON.parse(value);
+    let latest: ReindexJobStatus | null = null;
+    redis.set.mockImplementation((_key, value) => {
+      latest = JSON.parse(value) as ReindexJobStatus;
+      return Promise.resolve();
     });
-    redis.get.mockImplementation(async () =>
-      latest ? JSON.stringify(latest) : null,
-    );
+    redis.get.mockImplementation(() => {
+      return Promise.resolve(latest ? JSON.stringify(latest) : null);
+    });
 
     const job = await service.enqueue({ batchSize: 2 });
     // Allow the async chain to run.
@@ -71,13 +75,14 @@ describe('ReindexQueueService', () => {
   });
 
   it('cancels queued jobs immediately', async () => {
-    let latest: Record<string, unknown> | null = null;
-    redis.set.mockImplementation(async (_key, value) => {
-      latest = JSON.parse(value);
+    let latest: ReindexJobStatus | null = null;
+    redis.set.mockImplementation((_key, value) => {
+      latest = JSON.parse(value) as ReindexJobStatus;
+      return Promise.resolve();
     });
-    redis.get.mockImplementation(async () =>
-      latest ? JSON.stringify(latest) : null,
-    );
+    redis.get.mockImplementation(() => {
+      return Promise.resolve(latest ? JSON.stringify(latest) : null);
+    });
 
     const job = await service.enqueue({ batchSize: 2 });
     const cancelled = await service.cancel(job.jobId);
@@ -88,19 +93,21 @@ describe('ReindexQueueService', () => {
   });
 
   it('retries failed jobs from their cursor', async () => {
-    const jobs = new Map<string, Record<string, unknown>>();
-    redis.set.mockImplementation(async (key, value) => {
-      jobs.set(key, JSON.parse(value));
+    const jobs = new Map<string, ReindexJobStatus>();
+    redis.set.mockImplementation((key, value) => {
+      jobs.set(key, JSON.parse(value) as ReindexJobStatus);
+      return Promise.resolve();
     });
-    redis.get.mockImplementation(async (key) => {
+    redis.get.mockImplementation((key) => {
       const value = jobs.get(key);
-      return value ? JSON.stringify(value) : null;
+      return Promise.resolve(value ? JSON.stringify(value) : null);
     });
 
-    const failed = {
+    const failed: ReindexJobStatus = {
       jobId: 'job-failed',
       state: 'failed',
       createdAt: new Date().toISOString(),
+      events: [],
       options: { batchSize: 10 },
       summary: {
         processed: 5,

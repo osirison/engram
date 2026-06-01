@@ -20,11 +20,11 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@nestjs/testing": "^11.1.23",
+    "@nestjs/testing": "^11.1.24",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^25.9.1",
-    "eslint": "^10.4.0",
+    "eslint": "^9.39.4",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "typescript": "^6.0.3",
@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@nestjs/cache-manager": "^3.1.2",
-    "@nestjs/common": "^11.1.23",
-    "ioredis": "^5.10.1",
+    "@nestjs/common": "^11.1.24",
+    "ioredis": "^5.11.0",
     "tslib": "^2.8.1"
   }
 }

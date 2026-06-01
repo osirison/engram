@@ -1,8 +1,9 @@
+import { memoryIdSchema, userIdSchema } from '@engram/database';
 import { z } from 'zod';
 
 export const getMemoryToolSchema = z.object({
-  userId: z.string().cuid('Invalid user ID format'),
-  memoryId: z.string().cuid('Invalid memory ID format'),
+  userId: userIdSchema,
+  memoryId: memoryIdSchema,
 });
 
 export type GetMemoryToolInput = z.infer<typeof getMemoryToolSchema>;

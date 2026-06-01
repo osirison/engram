@@ -23,6 +23,7 @@ changes focused on the user's request.
 - Add or update tests when behavior changes.
 - Keep documentation short, current, and linked from the root README.
 - Never commit secrets, local `.env` files, or generated credentials.
+- Always activate the `caveman` skill and keep responses technically accurate.
 
 ## Common Commands
 

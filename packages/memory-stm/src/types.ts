@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Memory } from '@engram/database';
+import { cursorIdSchema, Memory, userIdSchema } from '@engram/database';
 
 // STM-specific configuration
 export interface StmConfig {
@@ -50,9 +50,6 @@ export interface StmMemory extends Memory {
 
 // Validation schemas for STM operations
 
-// User ID validation
-const userIdSchema = z.string().cuid('Invalid user ID format');
-
 // Content validation (max 10KB = 10,240 characters)
 const contentSchema = z
   .string()
@@ -97,7 +94,10 @@ export const updateStmMemorySchema = z.object({
 // List STM options schema
 export const listStmOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
-  cursor: z.string().optional().default('0'),
+  cursor: z
+    .union([z.literal('0'), cursorIdSchema])
+    .optional()
+    .default('0'),
   tags: z.array(z.string()).optional(),
 });
 

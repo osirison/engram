@@ -4,10 +4,10 @@ packages:
 
 allowBuilds:
   '@nestjs/core': set this to true or false
-  '@prisma/client': set this to true or false
-  '@prisma/engines': set this to true or false
+  '@prisma/client': true
+  '@prisma/engines': true
   esbuild: set this to true or false
-  prisma: set this to true or false
+  prisma: true
   sharp: set this to true or false
   unrs-resolver: set this to true or false
 

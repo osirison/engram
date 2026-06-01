@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+const cuid1IdSchema = z.string().cuid();
+const cuid2IdSchema = z.string().cuid2();
+
+const createCompatibleIdSchema = (message: string): z.ZodEffects<z.ZodString> =>
+  z.string().refine((value) => {
+    return cuid1IdSchema.safeParse(value).success || cuid2IdSchema.safeParse(value).success;
+  }, message);
+
 // Memory type enum
 export const MemoryType = {
   SHORT_TERM: 'short-term',
@@ -63,10 +71,13 @@ export const memoryTagsSchema = z
   .default([]);
 
 // User ID validation
-export const userIdSchema = z.string().cuid('Invalid user ID format');
+export const userIdSchema = createCompatibleIdSchema('Invalid user ID format');
 
 // Memory ID validation
-export const memoryIdSchema = z.string().cuid('Invalid memory ID format');
+export const memoryIdSchema = createCompatibleIdSchema('Invalid memory ID format');
+
+// Cursor validation accepts legacy CUID and new CUID2 values.
+export const cursorIdSchema = createCompatibleIdSchema('Invalid cursor ID format');
 
 // TTL validation for short-term memories (in seconds)
 export const ttlSchema = z
@@ -99,7 +110,7 @@ export const updateMemorySchema = z.object({
 export const memoryQueryOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
   offset: z.number().int().min(0).optional().default(0),
-  cursor: z.string().cuid().optional(),
+  cursor: cursorIdSchema.optional(),
   tags: z.array(z.string()).optional(),
   type: memoryTypeSchema.optional(),
   dateFrom: z.date().optional(),

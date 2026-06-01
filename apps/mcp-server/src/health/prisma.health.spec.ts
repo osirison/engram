@@ -29,9 +29,7 @@ describe('PrismaHealthIndicator', () => {
     }).compile();
 
     indicator = module.get<PrismaHealthIndicator>(PrismaHealthIndicator);
-    prismaService = module.get<PrismaService>(
-      PrismaService,
-    ) as PrismaServiceMock;
+    prismaService = module.get<PrismaServiceMock>(PrismaService);
   });
 
   it('should be defined', () => {
