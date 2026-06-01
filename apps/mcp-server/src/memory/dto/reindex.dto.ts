@@ -8,6 +8,8 @@ import { z } from 'zod';
  * embedding-model change. The operation is idempotent and cursor-resumable.
  */
 export const reindexToolSchema = z.object({
+  /** Admin authorization token; must match MCP_ADMIN_TOKEN. */
+  adminToken: z.string().min(16, 'adminToken must be at least 16 chars'),
   /** Restrict the reindex to a single user. Omit to reindex every user. */
   userId: z.string().cuid('Invalid user ID format').optional(),
   /** Memories loaded per page (1-1000). Defaults to 100. */

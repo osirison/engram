@@ -103,7 +103,7 @@ export interface ReindexProgress {
 
 // Final summary returned by a reindex run
 export interface ReindexResult extends ReindexProgress {
-  cursor: null;
+  cursor: string | null;
 }
 
 // Zod validation schemas

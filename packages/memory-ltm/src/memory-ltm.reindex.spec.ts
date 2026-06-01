@@ -119,7 +119,7 @@ describe('MemoryLtmService.reindex', () => {
   });
 
   it('honours maxMemories and userId scoping', async () => {
-    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a'), buildMemory('b')]);
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]);
 
     const result = await service.reindex({ userId: mockUserId, maxMemories: 1, batchSize: 5 });
 
@@ -127,7 +127,8 @@ describe('MemoryLtmService.reindex', () => {
       take: 1,
       where: { type: MemoryType.LONG_TERM, userId: mockUserId },
     });
-    expect(result.processed).toBe(2);
+    expect(result.processed).toBe(1);
+    expect(result.cursor).toBe('a');
   });
 
   it('reports progress after each batch', async () => {

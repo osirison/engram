@@ -49,14 +49,14 @@ describe('createVectorStoreLatencyTarget', () => {
     ]);
 
     await target.search(0);
-    expect(store.search).toHaveBeenLastCalledWith([0.1, 0.2], 3);
+    expect(store.search).toHaveBeenLastCalledWith([0.1, 0.2], 3, undefined);
 
     // Second query omits a limit, so the default is used; index wraps around.
     await target.search(1);
-    expect(store.search).toHaveBeenLastCalledWith([0.9, 0.8], 7);
+    expect(store.search).toHaveBeenLastCalledWith([0.9, 0.8], 7, undefined);
 
     await target.search(2);
-    expect(store.search).toHaveBeenLastCalledWith([0.1, 0.2], 3);
+    expect(store.search).toHaveBeenLastCalledWith([0.1, 0.2], 3, undefined);
 
     await target.teardown?.();
     expect(store.delete).toHaveBeenCalledWith(['a', 'b']);
@@ -123,5 +123,21 @@ describe('createVectorStoreLatencyTarget', () => {
     // 1 warmup + 4 measured search calls.
     expect(store.search).toHaveBeenCalledTimes(5);
     expect(store.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes query filter and default filter to the backend search', async () => {
+    const store = createMockStore();
+    const target = createVectorStoreLatencyTarget({
+      store,
+      records: [{ id: 'a', vector: [1, 0] }],
+      queries: [{ vector: [1, 0], filter: { userId: 'u1' } }, { vector: [0, 1] }],
+      defaultFilter: { userId: 'default-user' },
+    });
+
+    await target.search(0);
+    expect(store.search).toHaveBeenLastCalledWith([1, 0], 10, { userId: 'u1' });
+
+    await target.search(1);
+    expect(store.search).toHaveBeenLastCalledWith([0, 1], 10, { userId: 'default-user' });
   });
 });

@@ -2,6 +2,8 @@ import { runHarness } from './harness.js';
 import { formatReport } from './report.js';
 import { recallFixtures } from './fixtures/recall-fixtures.js';
 import { createKeywordRetriever } from './retrievers/keyword-retriever.js';
+import { createEmbeddingRetriever } from './retrievers/embedding-retriever.js';
+import { createFusionRetriever } from './retrievers/fusion-retriever.js';
 import type { HarnessReport } from './types.js';
 
 /**
@@ -15,6 +17,33 @@ const BASELINE_FLOORS = {
   mrr: 0.95,
   ndcgAtK: 0.9,
 } as const;
+
+const HASH_DIMENSIONS = 64;
+
+function hashToken(token: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < token.length; i += 1) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function embedText(text: string): number[] {
+  const vector = new Array<number>(HASH_DIMENSIONS).fill(0);
+  const tokens = text.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+  for (const token of tokens) {
+    const index = hashToken(token) % HASH_DIMENSIONS;
+    vector[index] = (vector[index] ?? 0) + 1;
+  }
+
+  // L2 normalize so cosine similarity is stable across length differences.
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (norm === 0) {
+    return vector;
+  }
+  return vector.map((value) => value / norm);
+}
 
 function findRegressions(report: HarnessReport): string[] {
   const breaches: string[] = [];
@@ -41,14 +70,32 @@ function findRegressions(report: HarnessReport): string[] {
  */
 async function main(): Promise<void> {
   const k = 5;
-  const retriever = createKeywordRetriever(recallFixtures.documents);
-  const report = await runHarness(recallFixtures.queries, retriever, k);
+  const keyword = createKeywordRetriever(recallFixtures.documents);
+  const embedding = await createEmbeddingRetriever(
+    recallFixtures.documents,
+    (text) => embedText(text),
+    { minScore: 0.05 }
+  );
+  const fusion = createFusionRetriever([keyword, embedding], {
+    candidateLimit: 20,
+    weights: [1, 2],
+  });
 
-  console.log(formatReport(report, 'keyword baseline'));
+  const reports = {
+    keyword: await runHarness(recallFixtures.queries, keyword, k),
+    embedding: await runHarness(recallFixtures.queries, embedding, k),
+    fusion: await runHarness(recallFixtures.queries, fusion, k),
+  };
 
-  const regressions = findRegressions(report);
+  console.log(formatReport(reports.keyword, 'keyword baseline'));
+  console.log('');
+  console.log(formatReport(reports.embedding, 'embedding retriever'));
+  console.log('');
+  console.log(formatReport(reports.fusion, 'hybrid fusion retriever'));
+
+  const regressions = findRegressions(reports.fusion);
   if (regressions.length > 0) {
-    console.error(`\nBaseline regression detected:\n  - ${regressions.join('\n  - ')}`);
+    console.error(`\nFusion regression detected:\n  - ${regressions.join('\n  - ')}`);
     process.exitCode = 1;
   }
 }

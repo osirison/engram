@@ -25,9 +25,15 @@ From the repository root:
 pnpm eval
 ```
 
-This builds the package and runs the keyword baseline retriever over the labeled
-fixtures in [src/fixtures/recall-fixtures.ts](src/fixtures/recall-fixtures.ts),
-then prints an aggregate report.
+This builds the package and runs three scored retrievers over the labeled
+fixtures in [src/fixtures/recall-fixtures.ts](src/fixtures/recall-fixtures.ts):
+
+- keyword baseline
+- embedding retriever (deterministic hash embedder)
+- hybrid fusion (keyword + embedding via RRF)
+
+The CLI prints all three reports and enforces regression floors on the hybrid
+fusion run.
 
 ## Baseline results
 

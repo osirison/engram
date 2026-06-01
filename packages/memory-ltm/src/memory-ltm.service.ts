@@ -611,6 +611,7 @@ export class MemoryLtmService {
     let indexed = 0;
     let skipped = 0;
     let failed = 0;
+    let exhausted = false;
 
     try {
       for (;;) {
@@ -664,6 +665,7 @@ export class MemoryLtmService {
         options.onProgress?.({ processed, indexed, skipped, failed, cursor: cursor ?? null });
 
         if (batch.length < take) {
+          exhausted = true;
           break;
         }
       }
@@ -671,7 +673,8 @@ export class MemoryLtmService {
       this.logger.log(
         `Reindex complete: processed=${processed} indexed=${indexed} skipped=${skipped} failed=${failed}`
       );
-      return { processed, indexed, skipped, failed, cursor: null };
+      const resumableCursor = exhausted ? null : (cursor ?? null);
+      return { processed, indexed, skipped, failed, cursor: resumableCursor };
     } catch (error) {
       this.logger.error(`Reindex aborted: ${error}`);
       throw new LtmDatabaseError('reindex', error instanceof Error ? error.message : String(error));

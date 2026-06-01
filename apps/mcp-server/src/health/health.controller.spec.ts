@@ -69,18 +69,20 @@ describe('HealthController', () => {
     expect(controller).toBeDefined();
   });
 
-  it('returns embeddings metrics in prometheus format', () => {
+  it('returns embeddings metrics in prometheus format', async () => {
     embeddingsServiceMock.getPrometheusMetrics.mockReturnValue(
       'engram_embeddings_requests_total 5\n',
     );
 
-    const metrics = controller.getMetrics();
+    const metrics = await controller.getMetrics();
 
+    expect(metrics).toContain('engram_vector_backend_info');
+    expect(metrics).toContain('engram_pgvector_ready');
     expect(metrics).toContain('engram_embeddings_requests_total 5');
     expect(embeddingsServiceMock.getPrometheusMetrics).toHaveBeenCalledTimes(1);
   });
 
-  it('returns empty metrics when embeddings service is unavailable', () => {
+  it('returns base metrics when embeddings service is unavailable', async () => {
     const noEmbeddingsController = new HealthController(
       healthServiceMock as unknown as HealthCheckService,
       prismaHealthMock as unknown as PrismaHealthIndicator,
@@ -90,7 +92,8 @@ describe('HealthController', () => {
       undefined,
     );
 
-    expect(noEmbeddingsController.getMetrics()).toBe('');
+    const metrics = await noEmbeddingsController.getMetrics();
+    expect(metrics).toContain('engram_vector_backend_info');
   });
 
   it('includes the pgvector check only when VECTOR_BACKEND is pgvector', async () => {
@@ -124,5 +127,14 @@ describe('HealthController', () => {
     } else {
       process.env.VECTOR_BACKEND = previous;
     }
+  });
+
+  it('readiness uses the same health indicators as the liveness endpoint', async () => {
+    healthServiceMock.check.mockResolvedValue({ status: 'ok' });
+
+    await controller.check();
+    await controller.readiness();
+
+    expect(healthServiceMock.check).toHaveBeenCalledTimes(2);
   });
 });

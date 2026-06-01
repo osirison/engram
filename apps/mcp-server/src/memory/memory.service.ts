@@ -85,7 +85,7 @@ export interface ReindexSummary {
   indexed: number;
   skipped: number;
   failed: number;
-  cursor: null;
+  cursor: string | null;
 }
 
 export interface ReindexOptions {

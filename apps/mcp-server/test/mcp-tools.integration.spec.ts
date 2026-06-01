@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryController } from '../src/memory/memory.controller';
 import { MemoryService } from '../src/memory/memory.service';
+import { ReindexQueueService } from '../src/memory/reindex-queue.service';
 import {
   MemoryStmService,
   StmMemory,
@@ -19,6 +20,7 @@ import {
 const USER_ID = 'cjld2cyuq0000t3rmniod1foy';
 const MEMORY_ID = 'cjld2cjxh0000qzrmn831i7rn';
 const MEMORY_ID_2 = 'cjld2cjxh0001qzrmn831i7rp';
+const ADMIN_TOKEN = 'integration-admin-token-12345';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -102,6 +104,7 @@ describe('MCP Tools Integration', () => {
   let controller: MemoryController;
   let stmService: jest.Mocked<MemoryStmService>;
   let ltmService: jest.Mocked<MemoryLtmService>;
+  let reindexQueue: jest.Mocked<ReindexQueueService>;
 
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
@@ -110,6 +113,8 @@ describe('MCP Tools Integration', () => {
   afterEach(() => jest.restoreAllMocks());
 
   beforeEach(async () => {
+    process.env.MCP_ADMIN_TOKEN = ADMIN_TOKEN;
+
     const stmMock: Partial<jest.Mocked<MemoryStmService>> = {
       create: jest.fn(),
       findById: jest.fn(),
@@ -128,27 +133,37 @@ describe('MCP Tools Integration', () => {
       reindex: jest.fn(),
     };
 
+    const queueMock: Partial<jest.Mocked<ReindexQueueService>> = {
+      enqueue: jest.fn(),
+      get: jest.fn(),
+      cancel: jest.fn(),
+      retry: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MemoryController],
       providers: [
         MemoryService,
         { provide: MemoryStmService, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
+        { provide: ReindexQueueService, useValue: queueMock },
       ],
     }).compile();
 
     controller = module.get<MemoryController>(MemoryController);
     stmService = module.get<jest.Mocked<MemoryStmService>>(MemoryStmService);
     ltmService = module.get<jest.Mocked<MemoryLtmService>>(MemoryLtmService);
+    reindexQueue =
+      module.get<jest.Mocked<ReindexQueueService>>(ReindexQueueService);
   });
 
   // -------------------------------------------------------------------------
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 8 tools', () => {
+    it('should register exactly 12 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(8);
+      expect(tools).toHaveLength(12);
     });
 
     it('should register all expected tool names', () => {
@@ -161,6 +176,10 @@ describe('MCP Tools Integration', () => {
       expect(names).toContain('promote_memory');
       expect(names).toContain('recall');
       expect(names).toContain('reindex_memories');
+      expect(names).toContain('queue_reindex_memories');
+      expect(names).toContain('get_reindex_status');
+      expect(names).toContain('cancel_reindex_job');
+      expect(names).toContain('retry_reindex_job');
     });
 
     it('should attach a callable handler to each tool', () => {
@@ -666,6 +685,129 @@ describe('MCP Tools Integration', () => {
       const parsed = parseToolResponse<ListResponsePayload>(response);
       expect(parsed).toHaveProperty('memories');
       expect(parsed).toHaveProperty('pagination');
+    });
+
+    it('reindex_memories handler should reject missing adminToken', async () => {
+      const tools = controller.getMcpTools();
+      const reindexTool = tools.find((t) => t.name === 'reindex_memories');
+
+      await expect(
+        reindexTool?.handler({
+          batchSize: 100,
+        }),
+      ).rejects.toThrow('Failed to reindex memories');
+    });
+
+    it('reindex_memories handler should reject wrong adminToken', async () => {
+      const tools = controller.getMcpTools();
+      const reindexTool = tools.find((t) => t.name === 'reindex_memories');
+
+      await expect(
+        reindexTool?.handler({
+          adminToken: 'wrong-admin-token-12345',
+          batchSize: 100,
+        }),
+      ).rejects.toThrow(
+        'Failed to reindex memories: Unauthorized maintenance operation',
+      );
+    });
+
+    it('queue/cancel/retry/status handlers should work with valid admin token', async () => {
+      reindexQueue.enqueue.mockResolvedValue({
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        state: 'queued',
+        createdAt: new Date().toISOString(),
+        options: { batchSize: 100 },
+        summary: {
+          processed: 0,
+          indexed: 0,
+          skipped: 0,
+          failed: 0,
+          cursor: null,
+        },
+        events: [],
+      });
+      reindexQueue.get.mockResolvedValue({
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        state: 'running',
+        createdAt: new Date().toISOString(),
+        options: { batchSize: 100 },
+        summary: {
+          processed: 10,
+          indexed: 10,
+          skipped: 0,
+          failed: 0,
+          cursor: 'c10',
+        },
+        events: [],
+      });
+      reindexQueue.cancel.mockResolvedValue({
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        state: 'cancelled',
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        terminalReason: 'cancelled_by_request',
+        options: { batchSize: 100 },
+        summary: {
+          processed: 10,
+          indexed: 10,
+          skipped: 0,
+          failed: 0,
+          cursor: 'c10',
+        },
+        events: [],
+      });
+      reindexQueue.retry.mockResolvedValue({
+        jobId: '65d852b0-d40f-4dfd-b4f9-bb7b597f44ef',
+        state: 'queued',
+        createdAt: new Date().toISOString(),
+        retryOfJobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+        options: { batchSize: 100, cursor: 'c10' },
+        summary: {
+          processed: 0,
+          indexed: 0,
+          skipped: 0,
+          failed: 0,
+          cursor: 'c10',
+        },
+        events: [],
+      });
+
+      const tools = controller.getMcpTools();
+      const queueTool = tools.find((t) => t.name === 'queue_reindex_memories');
+      const statusTool = tools.find((t) => t.name === 'get_reindex_status');
+      const cancelTool = tools.find((t) => t.name === 'cancel_reindex_job');
+      const retryTool = tools.find((t) => t.name === 'retry_reindex_job');
+
+      const queued = (await queueTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        batchSize: 100,
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(queued).state).toBe('queued');
+
+      const status = (await statusTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(status).state).toBe(
+        'running',
+      );
+
+      const cancelled = (await cancelTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(cancelled).state).toBe(
+        'cancelled',
+      );
+
+      const retried = (await retryTool?.handler({
+        adminToken: ADMIN_TOKEN,
+        jobId: '29ee5b69-9261-47a9-8f2d-14b95beac718',
+      })) as ToolTextResponse;
+      expect(parseToolResponse<{ state: string }>(retried).state).toBe(
+        'queued',
+      );
     });
   });
 

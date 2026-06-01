@@ -39,6 +39,7 @@ are:
 | `QDRANT_URL`         | Qdrant HTTP URL                                      |
 | `OPENAI_API_KEY`     | Optional key for remote embeddings                   |
 | `EMBEDDING_PROVIDER` | Embedding provider: `openai`, `local`, or `disabled` |
+| `MCP_ADMIN_TOKEN`    | Required token for admin maintenance MCP tools       |
 
 ## Commands
 
@@ -56,16 +57,26 @@ are:
 
 ## Reindex / Backfill
 
-The server exposes a `reindex_memories` MCP tool and a standalone CLI that
-backfill long-term memory vector embeddings. Use them after enabling a new
-vector backend, changing the embedding model, or recovering from a vector store
-outage.
+The server exposes `reindex_memories`, `queue_reindex_memories`,
+`get_reindex_status`, `cancel_reindex_job`, and `retry_reindex_job` MCP tools
+plus a standalone CLI that backfill long-term memory vector embeddings. Use
+them after enabling a new vector backend, changing the embedding model, or
+recovering from a vector store outage.
+
+Maintenance tools are admin-guarded: each call must include `adminToken`, and
+the server validates it against `MCP_ADMIN_TOKEN`.
 
 The `reindex_memories` tool accepts optional `userId` (scopes the run to one
 user), `batchSize` (1-1000), `reuseExistingEmbeddings` (reuse stored vectors
 instead of regenerating), `cursor` (resume from a previous run), and
 `maxMemories` (cap the number processed). It returns a summary of processed,
-indexed, skipped, and failed counts plus the next `cursor`.
+indexed, skipped, and failed counts plus the next resumable `cursor`.
+
+For large datasets, `queue_reindex_memories` enqueues a background reindex job
+and returns a `jobId`; poll `get_reindex_status` with the same id to observe
+state (`queued`, `running`, `completed`, `failed`, `cancelled`) and cumulative
+progress. Use `cancel_reindex_job` to request cancellation and
+`retry_reindex_job` to continue from the last saved cursor.
 
 Run the CLI directly:
 
@@ -87,12 +98,14 @@ pnpm --filter mcp-server reindex -- --regenerate --max 1000
 | Endpoint              | Purpose                                              |
 | --------------------- | ---------------------------------------------------- |
 | `GET /health`         | Reports database, Redis, and Qdrant health           |
+| `GET /health/ready`   | Readiness probe using the same backend health checks |
 | `GET /health/metrics` | Returns embedding counters in Prometheus text format |
 
 Check the server locally:
 
 ```bash
 curl http://localhost:3000/health
+curl http://localhost:3000/health/ready
 curl http://localhost:3000/health/metrics
 ```
 

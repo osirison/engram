@@ -20,6 +20,7 @@ export interface LatencyFixtureRecord {
 export interface LatencyFixtureQuery {
   readonly vector: readonly number[];
   readonly limit?: number;
+  readonly filter?: unknown;
 }
 
 /**
@@ -46,6 +47,8 @@ export interface VectorStoreLatencyTargetOptions {
   records: readonly LatencyFixtureRecord[];
   /** Queries cycled through across measured iterations. Must be non-empty. */
   queries: readonly LatencyFixtureQuery[];
+  /** Fallback filter used when a query omits one. */
+  defaultFilter?: unknown;
   /** Default search limit when a query omits one (default 10). */
   defaultLimit?: number;
   /**
@@ -63,6 +66,7 @@ export function createVectorStoreLatencyTarget(
   options: VectorStoreLatencyTargetOptions
 ): LatencyTarget {
   const { store, records, queries, defaultLimit = 10, cleanup = true } = options;
+  const defaultFilter = options.defaultFilter;
 
   if (queries.length === 0) {
     throw new Error('createVectorStoreLatencyTarget requires at least one query');
@@ -82,7 +86,7 @@ export function createVectorStoreLatencyTarget(
     },
     search: async (iteration: number) => {
       const query = queries[iteration % queries.length] as LatencyFixtureQuery;
-      return store.search(query.vector, query.limit ?? defaultLimit);
+      return store.search(query.vector, query.limit ?? defaultLimit, query.filter ?? defaultFilter);
     },
     teardown: async () => {
       if (cleanup && store.delete && records.length > 0) {
