@@ -21,6 +21,7 @@
     "docs:check": "node .github/check-docs.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "inspector": "MCP_AUTO_OPEN_ENABLED=false npx --yes @modelcontextprotocol/inspector",
     "docker:up": "docker compose up -d --wait",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
@@ -33,10 +34,7 @@
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
-    "prepare": "husky",
-    "docker:inspector:up": "node scripts/inspector-stack-up.mjs",
-    "docker:inspector:down": "docker compose --profile mcp-server --profile inspector down",
-    "docker:inspector:logs": "docker compose --profile mcp-server --profile inspector logs -f mcp-server inspector"
+    "prepare": "husky"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

@@ -2,151 +2,130 @@
 
 # Task Research: ENGRAM Lightweight to Enterprise Deployment Path
 
-Research what changes are required to run ENGRAM as a lightweight Memory MCP server with minimal local dependencies, while preserving a clear upgrade path to the full enterprise deployment model.
+Research what changes are required to run ENGRAM as a lightweight Memory MCP server with minimal local dependencies, while preserving a clear upgrade path to a high-quality enterprise deployment.
 
 ## Task Implementation Requests
 
 - Identify what to change so ENGRAM can run with no external services or databases.
 - Define how to keep architecture compatible with future scale-out to full deployment.
-- Provide concrete file-level and configuration-level changes.
+- Preserve intelligent retrieval in all profiles.
+- Keep setup extremely easy for broad adoption while retaining enterprise-grade quality and security.
 
 ## Scope and Success Criteria
 
-- Scope: Runtime architecture, package/module wiring, environment config, startup scripts, docs, and migration path.
+- Scope: Runtime architecture, module wiring, env validation, retrieval behavior, startup UX, migration/promotion path, security controls, and release quality gates.
 - Assumptions:
-  - "No other services or databases" means no required Dockerized PostgreSQL, Redis, or Qdrant at startup.
-  - A local process-only mode may still persist memory in-process or file-based storage.
-  - Existing enterprise deployment behavior must remain available.
-- Success Criteria:
-  - Identify current hard dependencies that block lightweight startup.
-  - Present at least 2 viable approaches and select one recommended approach.
-  - Provide concrete implementation plan with file references and validation steps.
+  - "No other services or databases" means profile-memory starts with no Dockerized PostgreSQL, Redis, or Qdrant.
+  - profile-lite is a durable local mode with no external services.
+  - profile-enterprise preserves current production architecture.
+- Success criteria:
+  - Startup blockers and dependency couplings are identified with evidence.
+  - Viable alternatives are evaluated and one approach is selected.
+  - Intelligent retrieval is guaranteed in lightweight mode.
+  - Migration, security, and quality gates are defined for production readiness.
 
 ## Outline
 
-1. Baseline current runtime architecture and hard startup dependencies.
-2. Evaluate minimal-runtime architecture options.
-3. Recommend one approach with staged rollout from lightweight to enterprise.
-4. Define exact file/config/test/docs changes.
+1. Baseline current runtime and dependency blockers.
+2. Evaluate profile and retrieval alternatives.
+3. Select product strategy that is easy-to-start and enterprise-scalable.
+4. Define implementation plan with code-level impact.
+5. Define SLO/security/quality gates.
 
 ## Potential Next Research
 
-- Define migration SLO from profile-memory/profile-lite to profile-enterprise.
-  - Reasoning: Promotion path needs measurable downtime and data integrity targets.
-  - Reference: apps/mcp-server/src/reindex.cli.ts
-- Threat-model local persistence option before enabling it by default.
-  - Reasoning: Local file persistence needs clear encryption and permissions guidance.
-  - Reference: docs/SETUP.md
+- Decide GA scale envelope by tenant count, corpus size, and retrieval QPS.
+  - Reasoning: performance/reliability gates need explicit customer tiers.
+  - Reference: package.json and scripts/bench-vector-backends.mjs.
+- Finalize durable-local backend choice (SQLite adapter vs file-backed store).
+  - Reasoning: impacts durability semantics, migration complexity, and security controls.
+  - Reference: prisma/schema.prisma and packages/memory-ltm/src.
 
 ## Research Executed
 
 ### File Analysis
 
 - .copilot-tracking/research/subagents/2026-06-02/runtime-dependencies-research.md
-  - Verified startup blockers and hard dependency wiring.
+  - Startup blockers and hard dependency wiring.
 - .copilot-tracking/research/subagents/2026-06-02/lightweight-hooks-research.md
-  - Verified existing toggles and graceful-degradation seams.
+  - Existing switches and graceful-degradation seams.
 - .copilot-tracking/research/subagents/2026-06-02/architecture-alternatives-research.md
-  - Evaluated alternatives and staged rollout options.
+  - Architecture alternatives and staged rollout options.
+- .copilot-tracking/research/subagents/2026-06-02/intelligent-retrieval-research.md
+  - Intelligent retrieval strategy for no-persistence mode.
+- .copilot-tracking/research/subagents/2026-06-02/migration-slo-research.md
+  - Promotion/cutover SLO targets and migration design.
+- .copilot-tracking/research/subagents/2026-06-02/local-persistence-threat-model-research.md
+  - Threat model and secure-default controls for durable local mode.
+- .copilot-tracking/research/subagents/2026-06-02/accessibility-scale-path-research.md
+  - Easy-install to enterprise profile ladder and quality strategy.
 
 ### Code Search Results
 
-- Required envs and mode toggles in packages/config/src/env.schema.ts:10-18
-- Root module dependency wiring in apps/mcp-server/src/app.module.ts:27-31
-- Eager Prisma connect in packages/database/src/prisma.service.ts:28-29
-- Redis immediate connect in packages/redis/src/redis.module.ts:18
-- Vector backend selection in packages/vector-store/src/vector-store.module.ts:13-76
-- Qdrant always imported in packages/vector-store/src/vector-store.module.ts:49
-- Health hard dependency checks in apps/mcp-server/src/health/health.controller.ts:26-54
-- Optional behavior in memory/embeddings paths:
-  - packages/memory-ltm/src/memory-ltm.service.ts:513-520
-  - packages/memory-ltm/src/memory-ltm.service.ts:600-603
-  - packages/embeddings/src/embeddings.service.ts:97-105
+- Hard required env vars: packages/config/src/env.schema.ts:10-12.
+- Unconditional startup imports: apps/mcp-server/src/app.module.ts:27-31.
+- Eager DB connect: packages/database/src/prisma.service.ts:28-29.
+- Redis immediate connect: packages/redis/src/redis.module.ts:18.
+- Vector backend switch exists: packages/vector-store/src/vector-store.module.ts:13-76.
+- Qdrant still always wired in vector module: packages/vector-store/src/vector-store.module.ts:49.
+- Health assumes full stack: apps/mcp-server/src/health/health.controller.ts:26-54.
+- Graceful retrieval/embedding degradation exists:
+  - packages/memory-ltm/src/memory-ltm.service.ts:513-520.
+  - packages/memory-ltm/src/memory-ltm.service.ts:600-603.
+  - packages/embeddings/src/embeddings.service.ts:97-105.
+- Hybrid rank fusion reference exists in eval package:
+  - packages/eval/src/retrievers/fusion-retriever.ts:31-108.
 
 ### External Research
 
-- Not required for this iteration. Repository analysis was sufficient.
+- Not required for this iteration; repository evidence is sufficient.
 
 ### Project Conventions
 
-- Standards referenced: AGENTS.md, .github/copilot-instructions.md, CLAUDE.md
-- Instructions followed: Task Researcher mode constraints and `.copilot-tracking/research` scope
+- Standards referenced: AGENTS.md, .github/copilot-instructions.md, CLAUDE.md.
+- Instructions followed: Task Researcher mode, write scope limited to .copilot-tracking/research.
 
 ## Key Discoveries
 
 ### Project Structure
 
-- ENGRAM boot path is enterprise-first and imports Prisma, Redis, and Qdrant by default.
-- Memory and vector features already include optional or degraded behavior in service logic.
-- Main gap is startup/module composition and env validation, not domain logic.
-- Intelligent retrieval is also already modeled in the eval package, which gives us a production-shape reference for hybrid ranking.
+- Runtime is enterprise-first today (Prisma, Redis, Qdrant assumed at boot).
+- Core service layer already supports partial graceful degradation.
+- Main blockers are startup composition and configuration contracts, not memory domain logic.
 
 ### Implementation Patterns
 
-- Existing reusable patterns:
-  - Config-driven backend/provider selection (VECTOR_BACKEND, EMBEDDING_PROVIDER).
-  - Optional dependency injection in LTM/embeddings services.
-  - Graceful no-vector behavior in semantic search and reindex.
-  - Hybrid lexical + semantic fusion in `packages/eval/src/retrievers/fusion-retriever.ts:31-108`.
-- Blocking patterns to change:
-  - Unconditional required env vars for DATABASE_URL, REDIS_URL, QDRANT_URL.
-  - Eager DB/Redis startup connections.
-  - Unconditional Qdrant wiring even when pgvector is selected.
-  - Health checks always expecting full external stack.
+Reusable patterns:
 
-### Complete Examples
+- Config-driven provider/backend selection (VECTOR_BACKEND, EMBEDDING_PROVIDER).
+- Optional injections in memory/embedding paths.
+- Best-effort vector indexing and non-fatal embedding generation.
+- Existing rank-fusion reference in eval code.
 
-```dotenv
-# New top-level profile switch
-DEPLOYMENT_PROFILE=memory
+Blocking patterns:
 
-# Enterprise-compatible defaults (existing behavior)
-VECTOR_BACKEND=qdrant
-EMBEDDING_PROVIDER=openai
-
-# Memory profile defaults
-# No DATABASE_URL required
-# No REDIS_URL required
-# No QDRANT_URL required
-EMBEDDING_PROVIDER=local
-VECTOR_BACKEND=qdrant
-```
-
-```text
-Profile matrix (recommended)
-
-profile-memory:
-  external services: none
-  persistence: process memory only
-  semantic recall: transient hybrid lexical + semantic index
-  target: local quick-start, demos, CI smoke
-
-profile-enterprise:
-  external services: Postgres + Redis + Qdrant/pgvector
-  persistence: durable
-  semantic recall: full
-  target: production scale
-
-profile-lite (optional later):
-  external services: none
-  persistence: local embedded store (SQLite/file)
-  target: single-node persistent local deployments
-```
-
-### API and Schema Documentation
-
-- Current env schema hard-requires external URLs: packages/config/src/env.schema.ts:10-12.
-- Existing provider/backend switches enable profile-oriented behavior: packages/config/src/env.schema.ts:16-18.
-- MCP tools are registered through a single seam and can be profile-filtered: apps/mcp-server/src/main.ts:41-42 and apps/mcp-server/src/memory/memory.controller.ts:619.
+- Required DATABASE_URL, REDIS_URL, QDRANT_URL for all modes.
+- Eager bootstrap connections.
+- Health checks tied to full dependency set.
+- STM is Redis-coupled, LTM is Prisma-coupled.
 
 ### Configuration Examples
 
 ```dotenv
-# profile-memory (zero external dependencies)
+# profile-memory (zero dependency)
 DEPLOYMENT_PROFILE=memory
-EMBEDDING_PROVIDER=disabled
+EMBEDDING_PROVIDER=local
+# DATABASE_URL not required
+# REDIS_URL not required
+# QDRANT_URL not required
 
-# profile-enterprise (current/full deployment)
+# profile-lite (durable local)
+DEPLOYMENT_PROFILE=lite
+EMBEDDING_PROVIDER=local
+LOCAL_DATA_DIR=.engram/data
+LOCAL_ENCRYPTION_MODE=required
+
+# profile-enterprise (current production model)
 DEPLOYMENT_PROFILE=enterprise
 DATABASE_URL=postgresql://...
 REDIS_URL=redis://...
@@ -158,171 +137,166 @@ OPENAI_API_KEY=...
 
 ## Technical Scenarios
 
-### Lightweight Runtime (No External Services)
+### Scenario 1: Easy Install + Enterprise Scale
 
-Goal: start ENGRAM MCP server with no PostgreSQL, no Redis, and no Qdrant while preserving a safe, explicit upgrade path to enterprise.
+Recommended product model: three-profile ladder with one retrieval quality contract.
 
-Selected approach: profile-driven modular architecture with two required profiles now, and one optional profile later.
+- profile-memory: instant setup, no external services, no persistence.
+- profile-lite: secure durable local storage, no external services.
+- profile-enterprise: current distributed stack for scale/reliability.
 
-- profile-memory (required now): no external services or databases; in-process storage adapters with hybrid transient retrieval.
-- profile-enterprise (required now): existing behavior preserved as default production mode.
-- profile-lite (optional later): embedded persistence for local durability.
+Why selected:
+
+- Solves onboarding friction for broad adoption.
+- Adds a practical local durability rung before enterprise complexity.
+- Preserves enterprise compatibility and operational continuity.
+
+### Scenario 2: Intelligent Retrieval In All Profiles
+
+Requirement: no profile is allowed to devolve into "dumb lookup."
+
+Selected retrieval strategy:
+
+- Hybrid lexical + semantic retrieval with deterministic fusion.
+- In profile-memory and profile-lite, run a transient in-process retrieval kernel:
+  - lexical postings/candidates,
+  - normalized vector scoring,
+  - rank fusion and stable tie-breaks.
+- Lexical-only remains a fallback, not the default.
 
 Rationale:
 
-- Satisfies immediate requirement for "simple Memory MCP server" with zero external dependencies.
-- Uses existing code seams for graceful degradation and provider selection.
-- Avoids destabilizing current enterprise deployments.
-- Keeps a clean migration path by implementing mode-specific adapters behind existing service contracts.
-- Preserves intelligent retrieval by treating lexical and semantic scoring as a transient in-memory kernel, not as a database feature.
+- Preserves query intelligence without external infrastructure.
+- Maintains fast local response due to in-process ranking.
+- Keeps API contract stable while swapping backend implementation by profile.
 
-Implementation request coverage:
+### Scenario 3: Secure Local Durability
 
-- No-services startup is enabled by conditional env validation and dynamic module imports.
-- Future enterprise scale remains intact via profile-enterprise and unchanged APIs.
-- File-level change list and rollout are provided below.
+Selected security posture for profile-lite: strict-by-default with accessibility rails.
 
-#### Required code changes (phase 1: profile-memory + profile-enterprise)
+Defaults:
 
-1. Add deployment profile parsing and conditional env requirements.
+- Encrypted-at-rest local data.
+- Owner-only file permissions.
+- No weak default admin token.
+- Logging redaction for sensitive fields.
+- Tenant binding from authenticated context (not caller-provided userId).
+
+Accessibility rail:
+
+- Explicit local insecure break-glass mode allowed only with deliberate override and warning.
+
+### Scenario 4: Promotion To Enterprise
+
+Selected migration design:
+
+- In-place dual-write + staged backfill + verification + cutover + rollback window.
+
+Why selected:
+
+- Best downtime posture with practical rollback path.
+- Reuses existing queue/reindex primitives and idempotent processing patterns.
+
+#### Considered Alternatives
+
+1. Snapshot export/import hard freeze.
+   - Rejected as primary due to larger downtime and blast radius.
+2. Blue-green replay queue.
+   - Rejected for first release due to complexity and missing event-replay infrastructure.
+3. In-place dual-write + staged backfill.
+   - Selected for balance of safety, uptime, and implementation leverage.
+
+## Selected Approach and Rationale
+
+Selected approach: productized profile ladder plus mandatory intelligent hybrid retrieval.
+
+- profile-memory for zero-dependency onboarding.
+- profile-lite for secure durable local usage.
+- profile-enterprise for production scale.
+
+This is selected because it simultaneously meets:
+
+- accessibility to all (minimal setup),
+- high retrieval quality (hybrid intelligence in every profile),
+- enterprise-grade path (security, migration, and reliability controls).
+
+## Required Implementation Changes
+
+### Core Runtime and Config
+
+1. Add DEPLOYMENT_PROFILE and profile-capability resolver.
    - Update packages/config/src/env.schema.ts.
-   - Require DATABASE_URL/REDIS_URL/QDRANT_URL only when profile-enterprise needs them.
-2. Make root module imports profile-aware.
+2. Make startup module graph profile-aware.
    - Update apps/mcp-server/src/app.module.ts.
-   - Skip PrismaModule, RedisModule, QdrantModule, and heavy health dependencies in profile-memory.
-3. Remove eager mandatory connections for optional profiles.
+3. Make health indicators profile-aware.
+   - Update apps/mcp-server/src/health/health.module.ts.
+   - Update apps/mcp-server/src/health/health.controller.ts.
+4. Remove mode-inappropriate eager dependency assumptions.
    - Update packages/database/src/prisma.service.ts.
-   - Update packages/redis/src/redis.module.ts (lazy connect when profile-memory is active or module omitted).
-4. Decouple health checks from full stack assumptions.
-   - Update apps/mcp-server/src/health/health.controller.ts and related indicators.
-   - In profile-memory, report process health without external dependency checks.
-5. Provide in-process memory adapters.
-   - Add in-memory STM implementation for profile-memory.
-   - Add in-memory LTM implementation for profile-memory.
-   - Wire adapters behind existing memory service contracts.
-6. Add transient intelligent retrieval kernel.
+   - Update packages/redis/src/redis.module.ts.
 
-- Introduce an in-memory lexical inverted index and normalized embedding store.
-- Fuse lexical and semantic scores using the eval package as the reference model.
-- Fall back to lexical-only when embeddings are unavailable, but do not make that the default.
+### Memory and Retrieval
 
-7. Profile-aware MCP tool exposure.
-   - Update apps/mcp-server/src/memory/memory.controller.ts tool list assembly path.
-   - Hide or no-op enterprise-only admin queue/reindex operations in profile-memory.
+1. Add in-process STM/LTM adapters for profile-memory.
+2. Add durable local adapters for profile-lite.
+3. Add transient hybrid retrieval kernel for non-enterprise profiles.
+4. Keep MCP tool surface stable and gate unsupported maintenance tools by profile.
+   - Update apps/mcp-server/src/memory/memory.controller.ts and apps/mcp-server/src/main.ts.
 
-#### Optional code changes (phase 2: profile-lite persistent local mode)
+### Security and Operations
 
-1. Add embedded persistence adapter (SQLite/file-backed).
-2. Add import/export and promotion tooling into profile-enterprise.
-3. Add migration command and runbook.
+1. Add secure local persistence controls (permissions, encryption, redaction).
+2. Replace weak/default admin token paths for non-test operation.
+3. Add migration controls for dual-write/backfill/cutover/rollback.
 
-#### File impact map
-
-Core/high-confidence updates:
-
-- packages/config/src/env.schema.ts
-- apps/mcp-server/src/app.module.ts
-- apps/mcp-server/src/main.ts
-- apps/mcp-server/src/health/health.module.ts
-- apps/mcp-server/src/health/health.controller.ts
-- packages/database/src/prisma.service.ts
-- packages/redis/src/redis.module.ts
-- packages/vector-store/src/vector-store.module.ts
-- apps/mcp-server/src/memory/memory.controller.ts
-- apps/mcp-server/src/memory/memory.module.ts
-- packages/memory-stm/src/memory-stm.module.ts
-- packages/memory-ltm/src/memory-ltm.module.ts
-
-Likely new files:
+### Likely New Files
 
 - apps/mcp-server/src/config/deployment-profile.ts
 - packages/memory-stm/src/adapters/inmemory-stm.adapter.ts
 - packages/memory-ltm/src/adapters/inmemory-ltm.adapter.ts
+- packages/memory-ltm/src/retrieval/hybrid-transient-retriever.ts
+- apps/mcp-server/src/migration/migration-state.service.ts
 
-Docs updates:
+## Quality And Release Gates
 
-- README.md
-- docs/SETUP.md
-- apps/mcp-server/README.md
+### Reliability and Migration SLO Targets
 
-#### Considered Alternatives
+- Planned cutover downtime: P95 <= 2 minutes, P99 <= 5 minutes.
+- Read availability during migration: >= 99.95%.
+- Data integrity after promotion: 0 unreconciled records.
+- Rollback trigger start: <= 10 minutes from hard failure detection.
+- Rollback completion: <= 30 minutes metadata rollback, <= 2 hours full restore path.
 
-1. Alternative rejected as primary: pure in-memory only forever.
-   - Rejected because it has no durable path for long-lived memory workloads and creates weak promotion semantics.
-   - Evidence: architecture comparison in .copilot-tracking/research/subagents/2026-06-02/architecture-alternatives-research.md.
-2. Alternative rejected as immediate requirement fit: keep current external-services model with minor flags only.
-   - Rejected because it does not satisfy strict no-services/no-database startup requirement.
-   - Evidence: hard blockers in packages/config/src/env.schema.ts:10-12 and packages/database/src/prisma.service.ts:14,28-29.
-3. Alternative deferred: SQLite-first as mandatory lightweight mode.
-   - Deferred because user requirement explicitly asks for no databases in the simple mode.
-   - Retained as optional profile-lite follow-up for durability.
+### Performance Targets
 
-## Selected Approach and Rationale
+- profile-memory: startup <= 5s on dev laptop, recall P95 <= 80ms at 10k memories.
+- profile-lite: startup <= 8s, recall P95 <= 100ms at 50k memories.
+- profile-enterprise: maintain existing benchmark guardrail and trend-regression budget.
 
-Selected approach: profile-driven modular architecture with profile-memory and profile-enterprise as first-class modes.
+### Test Matrix
 
-Why this is selected:
-
-- Directly satisfies zero external dependencies for a simple MCP server.
-- Uses existing resilient code paths for optional embeddings/vector behaviors.
-- Preserves enterprise deployment with minimal behavioral change risk.
-- Supports future optional durability profile without redesigning APIs.
-- Keeps retrieval intelligent in the lightweight profile by making hybrid rank fusion a first-class in-memory concern.
+- Unit tests: all profiles.
+- MCP contract tests: all profiles.
+- Startup integration tests: all profiles.
+- Security tests: profile-lite and enterprise.
+- Migration and rollback tests: profile-lite and enterprise.
+- Docker E2E: required for enterprise, optional for memory/lite.
 
 ## Actionable Next Steps
 
-1. Implement profile parsing and conditional env schema rules.
-2. Refactor AppModule to dynamic profile-based imports.
-3. Add in-memory STM/LTM adapters and wire via dependency injection tokens.
-4. Add transient lexical and semantic retrieval indexes plus deterministic fusion.
-5. Make health checks and MCP tool exposure profile-aware.
-6. Add tests:
-   - Boot test for profile-memory with no external services.
-   - Regression boot/health/tool tests for profile-enterprise.
-7. Update docs with a profile matrix and copy-paste quick starts.
+1. Implement profile resolver + conditional env schema.
+2. Refactor AppModule and health wiring to profile-aware composition.
+3. Implement profile-memory adapters + hybrid transient retriever.
+4. Implement profile-lite durable local adapters with strict security defaults.
+5. Implement promotion path (dual-write + staged backfill + verification).
+6. Add profile matrix test suite and release gates.
+7. Update README.md, docs/SETUP.md, and apps/mcp-server/README.md with profile-first onboarding and migration runbooks.
 
-## Intelligent Retrieval Scenario
+## Final Product Recommendation
 
-### Profile-Memory Intelligent Lookup
+Build ENGRAM as a profile-first AI Agentic Memory system where:
 
-Goal: keep retrieval smart, fast, and mass-accessible without persistence.
-
-Recommended mechanism:
-
-- Build a transient retrieval store in process memory.
-- Index each memory into:
-  - a token/posting structure for lexical candidate generation,
-  - a normalized vector array for semantic similarity,
-  - lightweight metadata such as recency and tags for tie-breaking.
-- Score queries using a deterministic hybrid fusion pipeline.
-- Prefer lexical retrieval for short or identifier-heavy queries.
-- Prefer semantic retrieval for natural-language queries.
-- Return stable, explainable rankings.
-
-Why this is the right baseline:
-
-- It preserves intelligence even with zero services and no database.
-- It is fast enough for local and demo workloads because all ranking stays in process.
-- It is accessible to the masses because setup becomes a single-process startup instead of an infrastructure project.
-- It maps directly to an existing reference implementation in `packages/eval/src/retrievers/fusion-retriever.ts:31-108`.
-
-Implementation notes:
-
-- Use `EMBEDDING_PROVIDER=local` as the preferred lightweight embedding source when possible.
-- Keep lexical-only behavior as a fallback, not as the default product experience.
-- Keep the public `recall` API stable and swap only the backend retrieval engine by profile.
-- Reuse the current no-fatal embedding behavior in `packages/embeddings/src/embeddings.service.ts:97-105` so retrieval can still answer when semantic features degrade.
-
-#### Considered Alternatives
-
-1. Lexical-only in-memory retrieval.
-
-- Rejected as the default because it is fast but not intelligent enough for paraphrases or natural-language queries.
-
-2. Semantic-only in-memory retrieval.
-
-- Rejected as the default because it loses exact-term precision and can become expensive as the transient corpus grows.
-
-3. Hybrid lexical + semantic with deterministic fusion.
-
-- Selected because it balances recall, precision, speed, and accessibility without requiring external services.
+- setup is instant for newcomers,
+- retrieval stays intelligent and fast in every profile,
+- operations mature progressively from local to enterprise,
+- security and reliability improve by default as users scale.

@@ -1,4 +1,4 @@
-declare module '@modelcontextprotocol/sdk/dist/esm/server/streamableHttp.js' {
+declare module '@modelcontextprotocol/sdk/server/streamableHttp.js' {
   import type { IncomingMessage, ServerResponse } from 'node:http';
   import type {
     JSONRPCMessage,

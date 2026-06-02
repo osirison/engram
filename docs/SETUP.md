@@ -119,57 +119,6 @@ Common Claude Desktop config locations:
 After copying the config into place, restart the MCP client and ask it to call
 the `ping` tool.
 
-## MCP Inspector Setup
-
-Use the full Docker stack when you want isolated Inspector testing without
-installing local Inspector tooling.
-
-Start everything with one command:
-
-```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:up
-```
-
-This launches PostgreSQL, Redis, Qdrant, ENGRAM MCP server, and the Inspector
-container. The MCP server runs with `MCP_TRANSPORT=streamable-http` inside
-Docker.
-
-Open this URL in your browser:
-
-```text
-http://localhost:6274/?transport=streamable-http&serverUrl=http%3A%2F%2Fmcp-server%3A3000%2Fmcp
-```
-
-Stop the stack:
-
-```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:down
-```
-
-Tail server and Inspector logs:
-
-```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:logs
-```
-
-### Host-run fallback
-
-If you run `mcp-server` on the host instead of Docker, start it with
-Streamable HTTP:
-
-```bash
-MCP_TRANSPORT=streamable-http npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
-```
-
-Then open:
-
-```text
-http://localhost:6274/?transport=streamable-http&serverUrl=http://host.docker.internal:3000/mcp
-```
-
-The Inspector service includes the Linux `host.docker.internal` host-gateway
-mapping for this fallback mode.
-
 ## Troubleshooting
 
 Check Docker service health:

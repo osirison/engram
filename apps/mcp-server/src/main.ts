@@ -1,7 +1,7 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/dist/esm/server/streamableHttp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
 import { MemoryController } from './memory/memory.controller';
@@ -26,6 +26,13 @@ async function bootstrap(): Promise<void> {
 
   // Use Pino logger
   app.useLogger(app.get(Logger));
+
+  app.enableCors({
+    origin: true,
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id'],
+    exposedHeaders: ['mcp-session-id'],
+  });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

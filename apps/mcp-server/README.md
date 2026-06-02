@@ -112,23 +112,19 @@ curl http://localhost:3000/health/metrics
 
 ## Inspector Testing
 
-For a fully isolated test path, run the containerized stack from the repository
-root:
-
-```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:up
-```
-
-This starts the MCP server in Docker with `MCP_TRANSPORT=streamable-http`.
-
-If you need to run the server on the host instead, start it with Streamable
-HTTP:
+Run ENGRAM locally with Streamable HTTP:
 
 ```bash
 MCP_TRANSPORT=streamable-http npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
-Then use the host-targeted Inspector URL in [../../docs/SETUP.md](../../docs/SETUP.md).
+Then run MCP Inspector externally (outside this repo) and connect to:
+
+```text
+http://host.docker.internal:3000/mcp
+```
+
+Full external-container launch instructions are in [../../docs/SETUP.md](../../docs/SETUP.md).
 
 ## Related Docs
 
