@@ -3,7 +3,7 @@ import { z } from 'zod';
 const cuid1IdSchema = z.string().cuid();
 const cuid2IdSchema = z.string().cuid2();
 
-const createCompatibleIdSchema = (message: string): z.ZodEffects<z.ZodString> =>
+const createCompatibleIdSchema = (message: string): z.ZodString =>
   z.string().refine((value) => {
     return cuid1IdSchema.safeParse(value).success || cuid2IdSchema.safeParse(value).success;
   }, message);
