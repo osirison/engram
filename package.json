@@ -33,7 +33,10 @@
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
-    "prepare": "husky"
+    "prepare": "husky",
+    "docker:inspector:up": "node scripts/inspector-stack-up.mjs",
+    "docker:inspector:down": "docker compose --profile mcp-server --profile inspector down",
+    "docker:inspector:logs": "docker compose --profile mcp-server --profile inspector logs -f mcp-server inspector"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

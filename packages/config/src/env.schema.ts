@@ -20,6 +20,8 @@ export const envSchema = z.object({
   VECTOR_COLLECTION: z.string().min(1).optional(),
   /** Optional override for embedding dimensionality (defaults to the provider's model dimension). */
   VECTOR_DIMENSIONS: z.coerce.number().int().positive().optional(),
+  /** MCP transport selection: stdio for local clients, streamable-http for Inspector. */
+  MCP_TRANSPORT: z.enum(['stdio', 'streamable-http']).default('stdio'),
   /** Optional pgvector HNSW build-time `m` (max connections per layer). */
   PGVECTOR_HNSW_M: z.coerce.number().int().min(2).max(100).optional(),
   /** Optional pgvector HNSW build-time `ef_construction` (candidate list size). */

@@ -60,6 +60,9 @@ shown in the command table below.
 | Task                                           | Command                        |
 | ---------------------------------------------- | ------------------------------ |
 | Start PostgreSQL, Redis, and Qdrant, then wait | `pnpm docker:up`               |
+| Start full Inspector stack                     | `pnpm docker:inspector:up`     |
+| Stop full Inspector stack                      | `pnpm docker:inspector:down`   |
+| Tail Inspector stack logs                      | `pnpm docker:inspector:logs`   |
 | Start the MCP server                           | `pnpm --filter mcp-server dev` |
 | Start the web app                              | `pnpm --filter web dev`        |
 | Start the docs app                             | `pnpm --filter docs dev`       |
@@ -135,3 +138,26 @@ Then copy [claude_desktop_config.json.example](claude_desktop_config.json.exampl
 to your MCP client configuration location and update the absolute path to
 `apps/mcp-server/dist/main.js`. See [docs/SETUP.md](docs/SETUP.md) for the full
 client setup flow.
+
+## MCP Inspector
+
+Use the full Docker stack for isolated MCP Inspector testing:
+
+```bash
+npm exec --yes pnpm@11.4.0 -- docker:inspector:up
+```
+
+Then open:
+
+```text
+http://localhost:6274/?transport=streamable-http&serverUrl=http%3A%2F%2Fmcp-server%3A3000%2Fmcp
+```
+
+This runs PostgreSQL, Redis, Qdrant, the ENGRAM MCP server, and Inspector in
+one Compose flow. Stop the stack with:
+
+```bash
+npm exec --yes pnpm@11.4.0 -- docker:inspector:down
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for the host-run fallback flow and troubleshooting details.

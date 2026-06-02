@@ -58,6 +58,68 @@ services:
     networks:
       - engram-network
 
+  mcp-server:
+    build:
+      context: .
+      dockerfile: apps/mcp-server/Dockerfile
+    container_name: engram-mcp-server
+    profiles:
+      - mcp-server
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MCP_TRANSPORT: streamable-http
+      DATABASE_URL: postgresql://${POSTGRES_USER:-engram}:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/${POSTGRES_DB:-engram}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      VECTOR_BACKEND: ${VECTOR_BACKEND:-qdrant}
+      VECTOR_DIMENSIONS: ${VECTOR_DIMENSIONS:-1536}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-disabled}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-dev-inspector-admin-token}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '${MCP_SERVER_PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - engram-network
+
+  inspector:
+    image: ghcr.io/modelcontextprotocol/inspector:latest
+    container_name: engram-inspector
+    profiles:
+      - inspector
+    environment:
+      HOST: 0.0.0.0
+      MCP_AUTO_OPEN_ENABLED: 'false'
+    ports:
+      - '${INSPECTOR_CLIENT_PORT:-6274}:6274'
+      - '${INSPECTOR_PROXY_PORT:-6277}:6277'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
+    networks:
+      - engram-network
+
 volumes:
   postgres_data:
     driver: local

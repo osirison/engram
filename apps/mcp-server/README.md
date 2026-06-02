@@ -40,6 +40,7 @@ are:
 | `OPENAI_API_KEY`     | Optional key for remote embeddings                   |
 | `EMBEDDING_PROVIDER` | Embedding provider: `openai`, `local`, or `disabled` |
 | `MCP_ADMIN_TOKEN`    | Required token for admin maintenance MCP tools       |
+| `MCP_TRANSPORT`      | MCP transport: `stdio` or `streamable-http`          |
 
 ## Commands
 
@@ -108,6 +109,26 @@ curl http://localhost:3000/health
 curl http://localhost:3000/health/ready
 curl http://localhost:3000/health/metrics
 ```
+
+## Inspector Testing
+
+For a fully isolated test path, run the containerized stack from the repository
+root:
+
+```bash
+npm exec --yes pnpm@11.4.0 -- docker:inspector:up
+```
+
+This starts the MCP server in Docker with `MCP_TRANSPORT=streamable-http`.
+
+If you need to run the server on the host instead, start it with Streamable
+HTTP:
+
+```bash
+MCP_TRANSPORT=streamable-http npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+```
+
+Then use the host-targeted Inspector URL in [../../docs/SETUP.md](../../docs/SETUP.md).
 
 ## Related Docs
 
