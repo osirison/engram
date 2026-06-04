@@ -1,3 +1,4 @@
+import { userIdSchema } from '@engram/database';
 import { z } from 'zod';
 
 /**
@@ -6,7 +7,7 @@ import { z } from 'zod';
  * Performs semantic (vector) recall over a user's long-term memories.
  */
 export const recallToolSchema = z.object({
-  userId: z.string().cuid('Invalid user ID format'),
+  userId: userIdSchema,
   query: z
     .string()
     .min(1, 'Query cannot be empty')

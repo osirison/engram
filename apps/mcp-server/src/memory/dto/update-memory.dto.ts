@@ -1,8 +1,9 @@
+import { memoryIdSchema, userIdSchema } from '@engram/database';
 import { z } from 'zod';
 
 export const updateMemoryToolSchema = z.object({
-  userId: z.string().cuid('Invalid user ID format'),
-  memoryId: z.string().cuid('Invalid memory ID format'),
+  userId: userIdSchema,
+  memoryId: memoryIdSchema,
   content: z
     .string()
     .min(1, 'Content cannot be empty')

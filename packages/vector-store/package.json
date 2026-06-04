@@ -21,19 +21,19 @@
   "license": "MIT",
   "dependencies": {
     "@engram/database": "workspace:*",
-    "@nestjs/common": "^11.1.23",
+    "@nestjs/common": "^11.1.24",
     "@qdrant/js-client-rest": "^1.18.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "tslib": "^2.8.1"
   },
   "devDependencies": {
-    "@nestjs/testing": "^11.1.23",
-    "@prisma/client": "^6.19.3",
+    "@nestjs/testing": "^11.1.24",
+    "@prisma/client": "^7.8.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^25.9.1",
-    "eslint": "^10.4.0",
+    "eslint": "^9.39.4",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "typescript": "^6.0.3",

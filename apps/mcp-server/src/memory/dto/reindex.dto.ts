@@ -1,3 +1,4 @@
+import { userIdSchema } from '@engram/database';
 import { z } from 'zod';
 
 /**
@@ -11,7 +12,7 @@ export const reindexToolSchema = z.object({
   /** Admin authorization token; must match MCP_ADMIN_TOKEN. */
   adminToken: z.string().min(16, 'adminToken must be at least 16 chars'),
   /** Restrict the reindex to a single user. Omit to reindex every user. */
-  userId: z.string().cuid('Invalid user ID format').optional(),
+  userId: userIdSchema.optional(),
   /** Memories loaded per page (1-1000). Defaults to 100. */
   batchSize: z.number().int().min(1).max(1000).optional(),
   /** When false, regenerate embeddings for every memory. Defaults to true. */

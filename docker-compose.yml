@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     container_name: engram-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-engram}
@@ -21,7 +21,7 @@ services:
       - engram-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:latest
     container_name: engram-redis
     command: redis-server --appendonly yes
     ports:
@@ -38,7 +38,7 @@ services:
       - engram-network
 
   qdrant:
-    image: qdrant/qdrant:v1.14.1
+    image: qdrant/qdrant:latest
     container_name: engram-qdrant
     ports:
       - '${QDRANT_HTTP_PORT:-6333}:6333' # HTTP API

@@ -22,6 +22,7 @@ describe('envSchema', () => {
         REDIS_URL: 'redis://localhost:6379',
         QDRANT_URL: 'http://localhost:6333',
         EMBEDDING_PROVIDER: 'openai',
+        MCP_TRANSPORT: 'stdio',
         VECTOR_BACKEND: 'qdrant',
       });
     });
@@ -95,6 +96,11 @@ describe('envSchema', () => {
     it('should accept pgvector as a backend', () => {
       const result = envSchema.parse({ ...base, VECTOR_BACKEND: 'pgvector' });
       expect(result.VECTOR_BACKEND).toBe('pgvector');
+    });
+
+    it('should accept streamable-http as an MCP transport', () => {
+      const result = envSchema.parse({ ...base, MCP_TRANSPORT: 'streamable-http' });
+      expect(result.MCP_TRANSPORT).toBe('streamable-http');
     });
 
     it('should reject an unknown backend', () => {

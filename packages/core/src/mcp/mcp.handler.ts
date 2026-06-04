@@ -6,6 +6,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig, McpServer } from './types.js';
 import { registerTools, type Tool } from './tools/index.js';
 
@@ -17,7 +18,7 @@ import { registerTools, type Tool } from './tools/index.js';
 export class McpHandler implements OnModuleDestroy {
   private readonly logger = new Logger(McpHandler.name);
   private server: McpServer | null = null;
-  private transport: StdioServerTransport | null = null;
+  private transport: Transport | null = null;
   private isConnected = false;
   private additionalTools: Tool[] = [];
 
@@ -77,7 +78,7 @@ export class McpHandler implements OnModuleDestroy {
   /**
    * Connect the MCP server to stdio transport
    */
-  async connect(): Promise<void> {
+  async connect(transport: Transport = new StdioServerTransport()): Promise<void> {
     if (!this.server) {
       throw new Error('MCP server not initialized. Call initialize() first.');
     }
@@ -88,13 +89,11 @@ export class McpHandler implements OnModuleDestroy {
     }
 
     try {
-      this.logger.log('Connecting MCP server to stdio transport...');
-
-      // Create stdio transport
-      this.transport = new StdioServerTransport();
+      this.transport = transport;
+      this.logger.log(`Connecting MCP server to ${transport.constructor.name}...`);
 
       // Connect server to transport
-      await this.server.connect(this.transport);
+      await this.server.connect(transport);
 
       this.isConnected = true;
       this.logger.log('MCP server connected successfully');
@@ -107,9 +106,29 @@ export class McpHandler implements OnModuleDestroy {
   /**
    * Start the MCP server (initialize + connect)
    */
-  async start(config: McpServerConfig): Promise<void> {
+  async start(config: McpServerConfig, transport?: Transport): Promise<void> {
     await this.initialize(config);
-    await this.connect();
+    await this.connect(transport);
+  }
+
+  /**
+   * Create a standalone Server instance with all tools registered.
+   * Use this when you need a fresh Server per HTTP session instead of
+   * sharing the singleton stored on this handler.
+   */
+  createConfiguredServer(config: McpServerConfig): McpServer {
+    const server = new Server(
+      { name: config.name, version: config.version },
+      {
+        capabilities: config.capabilities || { tools: {} },
+        instructions: config.instructions,
+      }
+    );
+    server.onerror = (error): void => {
+      this.logger.error('MCP session server error:', error);
+    };
+    registerTools(server, this.additionalTools);
+    return server;
   }
 
   /**
@@ -130,6 +149,15 @@ export class McpHandler implements OnModuleDestroy {
    * Cleanup on module destruction
    */
   async onModuleDestroy(): Promise<void> {
+    if (this.transport) {
+      this.logger.log('Closing MCP transport...');
+      try {
+        await this.transport.close();
+      } catch (error) {
+        this.logger.error('Error closing MCP transport:', error);
+      }
+    }
+
     if (this.server) {
       this.logger.log('Closing MCP server...');
       try {

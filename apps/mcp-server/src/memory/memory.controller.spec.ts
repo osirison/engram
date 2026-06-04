@@ -26,6 +26,18 @@ describe('MemoryController', () => {
     retry: jest.fn(),
   };
 
+  const parseResponsePayload = <T>(response: {
+    content: Array<{ text: string }>;
+  }): T => {
+    const first = response.content[0];
+
+    if (!first) {
+      throw new Error('Response did not include text content');
+    }
+
+    return JSON.parse(first.text) as T;
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     process.env.MCP_ADMIN_TOKEN = 'test-admin-token-12345';
@@ -121,11 +133,15 @@ describe('MemoryController', () => {
         tags: ['greeting'],
       });
 
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{
+        query: string;
+        count: number;
+        results: Array<{ score: number; memory: { id: string } }>;
+      }>(response);
       expect(payload.query).toBe('hello');
       expect(payload.count).toBe(1);
-      expect(payload.results[0].score).toBe(0.92);
-      expect(payload.results[0].memory.id).toBe('ltm-1');
+      expect(payload.results[0]!.score).toBe(0.92);
+      expect(payload.results[0]!.memory.id).toBe('ltm-1');
     });
 
     it('should reject invalid input', async () => {
@@ -161,7 +177,12 @@ describe('MemoryController', () => {
         maxMemories: undefined,
       });
 
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{
+        scope: string;
+        processed: number;
+        indexed: number;
+        skipped: number;
+      }>(response);
       expect(payload.scope).toBe(userId);
       expect(payload.processed).toBe(5);
       expect(payload.indexed).toBe(4);
@@ -180,7 +201,7 @@ describe('MemoryController', () => {
       const response = await controller.reindexMemories({
         adminToken: 'test-admin-token-12345',
       });
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{ scope: string }>(response);
       expect(payload.scope).toBe('all-users');
     });
 
@@ -214,7 +235,9 @@ describe('MemoryController', () => {
         adminToken: 'test-admin-token-12345',
         batchSize: 100,
       });
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{ jobId: string; state: string }>(
+        response,
+      );
 
       expect(mockReindexQueueService.enqueue).toHaveBeenCalledWith({
         userId: undefined,
@@ -236,7 +259,7 @@ describe('MemoryController', () => {
         adminToken: 'test-admin-token-12345',
         jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       });
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{ state: string }>(response);
 
       expect(payload.state).toBe('not_found');
     });
@@ -258,7 +281,10 @@ describe('MemoryController', () => {
         adminToken: 'test-admin-token-12345',
         jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       });
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{
+        state: string;
+        summary: { cursor: string | null };
+      }>(response);
 
       expect(payload.state).toBe('running');
       expect(payload.summary.cursor).toBe('c1');
@@ -276,7 +302,7 @@ describe('MemoryController', () => {
         adminToken: 'test-admin-token-12345',
         jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       });
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{ state: string }>(response);
 
       expect(payload.state).toBe('cancelled');
       expect(mockReindexQueueService.cancel).toHaveBeenCalledWith(
@@ -296,7 +322,7 @@ describe('MemoryController', () => {
         adminToken: 'test-admin-token-12345',
         jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       });
-      const payload = JSON.parse(response.content[0].text);
+      const payload = parseResponsePayload<{ state: string }>(response);
 
       expect(payload.state).toBe('queued');
       expect(mockReindexQueueService.retry).toHaveBeenCalledWith(

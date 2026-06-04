@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Copilot Compressor icon">
+  <rect width="128" height="128" rx="24" fill="#0f172a"/>
+  <path d="M24 36h80v16H24z" fill="#22d3ee"/>
+  <path d="M24 60h56v16H24z" fill="#38bdf8"/>
+  <path d="M24 84h36v16H24z" fill="#7dd3fc"/>
+  <circle cx="94" cy="92" r="10" fill="#f8fafc"/>
+</svg>

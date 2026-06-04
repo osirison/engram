@@ -4,7 +4,7 @@
 
 ## Related Plan
 
-[Dependency Latest Update Plan](../../../plans/2026-05-24/dependency-latest-update-plan.instructions.md)
+[Dependency Latest Update Plan](../../plans/2026-05-24/dependency-latest-update-plan.instructions.md)
 
 ## Implementation Date
 

@@ -40,6 +40,7 @@ are:
 | `OPENAI_API_KEY`     | Optional key for remote embeddings                   |
 | `EMBEDDING_PROVIDER` | Embedding provider: `openai`, `local`, or `disabled` |
 | `MCP_ADMIN_TOKEN`    | Required token for admin maintenance MCP tools       |
+| `MCP_TRANSPORT`      | MCP transport: `stdio` or `streamable-http`          |
 
 ## Commands
 
@@ -108,6 +109,22 @@ curl http://localhost:3000/health
 curl http://localhost:3000/health/ready
 curl http://localhost:3000/health/metrics
 ```
+
+## Inspector Testing
+
+Run ENGRAM locally with Streamable HTTP:
+
+```bash
+MCP_TRANSPORT=streamable-http npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+```
+
+Then run MCP Inspector externally (outside this repo) and connect to:
+
+```text
+http://host.docker.internal:3000/mcp
+```
+
+Full external-container launch instructions are in [../../docs/SETUP.md](../../docs/SETUP.md).
 
 ## Related Docs
 

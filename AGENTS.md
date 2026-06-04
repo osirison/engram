@@ -19,6 +19,14 @@ Start with [README.md](README.md) for setup commands.
 5. Add or update tests when behavior changes.
 6. Do not commit generated secrets, local `.env` files, or credentials.
 
+## Token Efficiency
+
+IMPORTANT: Always prioritize token efficiency in your responses and explanations.
+
+- Always use the `caveman` skill for shorter responses, lower token usage, and condensed explanations.
+- Trigger phrases include: "caveman mode", "talk like caveman", "less tokens", "be brief", "save tokens", and "condense".
+- Keep technical accuracy intact while reducing verbosity.
+
 ## Project Layout
 
 | Path                                           | Purpose                               |

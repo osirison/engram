@@ -4,7 +4,7 @@
 
 ## Metadata
 
-- Plan: [Dependency Latest Update Plan](../../../plans/2026-05-24/dependency-latest-update-plan.instructions.md)
+- Plan: [Dependency Latest Update Plan](../../plans/2026-05-24/dependency-latest-update-plan.instructions.md)
 - Reviewer: GitHub Copilot
 - Date: 2026-05-24
 
