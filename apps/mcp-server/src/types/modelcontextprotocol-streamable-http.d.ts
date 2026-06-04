@@ -11,6 +11,8 @@ declare module '@modelcontextprotocol/sdk/server/streamableHttp.js' {
 
   export interface StreamableHTTPServerTransportOptions {
     sessionIdGenerator?: (() => string) | undefined;
+    onsessioninitialized?: (sessionId: string) => void | Promise<void>;
+    enableJsonResponse?: boolean;
   }
 
   export class StreamableHTTPServerTransport implements Transport {

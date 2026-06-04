@@ -1,30 +1,29 @@
-import { IncomingMessage, ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import express, { type Request, type Response } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
+import type { McpServerConfig } from '@engram/core';
 import { MemoryController } from './memory/memory.controller';
 
 type McpHandlerContract = {
   registerAdditionalTools: (
     tools: ReturnType<MemoryController['getMcpTools']>,
   ) => void;
-  start: (
-    options: {
-      name: string;
-      version: string;
-      capabilities: { tools: Record<string, never> };
-      instructions: string;
-    },
-    transport?: StreamableHTTPServerTransport,
-  ) => Promise<void>;
+  start: (options: McpServerConfig) => Promise<void>;
+  createConfiguredServer: (options: McpServerConfig) => {
+    connect: (t: StreamableHTTPServerTransport) => Promise<void>;
+    close: () => Promise<void>;
+  };
 };
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
-  // Use Pino logger
   app.useLogger(app.get(Logger));
 
   app.enableCors({
@@ -34,100 +33,140 @@ async function bootstrap(): Promise<void> {
     exposedHeaders: ['mcp-session-id'],
   });
 
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-
-  // Log startup message
   const logger = app.get(Logger);
-  logger.log(
-    `Application is running on: http://localhost:${port}`,
-    'Bootstrap',
-  );
-
-  // Initialize MCP handler with memory tools
   const mcpHandler = app.get<McpHandlerContract>(McpHandler);
   const memoryController = app.get<MemoryController>(MemoryController);
   const mcpTransport = process.env.MCP_TRANSPORT ?? 'stdio';
 
   try {
-    // Register memory tools before initializing MCP server
     const memoryTools = memoryController.getMcpTools();
     mcpHandler.registerAdditionalTools(memoryTools);
-    logger.log(
-      `Registered ${memoryTools.length} memory tools with MCP handler`,
-      'Bootstrap',
-    );
 
-    const serverConfig = {
+    const serverConfig: McpServerConfig = {
       name: 'engram',
       version: '0.1.0',
-      capabilities: {
-        tools: {},
-      },
+      capabilities: { tools: {} },
       instructions: 'ENGRAM - Extended Neural Graph for Recall and Memory',
     };
 
     if (mcpTransport === 'streamable-http') {
-      const streamableHttpTransport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
+      const transports = new Map<string, StreamableHTTPServerTransport>();
+      const expressApp = app
+        .getHttpAdapter()
+        .getInstance() as express.Application;
+      const mcpJsonParser = express.json({ limit: '4mb' });
 
-      await mcpHandler.start(serverConfig, streamableHttpTransport);
-
-      const expressApp = app.getHttpAdapter().getInstance();
-      expressApp.post('/mcp', async (req, res) => {
-        try {
-          await streamableHttpTransport.handleRequest(
-            req as IncomingMessage & { auth?: unknown },
-            res as ServerResponse,
-            req.body,
-          );
-        } catch (error) {
-          logger.error('Failed to handle Streamable HTTP MCP request:', error);
-
-          if (!res.headersSent) {
-            res.status(500).json({
-              jsonrpc: '2.0',
-              error: {
-                code: -32603,
-                message: 'Internal server error',
-              },
-              id: null,
-            });
-          }
+      const handleSessionRequest = async (
+        req: Request,
+        res: Response,
+      ): Promise<void> => {
+        const sessionId = req.headers['mcp-session-id'];
+        const transport =
+          typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
+        if (!transport) {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Invalid or missing session ID' },
+            id: null,
+          });
+          return;
         }
-      });
-      expressApp.get('/mcp', (_req, res) => {
-        res.status(405).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32000,
-            message: 'Method not allowed.',
-          },
-          id: null,
-        });
-      });
-      expressApp.delete('/mcp', (_req, res) => {
-        res.status(405).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32000,
-            message: 'Method not allowed.',
-          },
-          id: null,
-        });
-      });
+        await transport.handleRequest(
+          req as IncomingMessage & { auth?: unknown },
+          res as ServerResponse,
+        );
+      };
 
-      logger.log(
-        'MCP protocol handler started in Streamable HTTP mode',
-        'Bootstrap',
+      expressApp.post(
+        '/mcp',
+        mcpJsonParser,
+        async (req: Request, res: Response) => {
+          try {
+            const sessionId = req.headers['mcp-session-id'];
+            let transport: StreamableHTTPServerTransport | undefined =
+              typeof sessionId === 'string'
+                ? transports.get(sessionId)
+                : undefined;
+
+            if (!transport) {
+              if (!isInitializeRequest(req.body)) {
+                logger.warn(
+                  `Rejecting POST /mcp without session: body=${JSON.stringify(req.body)?.slice(0, 300)} headers=${JSON.stringify(
+                    {
+                      'content-type': req.headers['content-type'],
+                      accept: req.headers.accept,
+                      'mcp-session-id': req.headers['mcp-session-id'],
+                    },
+                  )}`,
+                );
+                res.status(400).json({
+                  jsonrpc: '2.0',
+                  error: {
+                    code: -32000,
+                    message:
+                      'Bad Request: No valid session ID provided for non-initialize request',
+                  },
+                  id: null,
+                });
+                return;
+              }
+
+              transport = new StreamableHTTPServerTransport({
+                sessionIdGenerator: (): string => randomUUID(),
+                enableJsonResponse: true,
+                onsessioninitialized: (sid: string): void => {
+                  transports.set(sid, transport!);
+                  logger.log(`MCP session initialized: ${sid}`, 'McpSession');
+                },
+              });
+
+              transport.onclose = (): void => {
+                const sid = transport!.sessionId;
+                if (sid && transports.delete(sid)) {
+                  logger.log(`MCP session closed: ${sid}`, 'McpSession');
+                }
+              };
+
+              const server = mcpHandler.createConfiguredServer(serverConfig);
+              await server.connect(transport);
+            }
+
+            await transport.handleRequest(
+              req as IncomingMessage & { auth?: unknown },
+              res as ServerResponse,
+              req.body,
+            );
+          } catch (error) {
+            logger.error(
+              'Failed to handle Streamable HTTP MCP request:',
+              error,
+            );
+            if (!res.headersSent) {
+              res.status(500).json({
+                jsonrpc: '2.0',
+                error: { code: -32603, message: 'Internal server error' },
+                id: null,
+              });
+            }
+          }
+        },
       );
+
+      expressApp.get('/mcp', handleSessionRequest);
+      expressApp.delete('/mcp', handleSessionRequest);
     } else {
       await mcpHandler.start(serverConfig);
-      logger.log('MCP protocol handler started in stdio mode', 'Bootstrap');
     }
   } catch (error) {
     logger.error('Failed to start MCP handler:', error);
   }
+
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
+
+  logger.log(
+    `Application is running on: http://localhost:${port} [transport: ${mcpTransport}]`,
+    'Bootstrap',
+  );
 }
 void bootstrap();

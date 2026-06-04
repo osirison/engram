@@ -21,6 +21,8 @@ Start with [README.md](README.md) for setup commands.
 
 ## Token Efficiency
 
+IMPORTANT: Always prioritize token efficiency in your responses and explanations.
+
 - Always use the `caveman` skill for shorter responses, lower token usage, and condensed explanations.
 - Trigger phrases include: "caveman mode", "talk like caveman", "less tokens", "be brief", "save tokens", and "condense".
 - Keep technical accuracy intact while reducing verbosity.

@@ -1,0 +1,18 @@
+services:
+  inspector:
+    image: node:lts-alpine
+    command: npx --yes @modelcontextprotocol/inspector
+    ports:
+      - '127.0.0.1:6274:6274'
+      - '127.0.0.1:6277:6277'
+    environment:
+      HOST: 0.0.0.0
+      MCP_AUTO_OPEN_ENABLED: 'false'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - engram-network
+
+networks:
+  engram-network:
+    external: true

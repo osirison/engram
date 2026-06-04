@@ -112,6 +112,26 @@ export class McpHandler implements OnModuleDestroy {
   }
 
   /**
+   * Create a standalone Server instance with all tools registered.
+   * Use this when you need a fresh Server per HTTP session instead of
+   * sharing the singleton stored on this handler.
+   */
+  createConfiguredServer(config: McpServerConfig): McpServer {
+    const server = new Server(
+      { name: config.name, version: config.version },
+      {
+        capabilities: config.capabilities || { tools: {} },
+        instructions: config.instructions,
+      }
+    );
+    server.onerror = (error): void => {
+      this.logger.error('MCP session server error:', error);
+    };
+    registerTools(server, this.additionalTools);
+    return server;
+  }
+
+  /**
    * Get the MCP server instance
    */
   getServer(): McpServer | null {

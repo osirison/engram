@@ -1,0 +1,88 @@
+{
+  "name": "vscode-copilot-compressor",
+  "displayName": "Copilot Context Compressor",
+  "description": "Owns a chat participant that compresses verbose requests into deterministic caveman-style prompts.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "engram",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "Chat"
+  ],
+  "activationEvents": [
+    "onChatParticipant:engram.compressor",
+    "onCommand:engram.copilotCompressor.compressSelection",
+    "onCommand:engram.copilotCompressor.compressInput"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "engram.compressor",
+        "name": "compressor",
+        "fullName": "ENGRAM Compressor",
+        "description": "Compresses long developer prompts into deterministic caveman-style prompts.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "compress",
+            "description": "Compress and shape the current request before model usage"
+          },
+          {
+            "name": "raw",
+            "description": "Show the compressed prompt without caveman shaping"
+          }
+        ]
+      }
+    ],
+    "chatPromptFiles": [
+      {
+        "id": "engram.compressor.cavemanPrompt",
+        "description": "Reusable caveman prompt file for manual chat workflows.",
+        "file": "./prompts/caveman.prompt.md"
+      }
+    ],
+    "commands": [
+      {
+        "command": "engram.copilotCompressor.compressSelection",
+        "title": "Copilot Compressor: Compress Selected Text"
+      },
+      {
+        "command": "engram.copilotCompressor.compressInput",
+        "title": "Copilot Compressor: Compress Prompt From Input"
+      }
+    ],
+    "configuration": {
+      "title": "Copilot Context Compressor",
+      "properties": {
+        "engram.copilotCompressor.maxPromptChars": {
+          "type": "number",
+          "default": 1400,
+          "minimum": 500,
+          "maximum": 8000,
+          "description": "Character budget for compressed prompts before caveman shaping."
+        },
+        "engram.copilotCompressor.includeHistory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include prior user turns when building compressed prompt context."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/vscode": "^1.104.0",
+    "eslint": "^9.39.4",
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.3"
+  }
+}

@@ -78,38 +78,40 @@ shown in the command table below.
 
 ## Project Layout
 
-| Path                                           | Purpose                             |
-| ---------------------------------------------- | ----------------------------------- |
-| [apps/mcp-server](apps/mcp-server)             | Main NestJS MCP server              |
-| [apps/web](apps/web)                           | Web application workspace           |
-| [apps/docs](apps/docs)                         | Documentation application workspace |
-| [packages/core](packages/core)                 | Core MCP types, registry, and tools |
-| [packages/config](packages/config)             | Environment validation and types    |
-| [packages/database](packages/database)         | Prisma database module              |
-| [packages/redis](packages/redis)               | Redis client module                 |
-| [packages/vector-store](packages/vector-store) | Qdrant vector store module          |
-| [packages/embeddings](packages/embeddings)     | Embedding generation and caching    |
-| [packages/memory-stm](packages/memory-stm)     | Short-term memory package           |
-| [packages/memory-ltm](packages/memory-ltm)     | Long-term memory package            |
-| [packages/ui](packages/ui)                     | Shared React components             |
-| [prisma](prisma)                               | Prisma schema and migrations        |
-| [docker](docker)                               | Local infrastructure initialization |
+| Path                                                             | Purpose                                      |
+| ---------------------------------------------------------------- | -------------------------------------------- |
+| [apps/mcp-server](apps/mcp-server)                               | Main NestJS MCP server                       |
+| [apps/web](apps/web)                                             | Web application workspace                    |
+| [apps/docs](apps/docs)                                           | Documentation application workspace          |
+| [apps/vscode-copilot-compressor](apps/vscode-copilot-compressor) | VS Code chat compression extension workspace |
+| [packages/core](packages/core)                                   | Core MCP types, registry, and tools          |
+| [packages/config](packages/config)                               | Environment validation and types             |
+| [packages/database](packages/database)                           | Prisma database module                       |
+| [packages/redis](packages/redis)                                 | Redis client module                          |
+| [packages/vector-store](packages/vector-store)                   | Qdrant vector store module                   |
+| [packages/embeddings](packages/embeddings)                       | Embedding generation and caching             |
+| [packages/memory-stm](packages/memory-stm)                       | Short-term memory package                    |
+| [packages/memory-ltm](packages/memory-ltm)                       | Long-term memory package                     |
+| [packages/ui](packages/ui)                                       | Shared React components                      |
+| [prisma](prisma)                                                 | Prisma schema and migrations                 |
+| [docker](docker)                                                 | Local infrastructure initialization          |
 
 ## More Information
 
-| Topic                                     | Link                                                                           |
-| ----------------------------------------- | ------------------------------------------------------------------------------ |
-| Detailed local setup and MCP client setup | [docs/SETUP.md](docs/SETUP.md)                                                 |
-| Current roadmap                           | [docs/roadmap.md](docs/roadmap.md)                                             |
-| MCP server details                        | [apps/mcp-server/README.md](apps/mcp-server/README.md)                         |
-| Web app details                           | [apps/web/README.md](apps/web/README.md)                                       |
-| Docs app details                          | [apps/docs/README.md](apps/docs/README.md)                                     |
-| MCP tool development                      | [packages/core/src/mcp/tools/README.md](packages/core/src/mcp/tools/README.md) |
-| Database package                          | [packages/database/README.md](packages/database/README.md)                     |
-| Database usage examples                   | [packages/database/USAGE.md](packages/database/USAGE.md)                       |
-| Redis package                             | [packages/redis/README.md](packages/redis/README.md)                           |
-| Embeddings package                        | [packages/embeddings/README.md](packages/embeddings/README.md)                 |
-| Agent and contributor instructions        | [AGENTS.md](AGENTS.md)                                                         |
+| Topic                                     | Link                                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| Detailed local setup and MCP client setup | [docs/SETUP.md](docs/SETUP.md)                                                       |
+| Current roadmap                           | [docs/roadmap.md](docs/roadmap.md)                                                   |
+| MCP server details                        | [apps/mcp-server/README.md](apps/mcp-server/README.md)                               |
+| Web app details                           | [apps/web/README.md](apps/web/README.md)                                             |
+| Docs app details                          | [apps/docs/README.md](apps/docs/README.md)                                           |
+| VS Code compressor extension              | [apps/vscode-copilot-compressor/README.md](apps/vscode-copilot-compressor/README.md) |
+| MCP tool development                      | [packages/core/src/mcp/tools/README.md](packages/core/src/mcp/tools/README.md)       |
+| Database package                          | [packages/database/README.md](packages/database/README.md)                           |
+| Database usage examples                   | [packages/database/USAGE.md](packages/database/USAGE.md)                             |
+| Redis package                             | [packages/redis/README.md](packages/redis/README.md)                                 |
+| Embeddings package                        | [packages/embeddings/README.md](packages/embeddings/README.md)                       |
+| Agent and contributor instructions        | [AGENTS.md](AGENTS.md)                                                               |
 
 ## Environment
 
@@ -141,23 +143,47 @@ client setup flow.
 
 ## MCP Inspector
 
-Use the full Docker stack for isolated MCP Inspector testing:
+The MCP Inspector has no official Docker image on GHCR — running
+`docker run ghcr.io/modelcontextprotocol/inspector:latest` will fail with a
+registry error. Use one of the two approaches below instead.
+
+### Option A — host-run (simplest)
+
+With the MCP server already running on `http://localhost:3000`, start the
+inspector in a separate terminal:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:up
+npm exec --yes pnpm@11.4.0 -- inspector
 ```
 
 Then open:
 
 ```text
-http://localhost:6274/?transport=streamable-http&serverUrl=http%3A%2F%2Fmcp-server%3A3000%2Fmcp
+http://localhost:6274/?transport=streamable-http&serverUrl=http%3A%2F%2Flocalhost%3A3000%2Fmcp
 ```
 
-This runs PostgreSQL, Redis, Qdrant, the ENGRAM MCP server, and Inspector in
-one Compose flow. Stop the stack with:
+Port 6274 is the Inspector UI and port 6277 is the proxy. If either port is
+already in use (e.g. from a previous run), kill the stale process before
+restarting.
+
+### Option B — Docker (inspector in a container)
+
+First ensure the base infrastructure is up (`pnpm docker:up`) and the MCP
+server is running on the host. Then start the Inspector container:
+
+```bash
+npm exec --yes pnpm@11.4.0 -- docker:inspector:up
+```
+
+The container reaches the host-side MCP server via `host.docker.internal`.
+Open the Inspector UI at:
+
+```text
+http://localhost:6274/?transport=streamable-http&serverUrl=http%3A%2F%2Fhost.docker.internal%3A3000%2Fmcp
+```
+
+Stop the container with:
 
 ```bash
 npm exec --yes pnpm@11.4.0 -- docker:inspector:down
 ```
-
-See [docs/SETUP.md](docs/SETUP.md) for the host-run fallback flow and troubleshooting details.
