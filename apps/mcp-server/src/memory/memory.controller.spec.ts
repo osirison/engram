@@ -8,6 +8,7 @@ describe('MemoryController', () => {
   let memoryService: MemoryService;
 
   const mockMemoryService = {
+    createMemory: jest.fn(),
     createStm: jest.fn(),
     createLtm: jest.fn(),
     getMemory: jest.fn(),
@@ -328,6 +329,312 @@ describe('MemoryController', () => {
       expect(mockReindexQueueService.retry).toHaveBeenCalledWith(
         '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       );
+    });
+  });
+
+  describe('createMemory', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('creates a short-term memory and returns its id in the response', async () => {
+      mockMemoryService.createMemory.mockResolvedValue({
+        id: memoryId,
+        type: 'short-term',
+        content: 'hello world',
+      });
+
+      const response = await controller.createMemory({
+        userId,
+        content: 'hello world',
+        type: 'short-term',
+        ttl: 300,
+      });
+
+      expect(mockMemoryService.createMemory).toHaveBeenCalledWith({
+        userId,
+        content: 'hello world',
+        type: 'short-term',
+        metadata: undefined,
+        tags: [],
+        ttl: 300,
+      });
+      expect(response.content[0]?.text).toContain(memoryId);
+      expect(response.content[0]?.text).toContain('short-term');
+    });
+
+    it('creates a long-term memory', async () => {
+      mockMemoryService.createMemory.mockResolvedValue({
+        id: memoryId,
+        type: 'long-term',
+      });
+
+      const response = await controller.createMemory({
+        userId,
+        content: 'important note',
+        type: 'long-term',
+      });
+
+      expect(response.content[0]?.text).toContain('long-term');
+    });
+
+    it('rejects missing required content field', async () => {
+      await expect(
+        controller.createMemory({ userId, type: 'short-term' }),
+      ).rejects.toThrow(/Failed to create memory/);
+    });
+
+    it('rejects content that exceeds the 10KB limit', async () => {
+      await expect(
+        controller.createMemory({
+          userId,
+          content: 'x'.repeat(10241),
+          type: 'long-term',
+        }),
+      ).rejects.toThrow(/Failed to create memory/);
+    });
+
+    it('wraps service errors', async () => {
+      mockMemoryService.createMemory.mockRejectedValue(
+        new Error('quota exceeded'),
+      );
+
+      await expect(
+        controller.createMemory({
+          userId,
+          content: 'hello',
+          type: 'long-term',
+        }),
+      ).rejects.toThrow(/Failed to create memory: quota exceeded/);
+    });
+  });
+
+  describe('getMemory', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('returns the serialised memory when found', async () => {
+      const memory = {
+        id: memoryId,
+        userId,
+        content: 'hello',
+        type: 'long-term',
+      };
+      mockMemoryService.getMemory.mockResolvedValue(memory);
+
+      const response = await controller.getMemory({ userId, memoryId });
+
+      const payload = parseResponsePayload<{ id: string; content: string }>(
+        response,
+      );
+      expect(payload.id).toBe(memoryId);
+      expect(payload.content).toBe('hello');
+      expect(mockMemoryService.getMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+      );
+    });
+
+    it('returns a not-found message when memory is absent', async () => {
+      mockMemoryService.getMemory.mockResolvedValue(null);
+
+      const response = await controller.getMemory({ userId, memoryId });
+
+      expect(response.content[0]?.text).toContain('not found');
+    });
+
+    it('rejects invalid userId', async () => {
+      await expect(
+        controller.getMemory({ userId: 'not-a-cuid', memoryId }),
+      ).rejects.toThrow(/Failed to get memory/);
+    });
+  });
+
+  describe('listMemories', () => {
+    const userId = 'clm0000000000000000000000';
+
+    it('lists memories with default options', async () => {
+      mockMemoryService.listMemories.mockResolvedValue({
+        items: [{ id: 'clm1111111111111111111111', content: 'hello' }],
+        totalCount: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const response = await controller.listMemories({ userId });
+
+      expect(mockMemoryService.listMemories).toHaveBeenCalledWith(userId, {
+        limit: 20,
+        cursor: undefined,
+        tags: undefined,
+        search: undefined,
+      });
+
+      const payload = parseResponsePayload<{
+        memories: unknown[];
+        pagination: { totalCount: number; hasNextPage: boolean };
+      }>(response);
+      expect(payload.memories).toHaveLength(1);
+      expect(payload.pagination.totalCount).toBe(1);
+      expect(payload.pagination.hasNextPage).toBe(false);
+    });
+
+    it('passes filtering options through to the service', async () => {
+      mockMemoryService.listMemories.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      await controller.listMemories({
+        userId,
+        limit: 5,
+        tags: ['work'],
+        search: 'meeting notes',
+      });
+
+      expect(mockMemoryService.listMemories).toHaveBeenCalledWith(userId, {
+        limit: 5,
+        cursor: undefined,
+        tags: ['work'],
+        search: 'meeting notes',
+      });
+    });
+
+    it('rejects invalid userId', async () => {
+      await expect(
+        controller.listMemories({ userId: 'not-a-cuid' }),
+      ).rejects.toThrow(/Failed to list memories/);
+    });
+  });
+
+  describe('updateMemory', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('updates memory and includes it in the response text', async () => {
+      const updated = { id: memoryId, userId, content: 'new content' };
+      mockMemoryService.updateMemory.mockResolvedValue(updated);
+
+      const response = await controller.updateMemory({
+        userId,
+        memoryId,
+        content: 'new content',
+      });
+
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+        {
+          content: 'new content',
+          metadata: undefined,
+          tags: undefined,
+          ttl: undefined,
+        },
+      );
+      expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('rejects invalid memoryId', async () => {
+      await expect(
+        controller.updateMemory({ userId, memoryId: 'not-a-cuid' }),
+      ).rejects.toThrow(/Failed to update memory/);
+    });
+
+    it('wraps service errors', async () => {
+      mockMemoryService.updateMemory.mockRejectedValue(
+        new Error('memory not found'),
+      );
+
+      await expect(
+        controller.updateMemory({ userId, memoryId }),
+      ).rejects.toThrow(/Failed to update memory: memory not found/);
+    });
+  });
+
+  describe('deleteMemory', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('returns a success message when memory is deleted', async () => {
+      mockMemoryService.deleteMemory.mockResolvedValue(true);
+
+      const response = await controller.deleteMemory({ userId, memoryId });
+
+      expect(response.content[0]?.text).toContain('Successfully deleted');
+      expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+      );
+    });
+
+    it('returns a not-found message when nothing was deleted', async () => {
+      mockMemoryService.deleteMemory.mockResolvedValue(false);
+
+      const response = await controller.deleteMemory({ userId, memoryId });
+
+      expect(response.content[0]?.text).toContain('not found');
+    });
+
+    it('rejects invalid userId', async () => {
+      await expect(
+        controller.deleteMemory({ userId: 'not-a-cuid', memoryId }),
+      ).rejects.toThrow(/Failed to delete memory/);
+    });
+  });
+
+  describe('promoteMemory', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('promotes memory to long-term and returns confirmation', async () => {
+      const promoted = {
+        id: memoryId,
+        userId,
+        type: 'long-term',
+        content: 'hello',
+      };
+      mockMemoryService.promoteMemory.mockResolvedValue(promoted);
+
+      const response = await controller.promoteMemory({ userId, memoryId });
+
+      expect(mockMemoryService.promoteMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+      );
+      expect(response.content[0]?.text).toContain('Successfully promoted');
+      expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('rejects invalid input', async () => {
+      await expect(
+        controller.promoteMemory({ userId: 'not-a-cuid', memoryId }),
+      ).rejects.toThrow(/Failed to promote memory/);
+    });
+
+    it('wraps service errors', async () => {
+      mockMemoryService.promoteMemory.mockRejectedValue(
+        new Error('quota exceeded'),
+      );
+
+      await expect(
+        controller.promoteMemory({ userId, memoryId }),
+      ).rejects.toThrow(/Failed to promote memory: quota exceeded/);
+    });
+  });
+
+  describe('assertAdminAuthorized', () => {
+    it('throws when MCP_ADMIN_TOKEN env var is not configured', async () => {
+      const original = process.env.MCP_ADMIN_TOKEN;
+      delete process.env.MCP_ADMIN_TOKEN;
+
+      try {
+        await expect(
+          controller.reindexMemories({ adminToken: 'test-admin-token-12345' }),
+        ).rejects.toThrow(/MCP_ADMIN_TOKEN is not configured/);
+      } finally {
+        process.env.MCP_ADMIN_TOKEN = original;
+      }
     });
   });
 });
