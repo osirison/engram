@@ -17,6 +17,7 @@ const mockRedisClient = {
   ping: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  scan: vi.fn(),
   status: 'ready',
 } as unknown as Redis;
 
@@ -357,6 +358,84 @@ describe('RedisService', () => {
       mockRedisClient.disconnect = vi.fn().mockRejectedValue(error);
 
       await expect(service.disconnect()).rejects.toThrow('Disconnect failed');
+    });
+  });
+
+  describe('delMany', () => {
+    it('should return 0 without calling Redis when given an empty array', async () => {
+      const result = await service.delMany([]);
+
+      expect(mockRedisClient.del).not.toHaveBeenCalled();
+      expect(result).toBe(0);
+    });
+
+    it('should delete multiple keys and return the count', async () => {
+      mockRedisClient.del = vi.fn().mockResolvedValue(2);
+
+      const result = await service.delMany(['key-a', 'key-b']);
+
+      expect(mockRedisClient.del).toHaveBeenCalledWith('key-a', 'key-b');
+      expect(result).toBe(2);
+    });
+
+    it('should throw error when Redis operation fails', async () => {
+      const error = new Error('Redis connection failed');
+      mockRedisClient.del = vi.fn().mockRejectedValue(error);
+
+      await expect(service.delMany(['key-a'])).rejects.toThrow('Redis connection failed');
+    });
+  });
+
+  describe('scan', () => {
+    it('should call scan with match and count options', async () => {
+      mockRedisClient.scan = vi.fn().mockResolvedValue(['0', ['key-1', 'key-2']]);
+
+      const result = await service.scan('0', { match: 'user:*', count: 100 });
+
+      expect(mockRedisClient.scan).toHaveBeenCalledWith('0', 'MATCH', 'user:*', 'COUNT', 100);
+      expect(result.cursor).toBe('0');
+      expect(result.keys).toEqual(['key-1', 'key-2']);
+    });
+
+    it('should call scan with match option only', async () => {
+      mockRedisClient.scan = vi.fn().mockResolvedValue(['42', ['key-1']]);
+
+      const result = await service.scan('0', { match: 'memory:*' });
+
+      expect(mockRedisClient.scan).toHaveBeenCalledWith('0', 'MATCH', 'memory:*');
+      expect(result.cursor).toBe('42');
+    });
+
+    it('should call scan with count option only', async () => {
+      mockRedisClient.scan = vi.fn().mockResolvedValue(['0', []]);
+
+      await service.scan('0', { count: 50 });
+
+      expect(mockRedisClient.scan).toHaveBeenCalledWith('0', 'COUNT', 50);
+    });
+
+    it('should call plain scan when no options are given', async () => {
+      mockRedisClient.scan = vi.fn().mockResolvedValue(['0', []]);
+
+      await service.scan('0');
+
+      expect(mockRedisClient.scan).toHaveBeenCalledWith('0');
+    });
+
+    it('should return cursor and keys from Redis response', async () => {
+      mockRedisClient.scan = vi.fn().mockResolvedValue(['next-cursor', ['k1', 'k2', 'k3']]);
+
+      const result = await service.scan('0', { match: '*' });
+
+      expect(result.cursor).toBe('next-cursor');
+      expect(result.keys).toHaveLength(3);
+    });
+
+    it('should throw error when Redis operation fails', async () => {
+      const error = new Error('Redis connection failed');
+      mockRedisClient.scan = vi.fn().mockRejectedValue(error);
+
+      await expect(service.scan('0', { match: '*' })).rejects.toThrow('Redis connection failed');
     });
   });
 });

@@ -92,6 +92,130 @@ describe('ReindexQueueService', () => {
     expect(cancelled?.events.at(-1)?.type).toBe('job_cancelled');
   });
 
+  it('returns null when getting a non-existent job', async () => {
+    redis.get.mockResolvedValue(null);
+
+    const result = await service.get('non-existent-job');
+
+    expect(result).toBeNull();
+  });
+
+  it('flags a running job for cancellation without terminating it immediately', async () => {
+    const runningJob: ReindexJobStatus = {
+      jobId: 'job-running',
+      state: 'running',
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      cancelRequested: false,
+      events: [],
+      options: { batchSize: 10 },
+      summary: {
+        processed: 2,
+        indexed: 2,
+        skipped: 0,
+        failed: 0,
+        cursor: 'c-2',
+      },
+    };
+    redis.get.mockResolvedValue(JSON.stringify(runningJob));
+    redis.set.mockResolvedValue(undefined);
+
+    const result = await service.cancel('job-running');
+
+    expect(result?.cancelRequested).toBe(true);
+    expect(result?.state).toBe('running');
+    expect(result?.events.at(-1)?.type).toBe('cancellation_requested');
+  });
+
+  it('returns the job as-is when cancelling an already-completed job', async () => {
+    const completedJob: ReindexJobStatus = {
+      jobId: 'job-done',
+      state: 'completed',
+      createdAt: new Date().toISOString(),
+      events: [],
+      options: {},
+      summary: {
+        processed: 5,
+        indexed: 5,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      },
+    };
+    redis.get.mockResolvedValue(JSON.stringify(completedJob));
+
+    const result = await service.cancel('job-done');
+
+    expect(result?.state).toBe('completed');
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('returns the job as-is when retrying a job that is not failed or cancelled', async () => {
+    const runningJob: ReindexJobStatus = {
+      jobId: 'job-running',
+      state: 'running',
+      createdAt: new Date().toISOString(),
+      events: [],
+      options: {},
+      summary: {
+        processed: 0,
+        indexed: 0,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      },
+    };
+    redis.get.mockResolvedValue(JSON.stringify(runningJob));
+
+    const result = await service.retry('job-running');
+
+    expect(result?.state).toBe('running');
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('marks job as failed when reindex throws a runtime error', async () => {
+    memoryService.reindex.mockRejectedValue(
+      new Error('embedding service unavailable'),
+    );
+
+    let latest: ReindexJobStatus | null = null;
+    redis.set.mockImplementation((_key, value) => {
+      latest = JSON.parse(value) as ReindexJobStatus;
+      return Promise.resolve();
+    });
+    redis.get.mockImplementation(() => {
+      return Promise.resolve(latest ? JSON.stringify(latest) : null);
+    });
+
+    await service.enqueue({ batchSize: 10 });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(latest?.state).toBe('failed');
+    expect(latest?.terminalReason).toBe('failed_runtime');
+    expect(latest?.error).toContain('embedding service unavailable');
+    expect(latest?.events.at(-1)?.type).toBe('job_failed');
+  });
+
+  it('skips processing if job was cancelled before the worker starts', async () => {
+    let latest: ReindexJobStatus | null = null;
+    redis.set.mockImplementation((_key, value) => {
+      latest = JSON.parse(value) as ReindexJobStatus;
+      return Promise.resolve();
+    });
+    redis.get.mockImplementation(() => {
+      return Promise.resolve(latest ? JSON.stringify(latest) : null);
+    });
+
+    const job = await service.enqueue({ batchSize: 10 });
+    await service.cancel(job.jobId);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(latest?.state).toBe('cancelled');
+    expect(memoryService.reindex).not.toHaveBeenCalled();
+  });
+
   it('retries failed jobs from their cursor', async () => {
     const jobs = new Map<string, ReindexJobStatus>();
     redis.set.mockImplementation((key, value) => {

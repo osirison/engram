@@ -163,6 +163,16 @@ describe('MemoryService', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should rethrow non-StmMemoryNotFoundError from STM without calling LTM', async () => {
+      const redisError = new Error('Redis connection failed');
+      stmService.findById.mockRejectedValue(redisError);
+
+      await expect(service.getMemory('user-1', 'stm-123')).rejects.toThrow(
+        'Redis connection failed',
+      );
+      expect(ltmService.get).not.toHaveBeenCalled();
+    });
   });
 
   describe('listMemories', () => {
@@ -201,6 +211,114 @@ describe('MemoryService', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toEqual(mockLtmMemory);
+    });
+
+    it('should sort combined results by createdAt descending', async () => {
+      const older = {
+        ...mockStmMemory,
+        id: 'older',
+        createdAt: new Date('2024-01-01'),
+      };
+      const newer = {
+        ...mockLtmMemory,
+        id: 'newer',
+        createdAt: new Date('2024-06-01'),
+      };
+
+      stmService.list.mockResolvedValue({
+        items: [older],
+        totalCount: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      ltmService.list.mockResolvedValue({
+        items: [newer],
+        totalCount: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const result = await service.listMemories('user-1', { limit: 20 });
+
+      expect(result.items[0]?.id).toBe('newer');
+      expect(result.items[1]?.id).toBe('older');
+    });
+
+    it('should apply the limit after combining results from both stores', async () => {
+      const ltmItems = Array.from({ length: 5 }, (_, i) => ({
+        ...mockLtmMemory,
+        id: `ltm-${i}`,
+        createdAt: new Date(Date.now() - i * 1000),
+      }));
+
+      stmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      ltmService.list.mockResolvedValue({
+        items: ltmItems,
+        totalCount: 5,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const result = await service.listMemories('user-1', { limit: 3 });
+
+      expect(result.items).toHaveLength(3);
+      expect(result.hasNextPage).toBe(true);
+    });
+
+    it('should set startCursor and endCursor from paginated items', async () => {
+      const first = {
+        ...mockLtmMemory,
+        id: 'first-id',
+        createdAt: new Date('2024-06-01'),
+      };
+      const last = {
+        ...mockLtmMemory,
+        id: 'last-id',
+        createdAt: new Date('2024-01-01'),
+      };
+
+      stmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      ltmService.list.mockResolvedValue({
+        items: [first, last],
+        totalCount: 2,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const result = await service.listMemories('user-1');
+
+      expect(result.startCursor).toBe('first-id');
+      expect(result.endCursor).toBe('last-id');
+    });
+
+    it('should return empty cursors when no items are returned', async () => {
+      stmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      ltmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const result = await service.listMemories('user-1');
+
+      expect(result.startCursor).toBeUndefined();
+      expect(result.endCursor).toBeUndefined();
     });
   });
 
@@ -259,6 +377,16 @@ describe('MemoryService', () => {
         }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('should rethrow non-StmMemoryNotFoundError from STM without calling LTM', async () => {
+      const redisError = new Error('Redis connection failed');
+      stmService.findById.mockRejectedValue(redisError);
+
+      await expect(
+        service.updateMemory('user-1', 'stm-123', { content: 'new' }),
+      ).rejects.toThrow('Redis connection failed');
+      expect(ltmService.get).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteMemory', () => {
@@ -293,6 +421,39 @@ describe('MemoryService', () => {
       const result = await service.deleteMemory('user-1', 'not-found');
 
       expect(result).toBe(false);
+    });
+
+    it('should delete from both stores when memory exists in both', async () => {
+      stmService.delete.mockResolvedValue(undefined);
+      ltmService.delete.mockResolvedValue(true);
+
+      const result = await service.deleteMemory('user-1', 'dual-store-id');
+
+      expect(stmService.delete).toHaveBeenCalledWith('user-1', 'dual-store-id');
+      expect(ltmService.delete).toHaveBeenCalledWith('user-1', 'dual-store-id');
+      expect(result).toBe(true);
+    });
+
+    it('should rethrow non-StmMemoryNotFoundError from STM without calling LTM', async () => {
+      const redisError = new Error('Redis connection failed');
+      stmService.delete.mockRejectedValue(redisError);
+
+      await expect(service.deleteMemory('user-1', 'stm-123')).rejects.toThrow(
+        'Redis connection failed',
+      );
+      expect(ltmService.delete).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow non-LtmMemoryNotFoundError from LTM', async () => {
+      stmService.delete.mockRejectedValue(
+        new StmMemoryNotFoundError('ltm-456'),
+      );
+      const dbError = new Error('Database connection failed');
+      ltmService.delete.mockRejectedValue(dbError);
+
+      await expect(service.deleteMemory('user-1', 'ltm-456')).rejects.toThrow(
+        'Database connection failed',
+      );
     });
   });
 
@@ -354,7 +515,7 @@ describe('MemoryService', () => {
         cursor: null,
       };
 
-      (ltmService.reindex as any).mockResolvedValue(summary);
+      ltmService.reindex.mockResolvedValue(summary);
 
       const result = await service.reindex({ userId: 'user-1', batchSize: 50 });
 
@@ -374,7 +535,7 @@ describe('MemoryService', () => {
         cursor: null,
       };
 
-      (ltmService.reindex as any).mockResolvedValue(summary);
+      ltmService.reindex.mockResolvedValue(summary);
 
       const result = await service.reindex();
 
