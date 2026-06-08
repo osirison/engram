@@ -48,7 +48,7 @@ describePg('PgVectorStore (integration)', () => {
       CREATE TABLE IF NOT EXISTS "memories" (
         "id" TEXT PRIMARY KEY,
         "userId" TEXT NOT NULL,
-        "content" TEXT,
+        "content" TEXT NOT NULL DEFAULT '',
         "metadata" JSONB,
         "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
         "type" TEXT,
@@ -61,10 +61,11 @@ describePg('PgVectorStore (integration)', () => {
 
     for (let index = 0; index < ids.length; index += 1) {
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "memories" ("id", "userId", "type", "tags") VALUES ($1, $2, $3, $4)
+        `INSERT INTO "memories" ("id", "userId", "content", "type", "tags") VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT ("id") DO UPDATE SET "userId" = EXCLUDED."userId"`,
         ids[index],
         USER_ID,
+        '',
         'note',
         ['integration']
       );
