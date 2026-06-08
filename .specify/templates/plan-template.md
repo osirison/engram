@@ -1,3 +1,8 @@
+---
+title: Implementation Plan Template
+description: Template for generating feature implementation plans from Spec Kit specifications.
+---
+
 # Implementation Plan: [FEATURE]
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]

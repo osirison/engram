@@ -1,4 +1,5 @@
 ---
+title: 'Speckit Git Remote Agent'
 description: Detect Git remote URL for GitHub integration
 ---
 

@@ -1,3 +1,8 @@
+---
+title: Checklist Template
+description: Template for generating feature implementation checklists with Spec Kit.
+---
+
 # [CHECKLIST TYPE] Checklist: [FEATURE NAME]
 
 **Purpose**: [Brief description of what this checklist covers]

@@ -1,4 +1,5 @@
 ---
+title: 'Speckit Git Initialize Agent'
 description: Initialize a Git repository with an initial commit
 ---
 

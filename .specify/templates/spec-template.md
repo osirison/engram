@@ -1,3 +1,8 @@
+---
+title: Feature Specification Template
+description: Template for creating feature specifications with Spec Kit.
+---
+
 # Feature Specification: [FEATURE NAME]
 
 **Feature Branch**: `[###-feature-name]`

@@ -1,3 +1,8 @@
+---
+title: Spec Kit Memory Constitution
+description: Project-specific constitution defining coding principles and working agreements for Spec Kit memory.
+---
+
 <!--
 Sync Impact Report
 - Version change: template placeholders -> 1.0.0

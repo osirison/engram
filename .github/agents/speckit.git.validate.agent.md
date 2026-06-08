@@ -1,4 +1,5 @@
 ---
+title: 'Speckit Git Validate Agent'
 description: Validate current branch follows feature branch naming conventions
 ---
 

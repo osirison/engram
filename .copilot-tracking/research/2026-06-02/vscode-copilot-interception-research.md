@@ -205,7 +205,7 @@ Why selected:
 
 The participant should own three stages: gather the chat input, compress it, and compose the final model request. The compression step can apply a token budget, trim repeated context, and convert long developer prose into a shorter instruction set. If the team wants a `caveman` mode, that should be a deterministic transformation inside this owned workflow, not a hidden patch to built-in Copilot.
 
-#### Considered Alternatives
+#### Other Considered Approaches
 
 - Prompt files are useful when the workflow is manual and reusable, but they do not automatically intercept every message.
 - Commands and command URIs are useful launchers, but they are invocation surfaces rather than request-rewrite surfaces.

@@ -1,4 +1,5 @@
 ---
+title: 'Tasks Template'
 description: 'Task list template for feature implementation'
 ---
 
