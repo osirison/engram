@@ -35,9 +35,9 @@ describePg('PgVectorStore (integration)', () => {
 
   beforeAll(async () => {
     const { PrismaClient } = await import('@prisma/client');
-    prisma = new PrismaClient({
-      datasourceUrl: connectionString,
-    }) as unknown as typeof prisma;
+    // Prisma v7 removed constructor-level URL options; configure via env var.
+    process.env.DATABASE_URL = connectionString;
+    prisma = new PrismaClient() as unknown as typeof prisma;
 
     // Minimal schema bootstrap so the test is self-contained.
     await prisma.$executeRawUnsafe(`
