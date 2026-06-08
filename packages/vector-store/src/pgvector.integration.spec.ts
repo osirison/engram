@@ -34,10 +34,14 @@ describePg('PgVectorStore (integration)', () => {
   const ids = ['pgvec-int-1', 'pgvec-int-2', 'pgvec-int-3'];
 
   beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client');
-    // Prisma v7 removed constructor-level URL options; configure via env var.
-    process.env.DATABASE_URL = connectionString;
-    prisma = new PrismaClient() as unknown as typeof prisma;
+    const [{ PrismaClient }, { PrismaPg }] = await Promise.all([
+      import('@prisma/client'),
+      import('@prisma/adapter-pg'),
+    ]);
+    // Prisma v7 uses a WASM client engine that requires a driver adapter.
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString }),
+    }) as unknown as typeof prisma;
 
     // Minimal schema bootstrap so the test is self-contained.
     await prisma.$executeRawUnsafe(`
