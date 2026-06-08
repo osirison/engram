@@ -78,7 +78,7 @@ async function main(): Promise<void> {
   );
   const fusion = createFusionRetriever([keyword, embedding], {
     candidateLimit: 20,
-    weights: [1, 2],
+    weights: [2, 1],
   });
 
   const reports = {
