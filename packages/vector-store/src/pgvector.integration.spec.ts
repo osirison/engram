@@ -36,7 +36,7 @@ describePg('PgVectorStore (integration)', () => {
   beforeAll(async () => {
     const { PrismaClient } = await import('@prisma/client');
     prisma = new PrismaClient({
-      datasources: { db: { url: connectionString } },
+      datasourceUrl: connectionString,
     }) as unknown as typeof prisma;
 
     // Minimal schema bootstrap so the test is self-contained.
