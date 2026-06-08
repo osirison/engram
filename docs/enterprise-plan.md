@@ -16,60 +16,87 @@ The dual goal: a **production-grade enterprise memory system** that can also run
 
 ## Comparison: Engram vs context-mem
 
-| Dimension | Engram (current) | context-mem |
+context-mem v4.0.0 "Cognition" — MIT, 45+ MCP tools, fully local SQLite.
+
+| Dimension | Engram (current) | context-mem v4.0 |
 |---|---|---|
-| MCP tools | 13 | 44 |
-| Storage | Postgres + Redis + Qdrant/pgvector | SQLite + markdown vault |
-| Search | Vector similarity only | Hybrid BM25 + vector + RRF |
-| Memory types | STM (Redis/TTL) + LTM (Postgres) | Single unified store |
-| Token savings | None | ~99% via contextual compression |
-| Memory intelligence | None (roadmap #99) | Consolidation, summarization |
-| Multi-tenancy | userId only | None (single-user) |
+| MCP tools | 13 | 45+ (6 deprecated) |
+| Storage | Postgres + Redis + Qdrant/pgvector | SQLite (FTS5 + sqlite-vec) + markdown vault |
+| Vector embeddings | 1536-dim OpenAI or pgvector HNSW | 768-dim nomic-embed-text-v1.5 (local) |
+| Search | Vector similarity only | 8 parallel BM25 + vector + trigram + Levenshtein, RRF fused |
+| BM25 strategies | None | AND, phrase, entity-focused, sanitized, relaxed-AND, OR+synonyms, keywords, synonym-tokens |
+| LLM reranker | None | Optional Claude Haiku judge (R@5: 97.8% → 100%) |
+| Ingest pipeline | Store → embed | 13-step pipeline (privacy, dedup, entity, topic, importance, summarize, write, log, graph, backlinks, embed, FTS, vault) |
+| Token compression | None | 15 content-aware summarizers, 99.1% savings (365KB → 3.2KB) |
+| Compression tiers | None | 4-tier age-based: verbatim (0-7d), light (7-30d), medium (30-90d), distilled (90+d) |
+| Memory types | STM (Redis/TTL) + LTM (Postgres) | Observations, entities, knowledge entries, topics, sessions |
+| Memory intelligence | None (roadmap #99) | Dreamer background agent (5 min cycle), auto-consolidation, auto-archive |
+| Decay | None | Exponential (14-day half-life) + 30d stale mark + 90d auto-archive |
+| Context window mgmt | None | `wake_up` token-budgeted briefing (profile 15%, knowledge 40%, decisions 30%, entities 15%) |
+| Temporal tools | None | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss` |
+| Session tools | None | `wake_up`, `restore_session`, `handoff_session` |
+| Multi-agent | None | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast` |
+| Cross-project | None | `promote_knowledge`, `global_search`, `find_tunnels` |
+| Knowledge graph | None | 9 graph tools, entity-relationship graph, graph_query, graph_neighbors |
+| Answer-as-page | None | `ask` answers persisted as knowledge pages (self-improving cache) |
+| Dashboard | None | Web UI at localhost:3141 (6 pages: Intelligence, Graph, Topics, Timeline, Entities, Diagnostics) |
+| Code execution | None | `execute` (JS, TS, Python, Shell, Ruby, Go, Rust, PHP, Perl, R, Elixir) |
+| Vault/human-readable | None | Markdown vault, Obsidian-compatible, Context Protocol RFC v1 |
+| Multi-tenancy | userId scoping, per-user quota | None (single-user, filesystem-scoped) |
 | Auth | adminToken (reindex only) | None |
-| Knowledge graph | None | None |
-| Agent profiles | None | None |
-| Session memory | None | None |
-| Lite/embedded mode | None | SQLite (is the mode) |
-| Evaluation harness | Full (precision/recall/MRR/nDCG) | LongMemEval claims 100% |
-| Benchmarking | Latency p50/p95/p99 | None documented |
-| Async jobs | BullMQ | None |
-| Horizontal scale | Partial (stateless HTTP) | No |
-| Observability | Basic logs | None |
+| Horizontal scale | Yes (stateless NestJS + Postgres + Redis) | No |
+| Async jobs | BullMQ with cursor resumption | None (synchronous except embedding) |
+| Evaluation harness | Full (precision/recall/MRR/nDCG, latency p50/p95/p99) | Claims LongMemEval R@5 100% (session-retrieval recall, not end-to-end QA) |
+| Observability | Basic logs | Diagnostics tool, dashboard stats |
 | SDK | None | None |
-| Streaming events | None | None |
+| Privacy | None | 9-detector privacy engine, `<private>` tag stripping |
 
-### Engram Advantages
-- Enterprise Postgres/Redis architecture scales to millions of memories
-- Dual vector backends with HNSW tuning
-- Async reindex with cursor resumption and BullMQ
-- Strict multi-tenant isolation (all operations scoped to userId)
-- Evaluation harness with CI regression gates
-- NestJS DI makes feature addition fast and testable
+### Engram's Durable Advantages (never-match by context-mem)
+- Enterprise Postgres/Redis/Qdrant → scales to millions of memories, horizontal reads
+- Dual vector backends with tunable HNSW parameters
+- Async reindex with BullMQ, cursor resumption, per-item skip-without-corrupt
+- Strict multi-tenant isolation with userId scoping in every query
+- Full offline evaluation harness (precision/recall/MRR/nDCG, latency benchmarks)
+- NestJS DI makes every feature independently testable and injectable
 
-### context-mem Advantages
-- 44 tools — higher-level agent ergonomics (remember/recall/forget/reflect/compress)
-- Hybrid BM25 + vector search with RRF fusion
-- Contextual compression (massive token savings)
-- Zero-dependency SQLite deployment
-- Markdown vault (human-readable memory store)
+### context-mem's Durable Advantages (gaps Engram must close)
+- 15-summarizer adaptive compression system (the 99% token savings feature)
+- 8 parallel BM25 strategies with intent-adaptive fusion weights
+- 13-step typed ingest pipeline (privacy filter, entity extraction, importance scoring baked in)
+- Dreamer background agent (autonomous consolidation, verification, archival)
+- 4-tier age-based compression with priority cascade (pinned/DECISION entries never compress)
+- Temporal tools: time-travel debugging, decision trail reconstruction
+- Token-budgeted `wake_up` session primer (most important feature for agent UX)
+- Multi-agent coordination tools (claim_files, agent_broadcast)
+- Markdown vault with Obsidian compatibility and Context Protocol RFC
 
 ---
 
 ## Gap Analysis — Tools Missing in Engram
 
-context-mem's 44 tools vs Engram's 13 implies ~31 additional tools. Categories:
+context-mem ships 45 tools (13 Engram have vs 45 context-mem = 32+ missing). Full mapping:
 
-| Category | Missing tools |
-|---|---|
-| High-level agent UX | `remember`, `forget`, `reflect`, `compress_context`, `load_context` |
-| Search | `search_memories` (BM25/FTS), `find_similar`, `filter_memories` |
-| Organization | `add_tags`, `remove_tags`, `list_tags`, `archive_memory`, `unarchive_memory`, `pin_memory`, `bulk_tag` |
-| Relationships | `link_memories`, `unlink_memories`, `get_linked_memories`, `find_related` |
-| Bulk | `bulk_create`, `bulk_delete`, `bulk_update`, `export_memories`, `import_memories` |
-| Analytics | `get_memory_stats`, `get_user_stats`, `get_recall_stats` |
-| Session | `start_session`, `end_session`, `get_session_context`, `clear_working_memory` |
-| Agent | `create_agent_profile`, `get_agent_profile`, `update_agent_profile` |
-| Snapshots | `create_snapshot`, `restore_snapshot`, `list_snapshots` |
+| Category | Missing in Engram | context-mem equivalent |
+|---|---|---|
+| Ingest | `observe` (typed ingest with 13-step pipeline) | `observe` |
+| High-level UX | `remember`, `forget`, `reflect` | no direct equiv — `observe` covers ingest |
+| Search | `search_memories` (BM25/FTS), `ask` (NL Q&A synthesized over all memories) | `search`, `ask` |
+| Similarity | `find_similar` | `search` with vector-only mode |
+| Session | `wake_up` (token-budgeted primer), `restore_session`, `handoff_session` | `wake_up`, `restore_session`, `handoff_session` |
+| Multi-agent | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast` | same |
+| Organization | `add_tags`, `remove_tags`, `list_tags`, `archive_memory`, `unarchive_memory`, `pin_memory`, `bulk_tag` | partial via flags |
+| Relationships | `link_memories`, `unlink_memories`, `get_linked_memories`, `find_related` | `add_relationship`, `graph_query`, `graph_neighbors` |
+| Bulk | `bulk_create`, `bulk_delete`, `export_memories`, `import_memories`, `import_conversations` | `import_conversations` |
+| Temporal | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss` | same |
+| Intelligence | `generate_story`, `find_tunnels` | same |
+| Analytics | `get_memory_stats`, `get_user_stats`, `get_recall_stats`, `diagnostics`, `stats` | `stats`, `diagnostics` |
+| Token budget | `budget_status`, `budget_configure` | same |
+| Context | `compress_context`, `load_context`, `summarize` | implicit in `wake_up` |
+| Code runner | `execute` (polyglot: JS/TS/Python/Shell/Ruby/Go/Rust/PHP/Perl/R/Elixir) | `execute` |
+| Content index | `index_content`, `search_content` | same |
+| Snapshots | `create_snapshot`, `restore_snapshot`, `list_snapshots` | `restore_session` (partial) |
+| Agent | `create_agent_profile`, `get_agent_profile`, `update_agent_profile` | none |
+| Cross-project | `promote_to_global`, `global_search`, `find_tunnels` | same |
 
 ---
 
@@ -77,29 +104,33 @@ context-mem's 44 tools vs Engram's 13 implies ~31 additional tools. Categories:
 
 ```
 Stream A ─── Search & Retrieval Intelligence     (no deps)
-Stream B ─── Memory Intelligence                 (no deps)
+Stream B ─── Memory Intelligence + Dreamer       (no deps)
 Stream C ─── MCP Tool Expansion     ────────────►(depends on A + B for some tools)
 Stream D ─── Lite / Embedded Mode               (no deps)
 Stream E ─── Multi-tenancy & Auth               (no deps)
 Stream F ─── Knowledge Graph                    (no deps)
 Stream G ─── Agent-native Patterns  ────────────►(light dep on E for scoping)
 Stream H ─── Observability & SDK    ────────────►(benefits from A–G completion)
+Stream I ─── Temporal & Decision Trail          (no deps)
+Stream J ─── Token Budget & Compression         (soft dep on A for compression)
 ```
 
 All streams are independently startable. Streams C, G, H have soft dependencies but can
-begin with the non-dependent tasks first.
+begin with the non-dependent tasks first. Streams I and J are new streams surfaced from
+the detailed context-mem feature inventory.
 
 ---
 
 ## Stream A — Search & Retrieval Intelligence
 
 **Goal**: Close the BM25 + hybrid search gap vs context-mem; achieve top-tier retrieval quality.
+context-mem runs 8 parallel BM25 strategies simultaneously with RRF fusion and intent-adaptive weights.
+Engram must match or exceed this with Postgres FTS5-equivalent (`tsvector`) as foundation.
 
-### A1 — Postgres Full-Text Search (BM25 equivalent)
+### A1 — Postgres Full-Text Search (BM25 foundation)
 
 **Package**: `packages/memory-ltm`  
-**Prisma migration**: add `tsvector` generated column on `memories.content`
-
+**Prisma migration**:
 ```sql
 ALTER TABLE memories ADD COLUMN content_tsv tsvector
   GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
@@ -108,144 +139,242 @@ CREATE INDEX memories_content_tsv_gin ON memories USING GIN(content_tsv);
 
 **New method** in `MemoryLtmService`:
 ```typescript
-async fullTextSearch(userId: string, query: string, limit: number): Promise<Memory[]>
-// Uses $queryRaw with ts_rank_cd and plainto_tsquery
+async fullTextSearch(userId: string, query: string, limit: number): Promise<ScoredMemory[]>
+// $queryRaw with ts_rank_cd(content_tsv, plainto_tsquery($query)) with userId filter
 ```
 
-### A2 — Hybrid Search with RRF Fusion
+### A2 — 8 Parallel BM25 Search Strategies
 
-**Package**: `packages/memory-ltm` + new `packages/search`
+**Package**: `packages/search` (new)
 
-Create `packages/search` with:
-- `HybridSearchService` — orchestrates BM25 (Postgres FTS) + vector (existing VectorStore)
-- `RrfFusion` — Reciprocal Rank Fusion (already in `@engram/eval` as `FusionRetriever`, extract to shared)
-- `SearchResult<T>` — typed result with `score`, `source: 'bm25' | 'vector' | 'fused'`, `rank`
+Mirror context-mem's architecture: 8 strategies run concurrently via `Promise.all`, results
+merged by `RrfFusion` with per-strategy weights.
 
-Config via env:
+| Strategy | Postgres implementation | Fusion weight |
+|---|---|---|
+| AND-mode | `phraseto_tsquery` — all terms required | 2.0 |
+| Phrase matching | Adjacent term pairs via `to_tsquery` with `<->` | 1.9 |
+| Entity-focused | Boost matches in `tags[]` column additionally | 1.8 |
+| Sanitized FTS | `plainto_tsquery` (standard) | 1.5 |
+| Relaxed AND | `plainto_tsquery` with lower rank threshold | 1.2 |
+| OR + synonyms | `to_tsquery` with `|` operators, synonym expansion | 1.0 |
+| Individual keywords | One query per token, union | 0.5 |
+| Individual synonyms | Synonym tokens individually | 0.2 |
+
+**Intent-adaptive fusion**: detect query intent (causal, temporal, lookup, general) and
+adjust BM25:vector weight ratio dynamically (e.g., temporal queries boost recency-score).
+
+### A3 — Hybrid Search with RRF Fusion
+
+**Package**: `packages/search`
+
+`HybridSearchService`:
+- Runs A2 (8 BM25 strategies) + vector search + trigram search in parallel
+- Fusion weights: BM25=0.45, vector=0.35, trigram=0.15, Levenshtein=0.05
+- `RrfFusion` extracted from `@engram/eval`'s `FusionRetriever` into `@engram/search`
+- `SearchResult<T>` typed with `score`, `source: 'bm25'|'vector'|'trigram'|'fused'`, `rank`, `strategy`
+
+Config:
 ```
 HYBRID_SEARCH_ENABLED=true
-HYBRID_BM25_WEIGHT=0.3
-HYBRID_VECTOR_WEIGHT=0.7
 HYBRID_RRF_K=60
+INTENT_ADAPTIVE_WEIGHTS=true
 ```
 
-Update `recall` tool and add `search_memories` tool to use hybrid pipeline.
+Update `recall` tool to use hybrid pipeline. Add `search_memories` tool (keyword-primary).
 
-### A3 — Re-ranking Layer
-
-**Package**: `packages/search`
-
-`RerankerService` with two strategies (selectable via `RERANKER_STRATEGY`):
-- `cross-score` — uses a second LLM call to score query–memory pairs (high quality)
-- `cohere` — Cohere Rerank API (fast, cheap)
-- `heuristic` (default) — combines recency, access count, importance score, and vector similarity
-
-### A4 — Query Expansion
+### A4 — Re-ranking Layer
 
 **Package**: `packages/search`
 
-`QueryExpander` — optionally expands the query before embedding/FTS:
-- Hypothetical Document Embeddings (HyDE): generate a fake "ideal memory" and embed that
-- Synonym expansion via lightweight word list
-- Toggle via `QUERY_EXPANSION=hyde|synonyms|disabled`
+`RerankerService` (`RERANKER_STRATEGY` env):
+- `haiku` (default when key available) — Claude Haiku cross-encoder, blends 50/50 with retrieval score; ~100ms, ~$0.002/query. Matches context-mem's LongMemEval 97.8→100% improvement.
+- `cohere` — Cohere Rerank API
+- `heuristic` — recency (70%) + 7-day recency (20%) + access count (10%) + importance score
 
-### A5 — Contextual Compression
+### A5 — Query Expansion
 
 **Package**: `packages/search`
 
-`ContextCompressor` — post-retrieval compression to reduce token usage:
-- Extracts only the sentence(s) from each memory relevant to the query
-- Uses OpenAI with a tight prompt; falls back to truncation if provider unavailable
-- Returns `CompressedMemory[]` with original id + compressed_content + token_delta
-- Enables ~90%+ token savings on large memory sets (matching context-mem's key feature)
+`QueryExpander` (`QUERY_EXPANSION=hyde|synonyms|disabled`):
+- HyDE: generate a hypothetical ideal memory and embed that instead of the raw query
+- Synonym expansion via lightweight English synonym list
 
-New MCP tool: `compress_context` — retrieve + compress in one call
+### A6 — Trigram Search (fuzzy match)
 
-**Quality gate**: Add A-stream metrics to `@engram/eval`:
-- `hybridPrecision@k`, `hybridRecall@k`, `compressionRatio`, `tokenSavings`
+**Package**: `packages/search`  
+**Postgres extension**: `pg_trgm`
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX memories_content_trgm ON memories USING GIN(content gin_trgm_ops);
+```
+
+`TrigramSearchService`:
+- `similarity(content, $query)` scored search
+- Fusion weight: 0.15 (handles typos, partial matches, code identifiers)
+
+**Quality gate**: Hybrid precision@5 ≥ 0.40 (vs current 0.267 vector-only). Add to CI gate in `@engram/eval`.
 
 ---
 
-## Stream B — Memory Intelligence
+## Stream B — Memory Intelligence + Dreamer
 
-**Goal**: Memories that think — consolidation, decay, deduplication, reflection.
+**Goal**: Memories that think. Matches context-mem's 13-step ingest pipeline, Dreamer background
+agent, 4-tier compression, and decay system — then surpasses with enterprise-grade Postgres backing.
 
-### B1 — Importance Scoring
+### B0 — Typed Ingest Pipeline (13 steps)
 
 **Package**: `packages/memory-ltm`  
-**Schema**: add `importanceScore Float? @default(0.5)` and `accessCount Int @default(0)` to Memory
+**New service**: `IngestPipeline`
+
+Replace the current single-step `create()` with a typed 13-step pipeline. Each step is a
+`PipelineStep<T>` (composable, independently testable):
+
+```
+1. PrivacyFilter       — strip <private> tags, redact 9 pattern types (API keys, tokens, passwords, PII)
+2. ContentHashDedup    — SHA-256 of normalized content; reject exact duplicates
+3. EntityExtractor     — extract PERSON/PLACE/ORG/DATE/CONCEPT/TECHNOLOGY entities (async, non-blocking)
+4. TopicDetector       — cluster detection; assign to existing topic or create new
+5. ImportanceScorer    — score 0.0–1.0 with 6 flags: DECISION, ORIGIN, PIVOT, CORE, MILESTONE, PROBLEM
+6. ContentSummarizer   — content-aware compression (15 summarizer types, see B3)
+7. PostgresWrite       — upsert to memories table via Prisma
+8. EventLogAppend      — append to audit event log (immutable)
+9. EntityGraphUpdate   — upsert entity nodes, compute backlinks
+10. BacklinkCompute    — update reverse-reference index
+11. EmbeddingGenerate  — async, non-blocking (already exists in EmbeddingsService)
+12. SearchIndexUpdate  — upsert to vector store + trigger FTS tsvector update
+13. VaultSync          — sync to markdown vault if VAULT_ENABLED=true (async)
+```
+
+Steps 3, 11, 13 are non-blocking (fire-and-forget). Steps 1-7 are synchronous in the tool response path.
+
+### B1 — Importance Scoring with 6 Flags
+
+**Schema**: add to Memory model:
+```
+importanceScore  Float   @default(0.5)
+importanceFlags  String[] // ['DECISION','MILESTONE','PROBLEM','ORIGIN','PIVOT','CORE']
+accessCount      Int      @default(0)
+lastAccessedAt   DateTime?
+pinned           Boolean  @default(false)
+status           String   @default("active") // 'active'|'archived'|'pinned'
+```
 
 `ImportanceScoringService`:
-- Base score: 0.5 at creation
-- Boosted by: explicit `importance` in metadata, manual pinning, tag count
-- Decayed by: time since last access (half-life configurable via `IMPORTANCE_HALF_LIFE_DAYS`)
-- Updated on each `recall` hit: `accessCount++`, `lastAccessedAt = now()`
-- Persisted back to Postgres asynchronously (fire-and-forget, no recall latency impact)
+- Base: 0.5
+- Flag boost: DECISION+0.3, MILESTONE+0.2, PROBLEM+0.2, ORIGIN+0.15, PIVOT+0.15, CORE+0.1
+- Access boost: `score += 0.01 * log(accessCount + 1)` (diminishing returns)
+- Decay: `score *= e^(-ln(2) * daysSinceAccess / HALF_LIFE_DAYS)` (default 14-day half-life)
+- Pinned entries: importance floor = 0.9, exempt from decay
+- Updated on each recall hit asynchronously (no latency impact)
 
-### B2 — Decay & Archiving
+### B2 — 4-Tier Age-Based Compression
 
 **Package**: `packages/memory-ltm`  
-**Schema**: add `status: 'active' | 'archived' | 'pinned'`  
-**New Prisma migration**: index on `(userId, status, importanceScore)`
+**Schema**: add `compressionTier Int @default(0)` (0=verbatim, 1=light, 2=medium, 3=distilled)
 
-`DecayService` (scheduled, runs via `@nestjs/schedule` cron):
-- Daily job: find memories where `importanceScore < DECAY_ARCHIVE_THRESHOLD` (default 0.1)
-  and `lastAccessedAt < now() - DECAY_ARCHIVE_AFTER_DAYS` (default 90 days)
-- Archives them (sets `status='archived'`) — does NOT delete
-- Emits memory events (`memory.archived`) via EventEmitter
+`CompressionTierService` (scheduled cron, daily):
+- Tier 0 (0-7 days): stored verbatim
+- Tier 1 (7-30 days): light compression applied
+- Tier 2 (30-90 days): medium compression
+- Tier 3 (90+ days): maximum distillation
 
-`ArchivePolicy` configurable per-user via metadata:
+Priority cascade (immune to compression regardless of age):
+- `pinned=true` → always verbatim
+- `importanceFlags` contains DECISION/MILESTONE/PROBLEM → always verbatim
+- `importanceScore >= 0.8` → always verbatim
+
+Config:
+```
+COMPRESSION_ENABLED=true
+COMPRESSION_TIER1_DAYS=7
+COMPRESSION_TIER2_DAYS=30
+COMPRESSION_TIER3_DAYS=90
+```
+
+### B3 — 15 Content-Aware Summarizers
+
+**Package**: `packages/memory-ltm`  
+**New service**: `ContentSummarizer`
+
+Context-mem achieves 99.1% token savings (365KB → 3.2KB) via content-type detection and
+appropriate compression strategy. Engram must implement equivalent:
+
+| Summarizer | Detection heuristic | Target compression |
+|---|---|---|
+| Binary/hex | `/^[0-9a-fA-F\s]+$/` or buffer-like | 98% |
+| Log output | Lines with timestamps, log levels | 97% |
+| Errors | Stack traces, error: prefixes | 95% |
+| Shell/CLI | `$` prompts, command outputs | 95% |
+| Build output | webpack/tsc/jest output patterns | 94% |
+| Code | Fenced ``` blocks, indentation | 92% |
+| HTML | `<[^>]+>` density | 92% |
+| JSON | Valid JSON objects/arrays | 89% |
+| Network responses | HTTP headers, REST payloads | 88% |
+| TypeScript errors | `TS[0-9]+:` error codes | 88% |
+| Tests | Test runner output, pass/fail lines | 85% |
+| CSV | Comma-separated tabular data | 80% |
+| Markdown | Headers, bullets, links | 75% |
+| Git logs | `commit [sha]` lines | 90% |
+| Python tracebacks | `Traceback (most recent call last)` | 95% |
+
+Each summarizer: extract the key fact (error message, command name, function signature,
+decision) and discard boilerplate. LLM used only when rule-based extraction is insufficient.
+
+### B4 — Decay & Archiving
+
+`DecayService` (`@nestjs/schedule` cron, daily):
+- 30 days without access → mark `status='stale'`
+- 90 days without access AND `importanceScore < 0.1` → `status='archived'`
+- 365 days + archived → hard delete (configurable)
+- Emits `memory.archived` / `memory.stale` events
+
+Config:
 ```
 DECAY_ENABLED=true
-DECAY_ARCHIVE_THRESHOLD=0.1
+DECAY_STALE_AFTER_DAYS=30
 DECAY_ARCHIVE_AFTER_DAYS=90
-DECAY_DELETE_AFTER_DAYS=365  # hard delete after archival
+DECAY_DELETE_AFTER_DAYS=365
 ```
 
-### B3 — Deduplication & Consolidation
+### B5 — Dreamer Background Agent
 
 **Package**: `packages/memory-ltm`  
-**New service**: `ConsolidationService`
+**New service**: `DreamerService` (scheduled via `@nestjs/schedule`)
 
-Two strategies:
-1. **Exact dedup**: hash-based (SHA-256 of normalized content) — checked on every `create_memory`
-2. **Semantic dedup**: on `promote_memory` and nightly, check if new memory has cosine similarity > `DEDUP_SIMILARITY_THRESHOLD` (default 0.92) with existing LTM memories
-   - If duplicate found: merge metadata + tags, keep higher importance, delete lower
+Runs on configurable cycle (`DREAMER_INTERVAL_MS`, default 300000 = 5 minutes):
 
-**Merge policy**:
-- Union of tags
-- Newer content wins (or LLM-merged if content differs slightly)
-- `importanceScore = max(a, b)`
-- `accessCount = a + b`
+```
+DreamerCycle:
+  1. MergePass    — find pairs with cosine similarity > 0.92; merge (union tags, max score, sum accessCount)
+  2. VerifyPass   — detect contradictions in recently added memories; flag in metadata
+  3. ArchivePass  — apply decay rules (B4); archive stale entries
+  4. PromotePass  — identify high-importance STM memories not yet promoted; auto-promote
+  5. CompressPass — apply B2 tier compression to memories crossing age thresholds
+  6. RewritePass  — shorten verbose memories (>2000 chars) via LLM compression
+  7. SynthesisPass— update topic/entity synthesis pages in vault
+```
 
-### B4 — Contradiction Detection
+Each pass runs independently and fails gracefully (exception in one pass doesn't stop others).
+Progress tracked in `DreamerRun { id, startedAt, completedAt, passStats }` Prisma table.
+Admin MCP tool: `get_dreamer_status`, `trigger_dreamer_cycle` (adminToken required).
 
-**Package**: `packages/memory-ltm`  
-**New service**: `ContradictionDetector`
+### B6 — Contradiction Detection
 
-- Runs on `create_memory` and `promote_memory` for LTM
-- Retrieves top-3 semantically similar memories
-- Sends to LLM with prompt: "Do these statements contradict each other?"
-- If contradiction detected: adds `contradiction: true` + `contradicts: [id]` to metadata
-- Does NOT auto-resolve — surface to agent via `get_memory` response and `reflect` tool
+`ContradictionDetector` (runs in Dreamer VerifyPass + on promote):
+- Retrieves top-3 similar memories
+- LLM prompt: classify pair as AGREE / CONTRADICT / UNRELATED
+- On CONTRADICT: adds `{ contradiction: true, contradicts: [id], contradictionType: 'factual|temporal|preference' }` to metadata
+- Does NOT auto-resolve — surfaces via `reflect` tool and `get_memory` response
 
-### B5 — Auto-Summarization
+### B7 — Auto-Summarization / Reflection
 
-**Package**: `packages/memory-ltm`  
-**New service**: `SummarizationService`
-
-Triggered when:
-- User's LTM memory count exceeds `SUMMARIZE_THRESHOLD` (default 5000)
-- A tag group exceeds `SUMMARIZE_TAG_THRESHOLD` (default 500) memories
-- Explicitly called via MCP tool `reflect`
-
-Strategy:
-- Group memories by tag or time window
-- LLM-summarize the group into a single higher-level "insight" memory
-- Archive the individual memories that were summarized
-- New insight memory gets `type='insight'` in metadata and `importanceScore=0.8`
-
-**Schema addition**: `Memory.type` field to distinguish `'short-term' | 'long-term' | 'insight'`
+`SummarizationService` (triggered by Dreamer SynthesisPass or `reflect` tool):
+- Group memories by tag cluster or time window
+- LLM-synthesize group into `type='insight'` memory with `importanceScore=0.8`
+- Archive individual source memories
+- Answer-as-page: `ask` tool responses stored as insight memories (self-improving cache)
 
 ---
 
@@ -687,20 +816,143 @@ results = client.recall("data science", limit=5)
 
 ---
 
+## Stream I — Temporal & Decision Trail
+
+**Goal**: Time-travel debugging and decision reconstruction — a unique context-mem feature Engram lacks.
+
+### I1 — Event Log (immutable audit trail)
+
+**New Prisma model**:
+```prisma
+model MemoryEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  memoryId   String?
+  eventType  String   // 'created'|'updated'|'deleted'|'promoted'|'recalled'|'archived'|'consolidated'
+  snapshot   Json     // full memory state at event time (for time-travel)
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  @@index([userId, createdAt])
+  @@index([memoryId, createdAt])
+}
+```
+
+All LTM write operations append to this log (after-write, non-blocking). The snapshot field
+stores the full memory state so any past state is reconstructable without joins.
+
+### I2 — Temporal Query
+
+**New MCP tool**: `temporal_query`
+
+Input: `{ userId, query, asOf: ISO8601 }`  
+Logic: filter `MemoryEvent` for records where `createdAt <= asOf` and `eventType != 'deleted'`,
+reconstruct memory state from snapshots, run hybrid search over that reconstructed set.
+
+"What did this agent know about authentication on 2025-01-15?"
+
+### I3 — Time Travel / State Comparison
+
+**New MCP tool**: `time_travel`
+
+Input: `{ userId, fromDate: ISO8601, toDate: ISO8601, query? }`  
+Returns: memories added, changed, and removed between the two timestamps; optional semantic diff.
+
+### I4 — Decision Trail Reconstruction
+
+**New MCP tool**: `explain_decision`
+
+Input: `{ userId, memoryId }` (the decision memory)  
+Logic: traverse `MemoryEvent` backward from the decision's `createdAt` — find all memories
+that were active at that time and share entity overlap with the decision.
+Returns: ordered evidence chain showing what information was available that led to the decision.
+
+### I5 — Predict Loss
+
+**New MCP tool**: `predict_loss`
+
+Input: `{ userId, daysAhead?: number }`  
+Returns: memories that will be archived/compressed within `daysAhead` days based on current
+decay trajectory. Allows agents to pin critical memories before they fade.
+
+---
+
+## Stream J — Token Budget & Compression
+
+**Goal**: Context-mem's headline feature — 99% token savings and token-budgeted session primers.
+
+### J1 — Token Budget Tracker
+
+**New Prisma model**:
+```prisma
+model TokenBudget {
+  userId           String  @id
+  budgetTokens     Int     @default(8000)
+  overflowStrategy String  @default("compress_oldest") // 'compress_oldest'|'compress_low_importance'|'hard_truncate'
+  wakeUpProfile    Float   @default(0.15) // fraction for agent profile
+  wakeUpKnowledge  Float   @default(0.40)
+  wakeUpDecisions  Float   @default(0.30)
+  wakeUpEntities   Float   @default(0.15)
+}
+```
+
+**New service**: `TokenBudgetService`
+- `estimate(memories[])` — count tokens via `tiktoken` (cl100k_base)
+- `allocate(userId, totalBudget)` — apply profile/knowledge/decisions/entities fractions
+- `applyOverflow(memories[], budget, strategy)` — trim to budget via selected strategy
+
+**New MCP tools**: `budget_status`, `budget_configure`
+
+### J2 — Wake-Up Session Primer
+
+**New MCP tool**: `wake_up`
+
+The most important single tool for agent UX — equivalent to "good morning briefing."
+
+Input: `{ userId, agentId?, maxTokens?: number, sessionContext?: string }`  
+Logic:
+1. Load AgentProfile for system prompt context (J1 profile fraction)
+2. Load top critical knowledge by importanceScore (J1 knowledge fraction)
+3. Load recent DECISION/MILESTONE flagged memories (J1 decisions fraction)
+4. Load most-accessed entity summaries (J1 entities fraction)
+5. Pack into `maxTokens` budget, compress if needed (B3 summarizers)
+6. Return formatted context block ready for LLM system prompt injection
+
+Returns: `{ contextBlock: string, tokenCount: number, memoriesIncluded: number, memoriesOmitted: number }`
+
+### J3 — Compression-Aware `load_context`
+
+**New MCP tool**: `load_context`
+
+Like `wake_up` but query-targeted: retrieve + compress memories relevant to a specific task.
+
+Input: `{ userId, query, maxTokens, format: 'xml'|'markdown'|'json'|'plain' }`  
+Returns compressed context block formatted for the specified LLM injection style.
+
+### J4 — `summarize` (one-shot, no storage)
+
+**New MCP tool**: `summarize`
+
+Compress arbitrary text without storing it. Used for external content (URLs, file contents)
+before feeding to LLM context. Uses B3 content-aware summarizer selection.
+
+---
+
 ## Implementation Priority
 
-Execute all streams in parallel. Within each stream, sequence A→B→C within the stream's tasks.
+Execute all streams in parallel. Within each stream, sequence tasks in order listed.
 
-| Priority | Stream | Why |
+| Priority | Stream | Why first |
 |---|---|---|
-| P0 (start immediately) | A — Search | Closes biggest quality gap; unblocks C tools |
-| P0 (start immediately) | D — Lite Mode | Enables fast local testing; unblocks adoption |
-| P1 | B — Intelligence | Core differentiator; feeds Stream C tools |
-| P1 | E — Auth | Required for enterprise; feeds Stream G scoping |
-| P2 | C — Tool Expansion | High user-visible impact; depends on A+B |
-| P2 | G — Agent Patterns | Core enterprise differentiator |
-| P3 | F — Knowledge Graph | Powerful but additive |
-| P3 | H — Observability | Production requirement; can ship incrementally |
+| **P0** | A — Search | Closes biggest quality gap; unblocks C search tools |
+| **P0** | B — Intelligence + Dreamer | 13-step pipeline is the core architecture; Dreamer is unique differentiator |
+| **P0** | D — Lite Mode | Enables fast local testing; zero-dep deployment for adoption |
+| **P0** | J — Token Budget | `wake_up` is the highest-impact single agent UX feature |
+| P1 | E — Multi-tenancy & Auth | Required for enterprise production use |
+| P1 | G — Agent-native Patterns | Depends on E for scoping; high impact |
+| P1 | I — Temporal & Decision Trail | Unique capability; `MemoryEvent` log is a one-time schema change |
+| P2 | C — Tool Expansion | User-visible; depends on A+B+J for quality tools |
+| P2 | F — Knowledge Graph | Powerful but additive; can ship incrementally |
+| P3 | H — Observability & SDK | Production polish; benefits from all other streams |
 
 ---
 
@@ -708,17 +960,21 @@ Execute all streams in parallel. Within each stream, sequence A→B→C within t
 
 All migrations are additive (no breaking changes to existing tables).
 
-| Migration | Tables affected | Breaking? |
-|---|---|---|
-| Add FTS column | memories | No |
-| Add status, importanceScore, accessCount | memories | No |
-| Add threadId | memories | No |
-| Add tsvector index | memories | No |
-| Add Organization, Member, ApiKey, OrgQuota | new tables | No |
-| Add MemoryLink | new table | No |
-| Add AgentProfile | new table | No |
-| Add MemoryEvent (analytics) | new table | No |
-| Add WebhookConfig | new table | No |
+| Migration | Tables affected | Breaking? | Stream |
+|---|---|---|---|
+| Add FTS tsvector column + GIN index | memories | No | A |
+| Add pg_trgm extension + trigram index | memories | No | A |
+| Add importanceScore, importanceFlags, accessCount, lastAccessedAt, pinned, status, compressionTier | memories | No | B |
+| Add threadId | memories | No | G |
+| Add MemoryEvent (immutable audit log with snapshots) | new table | No | I |
+| Add DreamerRun | new table | No | B |
+| Add Organization, OrganizationMember, ApiKey, OrgQuota | new tables | No | E |
+| Add MemoryLink | new table | No | F |
+| Add AgentProfile | new table | No | G |
+| Add WorkingMemory (session-scoped) | new table | No | G |
+| Add TokenBudget | new table | No | J |
+| Add WebhookConfig | new table | No | H |
+| Add AnalyticsEvent | new table | No | H |
 
 ---
 
@@ -766,6 +1022,33 @@ pnpm eval                    # recall quality regression
 pnpm bench:backends          # latency regression (p99 < 100ms for recall)
 ```
 
-Stream A additionally gates on hybrid search precision@5 ≥ 0.40 (vs current 0.267 vector-only).  
-Stream D gates on lite-mode cold start < 3s.  
-Stream E gates on auth penetration test (no userId cross-contamination).
+| Stream | Additional gate |
+|---|---|
+| A | Hybrid precision@5 ≥ 0.40 (vs 0.267 vector-only); p99 recall latency ≤ 100ms |
+| B | Dreamer cycle completes in < 30s on 10k memories; compression ratio ≥ 80% for log content |
+| D | Lite-mode cold start < 3s; memory footprint < 150MB |
+| E | Auth integration test: no userId cross-contamination between tenants |
+| I | `temporal_query` correctness test: state at T1 never includes events after T1 |
+| J | `wake_up` response ≤ maxTokens budget (test with tiktoken); latency < 500ms |
+
+---
+
+## New Package Structure
+
+After all streams, the monorepo gains:
+
+```
+packages/
+  search/          # Stream A — HybridSearchService, RrfFusion, RerankerService, QueryExpander, TrigramSearch
+  cache/           # Stream D — CacheService interface + Redis and in-memory implementations
+  queue/           # Stream D — QueueService interface + BullMQ and in-process implementations
+  database-lite/   # Stream D — SQLite Prisma schema and migrations
+  sdk/             # Stream H — TypeScript client SDK
+sdks/
+  python/          # Stream H — Python SDK
+apps/
+  dashboard/       # Stream H — tRPC + React dashboard (localhost:3141 equivalent)
+```
+
+All existing packages (`memory-stm`, `memory-ltm`, `vector-store`, `embeddings`, `core`,
+`config`, `database`, `redis`, `eval`) are extended in-place — no renames or splits.
