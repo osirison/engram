@@ -15,7 +15,7 @@ import { PgVectorStore, type PgVectorClient } from './pgvector.vector-store';
 const connectionString = process.env.PGVECTOR_TEST_URL;
 const describePg = connectionString ? describe : describe.skip;
 
-const DIMENSIONS = 8;
+const DIMENSIONS = 1536;
 const USER_ID = 'pgvector-integration-user';
 
 function unitVector(seed: number): number[] {
