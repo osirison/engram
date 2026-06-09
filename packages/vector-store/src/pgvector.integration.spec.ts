@@ -43,25 +43,23 @@ describePg('PgVectorStore (integration)', () => {
       adapter: new PrismaPg({ connectionString }),
     }) as unknown as typeof prisma;
 
-    // Minimal schema bootstrap so the test is self-contained.
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "memories" (
-        "id" TEXT PRIMARY KEY,
-        "userId" TEXT NOT NULL,
-        "content" TEXT NOT NULL DEFAULT '',
-        "metadata" JSONB,
-        "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
-        "type" TEXT,
-        "createdAt" TIMESTAMPTZ DEFAULT now()
-      )
-    `);
+    // The migrations table already exists in CI; seed a test user for the FK
+    // and insert stub memory rows so the vector store has rows to operate on.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "users" ("id", "email", "updatedAt")
+       VALUES ($1, $2, now())
+       ON CONFLICT ("id") DO NOTHING`,
+      USER_ID,
+      'pgvector-integration@test.local'
+    );
 
     store = new PgVectorStore(prisma, DIMENSIONS);
     await store.ensureReady(DIMENSIONS);
 
     for (let index = 0; index < ids.length; index += 1) {
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "memories" ("id", "userId", "content", "type", "tags") VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO "memories" ("id", "userId", "content", "type", "tags", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, now())
          ON CONFLICT ("id") DO UPDATE SET "userId" = EXCLUDED."userId"`,
         ids[index],
         USER_ID,
@@ -77,6 +75,7 @@ describePg('PgVectorStore (integration)', () => {
       return;
     }
     await prisma.$executeRawUnsafe(`DELETE FROM "memories" WHERE "id" = ANY($1::text[])`, ids);
+    await prisma.$executeRawUnsafe(`DELETE FROM "users" WHERE "id" = $1`, USER_ID);
     await prisma.$disconnect();
   });
 
