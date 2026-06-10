@@ -6,7 +6,7 @@ description: Comprehensive gap analysis vs context-mem and parallel implementati
 ## Overview
 
 This plan closes the gap between Engram's current state and both context-mem's feature set and
-enterprise-grade production requirements. It is structured into **8 independent parallel streams**
+enterprise-grade production requirements. It is structured into **10 independent parallel streams**
 that teams can execute concurrently, each with its own scope, deliverables, and quality gates.
 
 The dual goal: a **production-grade enterprise memory system** that can also run as a
@@ -258,7 +258,7 @@ importanceFlags  String[] // ['DECISION','MILESTONE','PROBLEM','ORIGIN','PIVOT',
 accessCount      Int      @default(0)
 lastAccessedAt   DateTime?
 pinned           Boolean  @default(false)
-status           String   @default("active") // 'active'|'archived'|'pinned'
+status           String   @default("active") // 'active'|'archived'|'pinned'|'stale'
 ```
 
 `ImportanceScoringService`:
@@ -971,7 +971,6 @@ All migrations are additive (no breaking changes to existing tables).
 | Add Organization, OrganizationMember, ApiKey, OrgQuota | new tables | No | E |
 | Add MemoryLink | new table | No | F |
 | Add AgentProfile | new table | No | G |
-| Add WorkingMemory (session-scoped) | new table | No | G |
 | Add TokenBudget | new table | No | J |
 | Add WebhookConfig | new table | No | H |
 | Add AnalyticsEvent | new table | No | H |
