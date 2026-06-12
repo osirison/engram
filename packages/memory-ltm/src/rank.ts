@@ -64,13 +64,27 @@ export function rankResults(
   halfLifeDays = 30,
   now: Date = new Date()
 ): SemanticSearchResult[] {
-  const total = weights.similarity + weights.recency + weights.importance;
+  if (!Number.isFinite(halfLifeDays) || halfLifeDays <= 0) {
+    throw new Error('halfLifeDays must be a positive finite number');
+  }
+  const { similarity, recency, importance } = weights;
+  if (
+    !Number.isFinite(similarity) ||
+    similarity < 0 ||
+    !Number.isFinite(recency) ||
+    recency < 0 ||
+    !Number.isFinite(importance) ||
+    importance < 0
+  ) {
+    throw new Error('Ranking weights must be non-negative finite numbers');
+  }
+  const total = similarity + recency + importance;
   if (total === 0) {
     throw new Error('Ranking weights must not all be zero');
   }
-  const wSim = weights.similarity / total;
-  const wRec = weights.recency / total;
-  const wImp = weights.importance / total;
+  const wSim = similarity / total;
+  const wRec = recency / total;
+  const wImp = importance / total;
 
   return results
     .map(({ memory, score: similarityScore }) => {

@@ -35,7 +35,35 @@ describe('rankResults', () => {
 
   it('throws when all weights are zero', () => {
     const r = makeResult({ id: 'a', score: 0.9 });
-    expect(() => rankResults([r], { similarity: 0, recency: 0, importance: 0 }, 30, NOW)).toThrow();
+    expect(() => rankResults([r], { similarity: 0, recency: 0, importance: 0 }, 30, NOW)).toThrow(
+      'Ranking weights must not all be zero'
+    );
+  });
+
+  it('throws when halfLifeDays is zero or negative', () => {
+    const r = makeResult({ id: 'a', score: 0.9 });
+    expect(() => rankResults([r], DEFAULT_RANKING_WEIGHTS, 0, NOW)).toThrow(
+      'halfLifeDays must be a positive finite number'
+    );
+    expect(() => rankResults([r], DEFAULT_RANKING_WEIGHTS, -5, NOW)).toThrow(
+      'halfLifeDays must be a positive finite number'
+    );
+    expect(() => rankResults([r], DEFAULT_RANKING_WEIGHTS, Infinity, NOW)).toThrow(
+      'halfLifeDays must be a positive finite number'
+    );
+  });
+
+  it('throws when a weight is negative or non-finite', () => {
+    const r = makeResult({ id: 'a', score: 0.9 });
+    expect(() =>
+      rankResults([r], { similarity: -1, recency: 0.2, importance: 0.1 }, 30, NOW)
+    ).toThrow('Ranking weights must be non-negative finite numbers');
+    expect(() =>
+      rankResults([r], { similarity: NaN, recency: 0.2, importance: 0.1 }, 30, NOW)
+    ).toThrow('Ranking weights must be non-negative finite numbers');
+    expect(() =>
+      rankResults([r], { similarity: Infinity, recency: 0.2, importance: 0.1 }, 30, NOW)
+    ).toThrow('Ranking weights must be non-negative finite numbers');
   });
 
   it('with pure similarity weight, preserves similarity ordering', () => {
