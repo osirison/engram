@@ -189,6 +189,33 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       expect(results.map((r) => r.memory.id)).toEqual(['b', 'a']);
     });
 
+    it('uses default weights when rankingWeights contains undefined values', async () => {
+      vectorStore.search.mockResolvedValue([{ id: mockMemoryId, score: 0.8 }]);
+      prisma.memory.findMany.mockResolvedValue([buildMemory()]);
+
+      // Passing { similarity: undefined } must not produce NaN scores
+      const results = await service.semanticSearch(mockUserId, 'query', {
+        rankingWeights: { similarity: undefined as unknown as number },
+      });
+
+      expect(results).toHaveLength(1);
+      expect(Number.isFinite(results[0]?.score)).toBe(true);
+      expect(results[0]?.score).toBeGreaterThan(0);
+    });
+
+    it('falls back to default half-life for invalid recencyHalfLifeDays values', async () => {
+      vectorStore.search.mockResolvedValue([{ id: mockMemoryId, score: 0.8 }]);
+      prisma.memory.findMany.mockResolvedValue([buildMemory()]);
+
+      for (const invalid of [0, -10, Infinity, -Infinity, NaN]) {
+        const results = await service.semanticSearch(mockUserId, 'query', {
+          recencyHalfLifeDays: invalid,
+        });
+        expect(results).toHaveLength(1);
+        expect(Number.isFinite(results[0]?.score)).toBe(true);
+      }
+    });
+
     it('returns an empty array when the query is blank', async () => {
       const results = await service.semanticSearch(mockUserId, '   ');
       expect(results).toEqual([]);

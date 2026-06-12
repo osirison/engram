@@ -77,7 +77,7 @@ export interface SemanticSearchOptions {
 // A semantic-search hit: a memory plus its relevance score
 export interface SemanticSearchResult {
   memory: LtmMemory;
-  /** Blended relevance score after ranking (similarity + recency + importance). Raw vector-store similarity before ranking is applied. Higher is more relevant. */
+  /** Blended relevance score combining similarity, recency, and importance (always in [0, 1] after ranking). Higher is more relevant. */
   score: number;
 }
 
