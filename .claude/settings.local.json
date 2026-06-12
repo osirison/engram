@@ -15,7 +15,12 @@
       "Bash(pnpm --filter mcp-server start:dev:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(gh pr *)",
+      "Bash(git fetch *)",
+      "Bash(gh run *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)"
     ],
     "deny": [],
     "ask": []
