@@ -98,9 +98,9 @@
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s",
-      "!main.ts",
+      "!src/main.ts",
       "!**/*.module.ts",
-      "!reindex.cli.ts",
+      "!src/reindex.cli.ts",
       "!**/*.d.ts",
       "!test/**"
     ],
