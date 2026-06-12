@@ -1,3 +1,8 @@
+---
+title: Git Branching Workflow Extension
+description: Git repository operations extension providing branch creation, validation, remote detection, and auto-commit for Spec Kit.
+---
+
 # Git Branching Workflow Extension
 
 Git repository initialization, feature branch creation, numbering (sequential/timestamp), validation, remote detection, and auto-commit for Spec Kit.

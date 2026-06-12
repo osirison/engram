@@ -15,7 +15,7 @@ import { PgVectorStore, type PgVectorClient } from './pgvector.vector-store';
 const connectionString = process.env.PGVECTOR_TEST_URL;
 const describePg = connectionString ? describe : describe.skip;
 
-const DIMENSIONS = 8;
+const DIMENSIONS = 1536;
 const USER_ID = 'pgvector-integration-user';
 
 function unitVector(seed: number): number[] {
@@ -34,33 +34,36 @@ describePg('PgVectorStore (integration)', () => {
   const ids = ['pgvec-int-1', 'pgvec-int-2', 'pgvec-int-3'];
 
   beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client');
+    const [{ PrismaClient }, { PrismaPg }] = await Promise.all([
+      import('@prisma/client'),
+      import('@prisma/adapter-pg'),
+    ]);
+    // Prisma v7 uses a WASM client engine that requires a driver adapter.
     prisma = new PrismaClient({
-      datasources: { db: { url: connectionString } },
+      adapter: new PrismaPg({ connectionString }),
     }) as unknown as typeof prisma;
 
-    // Minimal schema bootstrap so the test is self-contained.
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "memories" (
-        "id" TEXT PRIMARY KEY,
-        "userId" TEXT NOT NULL,
-        "content" TEXT,
-        "metadata" JSONB,
-        "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
-        "type" TEXT,
-        "createdAt" TIMESTAMPTZ DEFAULT now()
-      )
-    `);
+    // The migrations table already exists in CI; seed a test user for the FK
+    // and insert stub memory rows so the vector store has rows to operate on.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "users" ("id", "email", "updatedAt")
+       VALUES ($1, $2, now())
+       ON CONFLICT ("id") DO NOTHING`,
+      USER_ID,
+      'pgvector-integration@test.local'
+    );
 
     store = new PgVectorStore(prisma, DIMENSIONS);
     await store.ensureReady(DIMENSIONS);
 
     for (let index = 0; index < ids.length; index += 1) {
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "memories" ("id", "userId", "type", "tags") VALUES ($1, $2, $3, $4)
+        `INSERT INTO "memories" ("id", "userId", "content", "type", "tags", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, now())
          ON CONFLICT ("id") DO UPDATE SET "userId" = EXCLUDED."userId"`,
         ids[index],
         USER_ID,
+        '',
         'note',
         ['integration']
       );
@@ -72,6 +75,7 @@ describePg('PgVectorStore (integration)', () => {
       return;
     }
     await prisma.$executeRawUnsafe(`DELETE FROM "memories" WHERE "id" = ANY($1::text[])`, ids);
+    await prisma.$executeRawUnsafe(`DELETE FROM "users" WHERE "id" = $1`, USER_ID);
     await prisma.$disconnect();
   });
 

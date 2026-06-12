@@ -1,3 +1,8 @@
+---
+title: Constitution Template
+description: Template for creating project constitution documents that define coding principles with Spec Kit.
+---
+
 # [PROJECT_NAME] Constitution
 
 <!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->

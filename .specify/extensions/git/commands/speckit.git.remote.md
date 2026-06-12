@@ -1,4 +1,5 @@
 ---
+title: 'Detect Git Remote URL'
 description: 'Detect Git remote URL for GitHub integration'
 ---
 

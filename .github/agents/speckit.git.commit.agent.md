@@ -1,4 +1,5 @@
 ---
+title: 'Speckit Git Commit Agent'
 description: Auto-commit changes after a Spec Kit command completes
 ---
 

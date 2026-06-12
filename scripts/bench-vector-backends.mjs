@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { QdrantClient } from '@qdrant/js-client-rest';
 
 function parseArgs(argv) {
@@ -116,7 +117,7 @@ async function run() {
   const prefix = `bench-${Date.now()}`;
   const collection = `${prefix}-qdrant`;
 
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
   const qdrant = new QdrantClient({ url: qdrantUrl });
 
   const records = Array.from({ length: recordCount }, (_, index) => ({

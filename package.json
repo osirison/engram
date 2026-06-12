@@ -58,10 +58,11 @@
   },
   "packageManager": "pnpm@11.5.0",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.13.0",
     "pnpm": ">=8.0.0"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.8.0",
     "@prisma/client": "^7.8.0",
     "@qdrant/js-client-rest": "^1.18.0"
   }

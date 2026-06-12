@@ -1,4 +1,5 @@
 ---
+title: 'Initialize Git Repository'
 description: 'Initialize a Git repository with an initial commit'
 ---
 

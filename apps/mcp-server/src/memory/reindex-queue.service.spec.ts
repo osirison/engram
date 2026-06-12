@@ -187,14 +187,15 @@ describe('ReindexQueueService', () => {
       return Promise.resolve(latest ? JSON.stringify(latest) : null);
     });
 
-    await service.enqueue({ batchSize: 10 });
+    const job = await service.enqueue({ batchSize: 10 });
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(latest?.state).toBe('failed');
-    expect(latest?.terminalReason).toBe('failed_runtime');
-    expect(latest?.error).toContain('embedding service unavailable');
-    expect(latest?.events.at(-1)?.type).toBe('job_failed');
+    const status = await service.get(job.jobId);
+    expect(status?.state).toBe('failed');
+    expect(status?.terminalReason).toBe('failed_runtime');
+    expect(status?.error).toContain('embedding service unavailable');
+    expect(status?.events.at(-1)?.type).toBe('job_failed');
   });
 
   it('skips processing if job was cancelled before the worker starts', async () => {
@@ -212,7 +213,8 @@ describe('ReindexQueueService', () => {
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(latest?.state).toBe('cancelled');
+    const status = await service.get(job.jobId);
+    expect(status?.state).toBe('cancelled');
     expect(memoryService.reindex).not.toHaveBeenCalled();
   });
 

@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.1.24",
+    "@prisma/adapter-pg": "7.8.0",
     "@prisma/client": "^7.8.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
