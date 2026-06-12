@@ -68,15 +68,16 @@ export interface SemanticSearchOptions {
   /**
    * Half-life in calendar days for the recency decay component.
    * A memory created exactly `recencyHalfLifeDays` ago receives a recency
-   * score of 0.5. Defaults to 30 days.
+   * score of 0.5. Must be a positive finite number; defaults to 30 days.
+   * Non-positive or non-finite values are silently replaced with the default.
    */
   recencyHalfLifeDays?: number;
 }
 
-// A semantic-search hit: a memory plus its similarity score
+// A semantic-search hit: a memory plus its relevance score
 export interface SemanticSearchResult {
   memory: LtmMemory;
-  /** Similarity score from the vector store (higher is more similar). */
+  /** Blended relevance score after ranking (similarity + recency + importance). Raw vector-store similarity before ranking is applied. Higher is more relevant. */
   score: number;
 }
 

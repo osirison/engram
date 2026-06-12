@@ -547,11 +547,17 @@ export class MemoryLtmService {
     // Over-fetch so re-ranking has enough candidates; cap to avoid overwhelming the store.
     const fetchLimit = Math.min(limit * 3, 100);
 
+    const rw = options?.rankingWeights;
     const weights: RankingWeights = {
-      ...DEFAULT_RANKING_WEIGHTS,
-      ...options?.rankingWeights,
+      similarity: rw?.similarity ?? DEFAULT_RANKING_WEIGHTS.similarity,
+      recency: rw?.recency ?? DEFAULT_RANKING_WEIGHTS.recency,
+      importance: rw?.importance ?? DEFAULT_RANKING_WEIGHTS.importance,
     };
-    const halfLifeDays = options?.recencyHalfLifeDays ?? 30;
+    const rawHalfLife = options?.recencyHalfLifeDays;
+    const halfLifeDays =
+      typeof rawHalfLife === 'number' && Number.isFinite(rawHalfLife) && rawHalfLife > 0
+        ? rawHalfLife
+        : 30;
 
     try {
       const embeddingResult = await this.embeddingsService

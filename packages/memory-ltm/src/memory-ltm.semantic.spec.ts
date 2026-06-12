@@ -172,8 +172,8 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
     });
 
     it('re-ranks results by blended score and drops hits without a backing row', async () => {
-      // 'a' has higher recency; 'b' has higher similarity — blended result depends on weights.
-      // Both use the same createdAt so recency is equal; similarity dominates → 'b' first.
+      // Both memories share the same createdAt so recency scores are equal.
+      // 'b' has higher similarity (0.9 vs 0.7); similarity dominates → 'b' first.
       vectorStore.search.mockResolvedValue([
         { id: 'b', score: 0.9 },
         { id: 'missing', score: 0.8 },
