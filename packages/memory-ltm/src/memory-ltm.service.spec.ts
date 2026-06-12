@@ -623,7 +623,11 @@ describe('MemoryLtmService', () => {
         expect.objectContaining({
           id: mockMemoryId,
           vector: [0.1, 0.2, 0.3],
-          payload: expect.objectContaining({ userId: mockUserId }),
+          payload: expect.objectContaining({
+            userId: mockUserId,
+            type: MemoryType.LONG_TERM,
+            tags: mockMemory.tags,
+          }),
         }),
       ]);
     });
@@ -664,7 +668,11 @@ describe('MemoryLtmService', () => {
       expect(vectorStore.upsert).toHaveBeenCalledWith([
         expect.objectContaining({
           id: mockMemoryId,
-          payload: expect.objectContaining({ userId: mockUserId }),
+          payload: expect.objectContaining({
+            userId: mockUserId,
+            type: MemoryType.LONG_TERM,
+            tags: mockMemory.tags,
+          }),
         }),
       ]);
     });
