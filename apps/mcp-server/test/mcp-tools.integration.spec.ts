@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { MemoryController } from '../src/memory/memory.controller';
 import { MemoryService } from '../src/memory/memory.service';
 import { ReindexQueueService } from '../src/memory/reindex-queue.service';
+import { ConsolidationService } from '../src/memory/consolidation.service';
 import {
   MemoryStmService,
   StmMemory,
@@ -37,6 +38,7 @@ const makeStmMemory = (overrides: Partial<StmMemory> = {}): StmMemory => ({
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   expiresAt: new Date(Date.now() + 3600 * 1000),
   ttl: 3600,
+  accessCount: 0,
   ...overrides,
 });
 
@@ -140,6 +142,10 @@ describe('MCP Tools Integration', () => {
       retry: jest.fn(),
     };
 
+    const consolidationMock: Partial<jest.Mocked<ConsolidationService>> = {
+      run: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MemoryController],
       providers: [
@@ -147,6 +153,7 @@ describe('MCP Tools Integration', () => {
         { provide: MemoryStmService, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
         { provide: ReindexQueueService, useValue: queueMock },
+        { provide: ConsolidationService, useValue: consolidationMock },
       ],
     }).compile();
 
@@ -161,9 +168,9 @@ describe('MCP Tools Integration', () => {
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 12 tools', () => {
+    it('should register exactly 13 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(12);
+      expect(tools).toHaveLength(13);
     });
 
     it('should register all expected tool names', () => {

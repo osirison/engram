@@ -72,6 +72,7 @@ export class MemoryStmService {
       expiresAt,
       ttl,
       embedding,
+      accessCount: 0,
     };
 
     // Store in Redis with TTL
@@ -106,7 +107,17 @@ export class MemoryStmService {
         throw new StmMemoryExpiredError(memoryId);
       }
 
-      return memory;
+      // Increment access counter and persist back to Redis.
+      // We read the remaining TTL first so the SET doesn't silently remove
+      // the expiry. Under concurrent reads the count may be under-reported by
+      // at most (readers - 1), which is acceptable for a promotion heuristic.
+      const updatedMemory: StmMemory = { ...memory, accessCount: (memory.accessCount ?? 0) + 1 };
+      const remainingTtl = await this.redisService.ttl(redisKey);
+      if (remainingTtl > 0) {
+        await this.redisService.set(redisKey, JSON.stringify(updatedMemory), remainingTtl);
+      }
+
+      return updatedMemory;
     } catch (error) {
       if (error instanceof StmMemoryExpiredError) {
         throw error;
@@ -364,6 +375,58 @@ export class MemoryStmService {
 
     this.logger.debug(`Cleared ${deletedCount} STM memories for user: ${userId}`);
     return deletedCount;
+  }
+
+  /**
+   * Scan STM memories and return those whose access count meets or exceeds the
+   * given threshold.  Optionally scoped to a single user; omitting `userId`
+   * scans all users.  Used by the consolidation job to identify promotion
+   * candidates without coupling the scheduler to per-user iteration logic.
+   *
+   * @param threshold - Minimum accessCount required for a memory to qualify.
+   * @param userId    - When provided, restrict the scan to this user only.
+   */
+  async findCandidates(threshold: number, userId?: string): Promise<StmMemory[]> {
+    this.logger.debug(`Scanning for consolidation candidates (threshold=${threshold})`);
+
+    const pattern = userId
+      ? this.keyBuilder.buildUserPattern(userId)
+      : this.keyBuilder.buildGlobalPattern();
+    let cursor = '0';
+    const candidates: StmMemory[] = [];
+
+    do {
+      const scanResult = await this.redisService.scan(cursor, {
+        match: pattern,
+        count: 1000,
+      });
+
+      if (scanResult.keys.length > 0) {
+        const pipeline = this.redisService.pipeline();
+        scanResult.keys.forEach((key) => pipeline.get(key));
+        const results = await pipeline.exec();
+
+        if (results) {
+          for (const [error, data] of results) {
+            if (!error && data) {
+              try {
+                const memory = JSON.parse(data as string) as StmMemory;
+                if ((memory.accessCount ?? 0) >= threshold) {
+                  candidates.push(memory);
+                }
+              } catch {
+                this.logger.warn('Failed to parse STM memory during candidate scan');
+              }
+            }
+          }
+        }
+      }
+
+      cursor = scanResult.cursor;
+    } while (cursor !== '0');
+
+    this.logger.debug(`Found ${candidates.length} consolidation candidate(s)`);
+    return candidates;
   }
 
   /**
