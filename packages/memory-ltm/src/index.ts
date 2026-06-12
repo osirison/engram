@@ -30,3 +30,7 @@ export {
 
 // Export validation functions
 export { validateCreateLtmMemory, validateUpdateLtmMemory, validateLtmQueryOptions } from './types';
+
+// Relevance ranking
+export { rankResults, DEFAULT_RANKING_WEIGHTS } from './rank';
+export type { RankingWeights } from './rank';

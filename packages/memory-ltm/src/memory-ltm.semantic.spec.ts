@@ -6,7 +6,7 @@ import type { VectorStore } from '@engram/vector-store';
 const mockUserId = 'cldx4k8xp000108l83h4y8v2q';
 const mockMemoryId = 'cldx4k8xp000208l84b5c9w3r';
 
-function buildMemory(overrides: Record<string, unknown> = {}) {
+function buildMemory(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: mockMemoryId,
     userId: mockUserId,
@@ -117,7 +117,7 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
   });
 
   describe('semanticSearch', () => {
-    it('embeds the query, searches with a tenant filter, and hydrates ranked results', async () => {
+    it('embeds the query, searches with a tenant filter, and returns blended-ranked results', async () => {
       vectorStore.search.mockResolvedValue([
         { id: mockMemoryId, score: 0.91, payload: { userId: mockUserId } },
       ]);
@@ -130,6 +130,7 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       });
 
       expect(embeddings.generate).toHaveBeenCalledWith({ text: 'what did I learn' });
+      // Over-fetches limit*3 candidates for re-ranking
       expect(vectorStore.search).toHaveBeenCalledWith(
         [0.1, 0.2, 0.3],
         {
@@ -138,10 +139,12 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
           scope: 'session-1',
           tags: ['test'],
         },
-        5
+        15
       );
       expect(results).toHaveLength(1);
-      expect(results[0]?.score).toBe(0.91);
+      // Score is the blended ranking score, not raw similarity
+      expect(results[0]?.score).toBeGreaterThan(0);
+      expect(results[0]?.score).toBeLessThanOrEqual(1);
       expect(results[0]?.memory.id).toBe(mockMemoryId);
     });
 
@@ -153,6 +156,7 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       const createdTo = new Date('2025-02-01T00:00:00Z');
       await service.semanticSearch(mockUserId, 'query', { createdFrom, createdTo });
 
+      // Default limit=10 → over-fetch 30
       expect(vectorStore.search).toHaveBeenCalledWith(
         [0.1, 0.2, 0.3],
         {
@@ -163,11 +167,13 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
           createdFrom,
           createdTo,
         },
-        10
+        30
       );
     });
 
-    it('preserves vector ranking order and drops hits without a backing row', async () => {
+    it('re-ranks results by blended score and drops hits without a backing row', async () => {
+      // 'a' has higher recency; 'b' has higher similarity — blended result depends on weights.
+      // Both use the same createdAt so recency is equal; similarity dominates → 'b' first.
       vectorStore.search.mockResolvedValue([
         { id: 'b', score: 0.9 },
         { id: 'missing', score: 0.8 },
