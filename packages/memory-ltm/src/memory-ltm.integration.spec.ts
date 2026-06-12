@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MemoryLtmService } from './memory-ltm.service.js';
+import { VECTOR_STORE_TOKEN } from '@engram/vector-store';
 import { MemoryType } from '@engram/database';
 
 describe('MemoryLtmModule integration', () => {
@@ -9,6 +10,8 @@ describe('MemoryLtmModule integration', () => {
   let prisma: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let embeddings: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let vectorStore: any;
 
   const userId = 'cldx4k8xp000108l83h4y8v2q';
 
@@ -35,6 +38,14 @@ describe('MemoryLtmModule integration', () => {
       }),
     };
 
+    vectorStore = {
+      backend: 'qdrant' as const,
+      upsert: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      search: vi.fn().mockResolvedValue([]),
+      ensureReady: vi.fn().mockResolvedValue(undefined),
+    };
+
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         {
@@ -45,9 +56,12 @@ describe('MemoryLtmModule integration', () => {
               prisma as any,
               undefined,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              embeddings as any
+              embeddings as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              vectorStore as any
             ),
         },
+        { provide: VECTOR_STORE_TOKEN, useValue: vectorStore },
       ],
     }).compile();
 
@@ -70,6 +84,34 @@ describe('MemoryLtmModule integration', () => {
         embedding: [0.11, 0.22, 0.33],
       }),
     });
+  });
+
+  it('upserts vector into the vector store after create', async () => {
+    await service.create({
+      userId,
+      content: 'Index this in the vector store',
+      tags: ['search'],
+    });
+
+    expect(vectorStore.upsert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'ltm-memory-1',
+        vector: [0.11, 0.22, 0.33],
+        payload: expect.objectContaining({ userId, type: MemoryType.LONG_TERM }),
+      }),
+    ]);
+  });
+
+  it('create succeeds even when vector store upsert fails (non-fatal)', async () => {
+    vectorStore.upsert.mockRejectedValueOnce(new Error('vector store unavailable'));
+
+    const memory = await service.create({
+      userId,
+      content: 'Still create memory when vector store fails',
+    });
+
+    expect(memory).toBeDefined();
+    expect(memory.id).toBe('ltm-memory-1');
   });
 
   it('stores an empty embedding vector when provider fails', async () => {

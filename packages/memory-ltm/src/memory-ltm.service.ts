@@ -431,7 +431,16 @@ export class MemoryLtmService {
         throw new LtmPromotionError(memoryId, 'Memory not found in short-term storage');
       }
 
-      // Step 2: Begin database transaction for atomic operation
+      // Step 2: Generate embedding before the transaction (I/O outside DB tx).
+      let embedding: number[] = [];
+      if (this.embeddingsService) {
+        const result = await this.embeddingsService
+          .generate({ text: stmMemory.content })
+          .catch(() => null);
+        embedding = result?.embedding ?? [];
+      }
+
+      // Step 3: Begin database transaction for atomic operation
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (this.prisma as any).$transaction(async (prisma: any) => {
         // Check quota before creating
@@ -450,11 +459,12 @@ export class MemoryLtmService {
             createdAt: stmMemory.createdAt,
             updatedAt: new Date(),
             expiresAt: null,
+            embedding,
           },
         });
       });
 
-      // Step 3: Delete from STM storage (only after successful LTM creation)
+      // Step 4: Delete from STM storage (only after successful LTM creation)
       try {
         await this.stmService.delete(userId, memoryId);
         this.logger.debug(`Successfully promoted memory ${memoryId} from STM to LTM`);
@@ -465,7 +475,12 @@ export class MemoryLtmService {
         );
       }
 
-      return this.mapToLtmMemory(result);
+      const ltmMemory = this.mapToLtmMemory(result);
+
+      // Step 5: Mirror embedding into vector store (non-fatal).
+      await this.indexVector(ltmMemory, embedding);
+
+      return ltmMemory;
     } catch (error) {
       if (error instanceof LtmPromotionError || error instanceof LtmMemoryQuotaExceededError) {
         throw error;
