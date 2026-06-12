@@ -582,4 +582,118 @@ describe('MemoryLtmService', () => {
       });
     });
   });
+
+  describe('vector lifecycle', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let embeddingsService: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let vectorStore: any;
+    let serviceWithVector: MemoryLtmService;
+
+    beforeEach(() => {
+      embeddingsService = {
+        generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      };
+      vectorStore = {
+        backend: 'qdrant' as const,
+        upsert: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
+        search: vi.fn().mockResolvedValue([]),
+        ensureReady: vi.fn().mockResolvedValue(undefined),
+      };
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.create.mockResolvedValue(mockMemory);
+
+      serviceWithVector = new MemoryLtmService(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        prismaService as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stmService as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        embeddingsService as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vectorStore as any
+      );
+    });
+
+    it('upserts vector into the store after create', async () => {
+      await serviceWithVector.create({ userId: mockUserId, content: 'hello', tags: [] });
+
+      expect(vectorStore.upsert).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: mockMemoryId,
+          vector: [0.1, 0.2, 0.3],
+          payload: expect.objectContaining({
+            userId: mockUserId,
+            type: MemoryType.LONG_TERM,
+            tags: mockMemory.tags,
+          }),
+        }),
+      ]);
+    });
+
+    it('create succeeds when vector store upsert throws (non-fatal)', async () => {
+      vectorStore.upsert.mockRejectedValueOnce(new Error('store down'));
+
+      await expect(
+        serviceWithVector.create({ userId: mockUserId, content: 'hello' })
+      ).resolves.toBeDefined();
+    });
+
+    it('removes vector from store on delete', async () => {
+      prismaService.memory.deleteMany.mockResolvedValue({ count: 1 });
+
+      await serviceWithVector.delete(mockUserId, mockMemoryId);
+
+      expect(vectorStore.delete).toHaveBeenCalledWith([mockMemoryId]);
+    });
+
+    it('upserts vector into the store after promote', async () => {
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      stmService.delete.mockResolvedValue(undefined);
+
+      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
+        const mockTx = {
+          memory: {
+            count: vi.fn().mockResolvedValue(0),
+            create: vi.fn().mockResolvedValue(mockMemory),
+          },
+        };
+        return callback(mockTx);
+      });
+      prismaService.$transaction.mockImplementation(mockTransaction);
+
+      await serviceWithVector.promote(mockUserId, mockMemoryId);
+
+      expect(vectorStore.upsert).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: mockMemoryId,
+          payload: expect.objectContaining({
+            userId: mockUserId,
+            type: MemoryType.LONG_TERM,
+            tags: mockMemory.tags,
+          }),
+        }),
+      ]);
+    });
+
+    it('promote succeeds when vector store upsert throws (non-fatal)', async () => {
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      stmService.delete.mockResolvedValue(undefined);
+      vectorStore.upsert.mockRejectedValueOnce(new Error('store down'));
+
+      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
+        const mockTx = {
+          memory: {
+            count: vi.fn().mockResolvedValue(0),
+            create: vi.fn().mockResolvedValue(mockMemory),
+          },
+        };
+        return callback(mockTx);
+      });
+      prismaService.$transaction.mockImplementation(mockTransaction);
+
+      await expect(serviceWithVector.promote(mockUserId, mockMemoryId)).resolves.toBeDefined();
+    });
+  });
 });

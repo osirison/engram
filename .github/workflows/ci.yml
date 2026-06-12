@@ -56,7 +56,7 @@ jobs:
       - name: Wait for Qdrant
         run: |
           echo "Waiting for Qdrant to be ready..."
-          timeout 60 bash -c 'until curl -sf http://localhost:6333/collections; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf http://127.0.0.1:6333/collections; do sleep 2; done'
           echo "Qdrant is ready"
 
       - name: Setup pnpm
@@ -111,7 +111,7 @@ jobs:
         run: pnpm bench:ci
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-          QDRANT_URL: http://localhost:6333
+          QDRANT_URL: http://127.0.0.1:6333
 
       - name: Fetch baseline benchmark artifact (main)
         run: pnpm bench:baseline:fetch
