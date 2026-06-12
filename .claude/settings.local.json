@@ -20,7 +20,8 @@
       "Bash(git fetch *)",
       "Bash(gh run *)",
       "Bash(git checkout *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(gh issue *)"
     ],
     "deny": [],
     "ask": []
