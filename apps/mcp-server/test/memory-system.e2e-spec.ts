@@ -37,6 +37,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { Server } from 'node:http';
 import request from 'supertest';
+import { PrismaService } from '@engram/database';
 import { AppModule } from '../src/app.module';
 import { MemoryService } from '../src/memory/memory.service';
 
@@ -56,6 +57,7 @@ suite('Memory System E2E', () => {
   let app: INestApplication;
   let httpServer: Server;
   let memoryService: MemoryService;
+  let prismaService: PrismaService;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -66,6 +68,7 @@ suite('Memory System E2E', () => {
     await app.init();
     httpServer = app.getHttpServer() as Server;
     memoryService = moduleFixture.get(MemoryService);
+    prismaService = moduleFixture.get(PrismaService);
   });
 
   afterAll(async () => {
@@ -98,20 +101,22 @@ suite('Memory System E2E', () => {
   // identical vectors, so the stored memory is the top result with score ≈ 1.0.
   // -------------------------------------------------------------------------
   describe('Recall (semantic search)', () => {
-    // Use a unique user ID per test run to avoid cross-test contamination.
-    const testUserId = `test-recall-${Date.now()}`;
+    let testUserId: string;
     const testContent =
       'Embeddings represent text as dense vectors in high-dimensional space.';
 
+    beforeAll(async () => {
+      // Create a real users row so memories.userId satisfies the FK constraint.
+      const user = await prismaService.user.create({
+        data: { email: `test-recall-${Date.now()}@e2e.local` },
+      });
+      testUserId = user.id;
+    });
+
     afterAll(async () => {
-      // Best-effort cleanup: clear all LTM memories created for the test user.
+      // Deleting the user cascades to its memories (onDelete: Cascade).
       try {
-        const result = await memoryService.listMemories(testUserId, {
-          limit: 100,
-        });
-        await Promise.all(
-          result.items.map((m) => memoryService.deleteMemory(testUserId, m.id)),
-        );
+        await prismaService.user.delete({ where: { id: testUserId } });
       } catch {
         // Non-fatal — test isolation via unique userId is sufficient.
       }

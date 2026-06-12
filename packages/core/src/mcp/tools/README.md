@@ -55,11 +55,11 @@ and returns ranked long-term memories with similarity scores.
 
 | Field  | Type            | Required | Default | Description                                       |
 | ------ | --------------- | -------- | ------- | ------------------------------------------------- |
-| userId | string (cuid)   | yes      |         | Tenant identifier — search is scoped to this user |
+| userId | string (cuid/cuid2) | yes      |         | Tenant identifier — search is scoped to this user |
 | query  | string (1–2048) | yes      |         | Natural-language query to embed and search        |
 | limit  | integer (1–50)  | no       | 10      | Maximum number of results to return               |
 | scope  | string (≤256)   | no       |         | Optional namespace filter (agent/session/project) |
-| tags   | string[] (≤50)  | no       |         | Restrict results to memories carrying all tags    |
+| tags   | string[] (≤50)  | no       |         | Filter by tags — pgvector requires all tags present (AND); Qdrant matches any tag (OR) |
 
 **Example response**
 
