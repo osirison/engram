@@ -59,6 +59,18 @@ export interface SemanticSearchOptions {
   createdFrom?: Date;
   /** Only return memories created on or before this time. */
   createdTo?: Date;
+  /**
+   * Relative weights for the blended ranking score.
+   * Values are normalised internally so they need not sum to 1.
+   * Omit any key to use the package default.
+   */
+  rankingWeights?: Partial<import('./rank').RankingWeights>;
+  /**
+   * Half-life in calendar days for the recency decay component.
+   * A memory created exactly `recencyHalfLifeDays` ago receives a recency
+   * score of 0.5. Defaults to 30 days.
+   */
+  recencyHalfLifeDays?: number;
 }
 
 // A semantic-search hit: a memory plus its similarity score
