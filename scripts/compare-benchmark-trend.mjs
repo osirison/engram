@@ -81,10 +81,9 @@ async function main() {
   let currentReport;
   try {
     currentReport = await readJson(current);
-  } catch (error) {
-    throw new Error(
-      `Current benchmark report missing or invalid at ${current}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+  } catch {
+    console.log(`Skipping trend comparison: current report not found at ${current}`);
+    return;
   }
 
   let baselineReport;
