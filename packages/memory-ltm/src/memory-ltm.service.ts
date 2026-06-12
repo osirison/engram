@@ -4,7 +4,6 @@ import { MemoryType, PaginatedResult } from '@engram/database';
 import { MemoryStmService } from '@engram/memory-stm';
 import { EmbeddingsService } from '@engram/embeddings';
 import { VECTOR_STORE_TOKEN, type VectorStore, type VectorPayload } from '@engram/vector-store';
-import { rankResults, DEFAULT_RANKING_WEIGHTS, type RankingWeights } from './rank';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -544,14 +543,6 @@ export class MemoryLtmService {
     }
 
     const limit = options?.limit ?? 10;
-    // Over-fetch so re-ranking has enough candidates; cap to avoid overwhelming the store.
-    const fetchLimit = Math.min(limit * 3, 100);
-
-    const weights: RankingWeights = {
-      ...DEFAULT_RANKING_WEIGHTS,
-      ...options?.rankingWeights,
-    };
-    const halfLifeDays = options?.recencyHalfLifeDays ?? 30;
 
     try {
       const embeddingResult = await this.embeddingsService
@@ -573,7 +564,7 @@ export class MemoryLtmService {
           createdFrom: options?.createdFrom,
           createdTo: options?.createdTo,
         },
-        fetchLimit
+        limit
       );
 
       if (hits.length === 0) {
@@ -594,7 +585,8 @@ export class MemoryLtmService {
         memories.map((memory: PrismaMemory) => [memory.id, memory])
       );
 
-      const hydrated = hits
+      // Preserve vector-store ranking order and drop hits without a backing row.
+      return hits
         .map((hit) => {
           const memory = byId.get(hit.id);
           if (!memory) {
@@ -603,9 +595,6 @@ export class MemoryLtmService {
           return { memory: this.mapToLtmMemory(memory), score: hit.score };
         })
         .filter((result): result is SemanticSearchResult => result !== null);
-
-      // Re-rank by blended similarity + recency + importance, then trim to requested limit.
-      return rankResults(hydrated, weights, halfLifeDays).slice(0, limit);
     } catch (error) {
       this.logger.error(`Semantic search failed for user ${userId}: ${error}`);
       throw new LtmDatabaseError(

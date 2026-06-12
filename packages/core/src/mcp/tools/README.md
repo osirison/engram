@@ -49,40 +49,17 @@ for the full handler implementations.
 #### `recall` — semantic search
 
 Embeds a natural-language query, runs a kNN search over the tenant-scoped vector index,
-re-ranks results using a blended relevance score, and returns the top memories.
+and returns ranked long-term memories with similarity scores.
 
 **Input schema**
 
-| Field       | Type                | Required | Default | Description                                                                            |
-| ----------- | ------------------- | -------- | ------- | -------------------------------------------------------------------------------------- |
-| userId      | string (cuid/cuid2) | yes      |         | Tenant identifier — search is scoped to this user                                      |
-| query       | string (1–2048)     | yes      |         | Natural-language query to embed and search                                             |
-| limit       | integer (1–50)      | no       | 10      | Maximum number of results to return                                                    |
-| scope       | string (≤256)       | no       |         | Optional namespace filter (agent/session/project)                                      |
-| tags        | string[] (≤50)      | no       |         | Filter by tags — pgvector requires all tags present (AND); Qdrant matches any tag (OR) |
-| createdFrom | ISO 8601 date       | no       |         | Only return memories created on or after this time                                     |
-| createdTo   | ISO 8601 date       | no       |         | Only return memories created on or before this time                                    |
-
-**Relevance ranking**
-
-Results are re-ranked by a blended score before being returned:
-
-```
-finalScore = wSim · clamp(similarity, 0, 1)
-           + wRec · exp(−ln2 · ageDays / halfLifeDays)
-           + wImp · importance
-```
-
-| Component    | Source                                  | Default weight |
-| ------------ | --------------------------------------- | -------------- |
-| `similarity` | Cosine similarity from the vector store | 0.7            |
-| `recency`    | Exponential decay; half-life = 30 days  | 0.2            |
-| `importance` | `memory.metadata.importance` (0–1)      | 0.1            |
-
-Weights are normalised internally so they need not sum to 1. `importance` defaults
-to 0.5 when the metadata field is absent. The service over-fetches up to `limit × 3`
-candidates from the vector store (capped at 100) so that re-ranking has enough
-material to promote high-recency or high-importance items from outside the raw top-k.
+| Field  | Type            | Required | Default | Description                                       |
+| ------ | --------------- | -------- | ------- | ------------------------------------------------- |
+| userId | string (cuid/cuid2) | yes      |         | Tenant identifier — search is scoped to this user |
+| query  | string (1–2048) | yes      |         | Natural-language query to embed and search        |
+| limit  | integer (1–50)  | no       | 10      | Maximum number of results to return               |
+| scope  | string (≤256)   | no       |         | Optional namespace filter (agent/session/project) |
+| tags   | string[] (≤50)  | no       |         | Filter by tags — pgvector requires all tags present (AND); Qdrant matches any tag (OR) |
 
 **Example response**
 
@@ -92,7 +69,7 @@ material to promote high-recency or high-importance items from outside the raw t
   "count": 2,
   "results": [
     {
-      "score": 0.81,
+      "score": 0.94,
       "memory": {
         "id": "clm...",
         "userId": "clm...",
