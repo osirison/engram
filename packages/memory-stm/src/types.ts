@@ -46,6 +46,13 @@ export interface StmMemory extends Memory {
   type: 'short-term';
   expiresAt: Date; // Always set for STM
   ttl: number; // Current TTL in seconds
+  /**
+   * Number of times this memory has been retrieved via findById().
+   * Used by the consolidation policy to identify frequently-accessed memories
+   * that should be promoted to LTM. Only direct lookups are counted; list()
+   * scans do not increment this counter.
+   */
+  accessCount: number;
 }
 
 // Validation schemas for STM operations
@@ -144,6 +151,14 @@ export class StmKeyBuilder {
    */
   buildUserPattern(userId: string): string {
     return `${this.prefix}:${userId}:*`;
+  }
+
+  /**
+   * Build Redis key pattern matching all STM memories across all users.
+   * Used by the consolidation job to scan for promotion candidates.
+   */
+  buildGlobalPattern(): string {
+    return `${this.prefix}:*`;
   }
 
   /**

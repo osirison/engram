@@ -31,6 +31,7 @@ const makeStmMemory = (overrides: Partial<StmMemory> = {}): StmMemory => ({
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   expiresAt: new Date(Date.now() + 3600 * 1000),
   ttl: 3600,
+  accessCount: 0,
   ...overrides,
 });
 
