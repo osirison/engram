@@ -171,8 +171,8 @@ async function run() {
     });
     await qdrant.upsert(collection, {
       wait: true,
-      points: records.map((record) => ({
-        id: record.id,
+      points: records.map((record, index) => ({
+        id: index + 1,
         vector: record.vector,
         payload: { userId, tags: ['benchmark'] },
       })),
