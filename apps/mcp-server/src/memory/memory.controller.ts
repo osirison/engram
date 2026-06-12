@@ -353,6 +353,8 @@ export class MemoryController {
           limit: validatedInput.limit,
           scope: validatedInput.scope,
           tags: validatedInput.tags,
+          createdFrom: validatedInput.createdFrom,
+          createdTo: validatedInput.createdTo,
         },
       );
 

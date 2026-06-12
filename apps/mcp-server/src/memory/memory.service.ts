@@ -69,7 +69,13 @@ type LtmServiceContract = {
   semanticSearch: (
     userId: string,
     query: string,
-    options?: { limit?: number; scope?: string; tags?: string[] },
+    options?: {
+      limit?: number;
+      scope?: string;
+      tags?: string[];
+      createdFrom?: Date;
+      createdTo?: Date;
+    },
   ) => Promise<Array<{ memory: Memory; score: number }>>;
   reindex: (options?: {
     userId?: string;
@@ -123,6 +129,8 @@ export interface RecallOptions {
   limit?: number;
   scope?: string;
   tags?: string[];
+  createdFrom?: Date;
+  createdTo?: Date;
 }
 
 export interface RecallResult {
@@ -373,6 +381,8 @@ export class MemoryService {
       limit: options.limit,
       scope: options.scope,
       tags: options.tags,
+      createdFrom: options.createdFrom,
+      createdTo: options.createdTo,
     });
   }
 
