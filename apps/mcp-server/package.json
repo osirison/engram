@@ -97,7 +97,12 @@
       ]
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.(t|j)s",
+      "!main.ts",
+      "!**/*.module.ts",
+      "!reindex.cli.ts",
+      "!**/*.d.ts",
+      "!test/**"
     ],
     "coverageDirectory": "../coverage",
     "coverageThreshold": {
