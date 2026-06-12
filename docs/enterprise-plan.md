@@ -18,40 +18,41 @@ The dual goal: a **production-grade enterprise memory system** that can also run
 
 context-mem v4.0.0 "Cognition" — MIT, 45+ MCP tools, fully local SQLite.
 
-| Dimension | Engram (current) | context-mem v4.0 |
-|---|---|---|
-| MCP tools | 13 | 45+ (6 deprecated) |
-| Storage | Postgres + Redis + Qdrant/pgvector | SQLite (FTS5 + sqlite-vec) + markdown vault |
-| Vector embeddings | 1536-dim OpenAI or pgvector HNSW | 768-dim nomic-embed-text-v1.5 (local) |
-| Search | Vector similarity only | 8 parallel BM25 + vector + trigram + Levenshtein, RRF fused |
-| BM25 strategies | None | AND, phrase, entity-focused, sanitized, relaxed-AND, OR+synonyms, keywords, synonym-tokens |
-| LLM reranker | None | Optional Claude Haiku judge (R@5: 97.8% → 100%) |
-| Ingest pipeline | Store → embed | 13-step pipeline (privacy, dedup, entity, topic, importance, summarize, write, log, graph, backlinks, embed, FTS, vault) |
-| Token compression | None | 15 content-aware summarizers, 99.1% savings (365KB → 3.2KB) |
-| Compression tiers | None | 4-tier age-based: verbatim (0-7d), light (7-30d), medium (30-90d), distilled (90+d) |
-| Memory types | STM (Redis/TTL) + LTM (Postgres) | Observations, entities, knowledge entries, topics, sessions |
-| Memory intelligence | None (roadmap #99) | Dreamer background agent (5 min cycle), auto-consolidation, auto-archive |
-| Decay | None | Exponential (14-day half-life) + 30d stale mark + 90d auto-archive |
-| Context window mgmt | None | `wake_up` token-budgeted briefing (profile 15%, knowledge 40%, decisions 30%, entities 15%) |
-| Temporal tools | None | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss` |
-| Session tools | None | `wake_up`, `restore_session`, `handoff_session` |
-| Multi-agent | None | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast` |
-| Cross-project | None | `promote_knowledge`, `global_search`, `find_tunnels` |
-| Knowledge graph | None | 9 graph tools, entity-relationship graph, graph_query, graph_neighbors |
-| Answer-as-page | None | `ask` answers persisted as knowledge pages (self-improving cache) |
-| Dashboard | None | Web UI at localhost:3141 (6 pages: Intelligence, Graph, Topics, Timeline, Entities, Diagnostics) |
-| Code execution | None | `execute` (JS, TS, Python, Shell, Ruby, Go, Rust, PHP, Perl, R, Elixir) |
-| Vault/human-readable | None | Markdown vault, Obsidian-compatible, Context Protocol RFC v1 |
-| Multi-tenancy | userId scoping, per-user quota | None (single-user, filesystem-scoped) |
-| Auth | adminToken (reindex only) | None |
-| Horizontal scale | Yes (stateless NestJS + Postgres + Redis) | No |
-| Async jobs | BullMQ with cursor resumption | None (synchronous except embedding) |
-| Evaluation harness | Full (precision/recall/MRR/nDCG, latency p50/p95/p99) | Claims LongMemEval R@5 100% (session-retrieval recall, not end-to-end QA) |
-| Observability | Basic logs | Diagnostics tool, dashboard stats |
-| SDK | None | None |
-| Privacy | None | 9-detector privacy engine, `<private>` tag stripping |
+| Dimension            | Engram (current)                                      | context-mem v4.0                                                                                                         |
+| -------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| MCP tools            | 13                                                    | 45+ (6 deprecated)                                                                                                       |
+| Storage              | Postgres + Redis + Qdrant/pgvector                    | SQLite (FTS5 + sqlite-vec) + markdown vault                                                                              |
+| Vector embeddings    | 1536-dim OpenAI or pgvector HNSW                      | 768-dim nomic-embed-text-v1.5 (local)                                                                                    |
+| Search               | Vector similarity only                                | 8 parallel BM25 + vector + trigram + Levenshtein, RRF fused                                                              |
+| BM25 strategies      | None                                                  | AND, phrase, entity-focused, sanitized, relaxed-AND, OR+synonyms, keywords, synonym-tokens                               |
+| LLM reranker         | None                                                  | Optional Claude Haiku judge (R@5: 97.8% → 100%)                                                                          |
+| Ingest pipeline      | Store → embed                                         | 13-step pipeline (privacy, dedup, entity, topic, importance, summarize, write, log, graph, backlinks, embed, FTS, vault) |
+| Token compression    | None                                                  | 15 content-aware summarizers, 99.1% savings (365KB → 3.2KB)                                                              |
+| Compression tiers    | None                                                  | 4-tier age-based: verbatim (0-7d), light (7-30d), medium (30-90d), distilled (90+d)                                      |
+| Memory types         | STM (Redis/TTL) + LTM (Postgres)                      | Observations, entities, knowledge entries, topics, sessions                                                              |
+| Memory intelligence  | None (roadmap #99)                                    | Dreamer background agent (5 min cycle), auto-consolidation, auto-archive                                                 |
+| Decay                | None                                                  | Exponential (14-day half-life) + 30d stale mark + 90d auto-archive                                                       |
+| Context window mgmt  | None                                                  | `wake_up` token-budgeted briefing (profile 15%, knowledge 40%, decisions 30%, entities 15%)                              |
+| Temporal tools       | None                                                  | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss`                                                      |
+| Session tools        | None                                                  | `wake_up`, `restore_session`, `handoff_session`                                                                          |
+| Multi-agent          | None                                                  | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast`                                                       |
+| Cross-project        | None                                                  | `promote_knowledge`, `global_search`, `find_tunnels`                                                                     |
+| Knowledge graph      | None                                                  | 9 graph tools, entity-relationship graph, graph_query, graph_neighbors                                                   |
+| Answer-as-page       | None                                                  | `ask` answers persisted as knowledge pages (self-improving cache)                                                        |
+| Dashboard            | None                                                  | Web UI at localhost:3141 (6 pages: Intelligence, Graph, Topics, Timeline, Entities, Diagnostics)                         |
+| Code execution       | None                                                  | `execute` (JS, TS, Python, Shell, Ruby, Go, Rust, PHP, Perl, R, Elixir)                                                  |
+| Vault/human-readable | None                                                  | Markdown vault, Obsidian-compatible, Context Protocol RFC v1                                                             |
+| Multi-tenancy        | userId scoping, per-user quota                        | None (single-user, filesystem-scoped)                                                                                    |
+| Auth                 | adminToken (reindex only)                             | None                                                                                                                     |
+| Horizontal scale     | Yes (stateless NestJS + Postgres + Redis)             | No                                                                                                                       |
+| Async jobs           | BullMQ with cursor resumption                         | None (synchronous except embedding)                                                                                      |
+| Evaluation harness   | Full (precision/recall/MRR/nDCG, latency p50/p95/p99) | Claims LongMemEval R@5 100% (session-retrieval recall, not end-to-end QA)                                                |
+| Observability        | Basic logs                                            | Diagnostics tool, dashboard stats                                                                                        |
+| SDK                  | None                                                  | None                                                                                                                     |
+| Privacy              | None                                                  | 9-detector privacy engine, `<private>` tag stripping                                                                     |
 
 ### Engram's Durable Advantages (never-match by context-mem)
+
 - Enterprise Postgres/Redis/Qdrant → scales to millions of memories, horizontal reads
 - Dual vector backends with tunable HNSW parameters
 - Async reindex with BullMQ, cursor resumption, per-item skip-without-corrupt
@@ -60,6 +61,7 @@ context-mem v4.0.0 "Cognition" — MIT, 45+ MCP tools, fully local SQLite.
 - NestJS DI makes every feature independently testable and injectable
 
 ### context-mem's Durable Advantages (gaps Engram must close)
+
 - 15-summarizer adaptive compression system (the 99% token savings feature)
 - 8 parallel BM25 strategies with intent-adaptive fusion weights
 - 13-step typed ingest pipeline (privacy filter, entity extraction, importance scoring baked in)
@@ -76,27 +78,27 @@ context-mem v4.0.0 "Cognition" — MIT, 45+ MCP tools, fully local SQLite.
 
 context-mem ships 45 tools (13 Engram have vs 45 context-mem = 32+ missing). Full mapping:
 
-| Category | Missing in Engram | context-mem equivalent |
-|---|---|---|
-| Ingest | `observe` (typed ingest with 13-step pipeline) | `observe` |
-| High-level UX | `remember`, `forget`, `reflect` | no direct equiv — `observe` covers ingest |
-| Search | `search_memories` (BM25/FTS), `ask` (NL Q&A synthesized over all memories) | `search`, `ask` |
-| Similarity | `find_similar` | `search` with vector-only mode |
-| Session | `wake_up` (token-budgeted primer), `restore_session`, `handoff_session` | `wake_up`, `restore_session`, `handoff_session` |
-| Multi-agent | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast` | same |
-| Organization | `add_tags`, `remove_tags`, `list_tags`, `archive_memory`, `unarchive_memory`, `pin_memory`, `bulk_tag` | partial via flags |
-| Relationships | `link_memories`, `unlink_memories`, `get_linked_memories`, `find_related` | `add_relationship`, `graph_query`, `graph_neighbors` |
-| Bulk | `bulk_create`, `bulk_delete`, `export_memories`, `import_memories`, `import_conversations` | `import_conversations` |
-| Temporal | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss` | same |
-| Intelligence | `generate_story`, `find_tunnels` | same |
-| Analytics | `get_memory_stats`, `get_user_stats`, `get_recall_stats`, `diagnostics`, `stats` | `stats`, `diagnostics` |
-| Token budget | `budget_status`, `budget_configure` | same |
-| Context | `compress_context`, `load_context`, `summarize` | implicit in `wake_up` |
-| Code runner | `execute` (polyglot: JS/TS/Python/Shell/Ruby/Go/Rust/PHP/Perl/R/Elixir) | `execute` |
-| Content index | `index_content`, `search_content` | same |
-| Snapshots | `create_snapshot`, `restore_snapshot`, `list_snapshots` | `restore_session` (partial) |
-| Agent | `create_agent_profile`, `get_agent_profile`, `update_agent_profile` | none |
-| Cross-project | `promote_to_global`, `global_search`, `find_tunnels` | same |
+| Category      | Missing in Engram                                                                                      | context-mem equivalent                               |
+| ------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Ingest        | `observe` (typed ingest with 13-step pipeline)                                                         | `observe`                                            |
+| High-level UX | `remember`, `forget`, `reflect`                                                                        | no direct equiv — `observe` covers ingest            |
+| Search        | `search_memories` (BM25/FTS), `ask` (NL Q&A synthesized over all memories)                             | `search`, `ask`                                      |
+| Similarity    | `find_similar`                                                                                         | `search` with vector-only mode                       |
+| Session       | `wake_up` (token-budgeted primer), `restore_session`, `handoff_session`                                | `wake_up`, `restore_session`, `handoff_session`      |
+| Multi-agent   | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast`                                     | same                                                 |
+| Organization  | `add_tags`, `remove_tags`, `list_tags`, `archive_memory`, `unarchive_memory`, `pin_memory`, `bulk_tag` | partial via flags                                    |
+| Relationships | `link_memories`, `unlink_memories`, `get_linked_memories`, `find_related`                              | `add_relationship`, `graph_query`, `graph_neighbors` |
+| Bulk          | `bulk_create`, `bulk_delete`, `export_memories`, `import_memories`, `import_conversations`             | `import_conversations`                               |
+| Temporal      | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss`                                    | same                                                 |
+| Intelligence  | `generate_story`, `find_tunnels`                                                                       | same                                                 |
+| Analytics     | `get_memory_stats`, `get_user_stats`, `get_recall_stats`, `diagnostics`, `stats`                       | `stats`, `diagnostics`                               |
+| Token budget  | `budget_status`, `budget_configure`                                                                    | same                                                 |
+| Context       | `compress_context`, `load_context`, `summarize`                                                        | implicit in `wake_up`                                |
+| Code runner   | `execute` (polyglot: JS/TS/Python/Shell/Ruby/Go/Rust/PHP/Perl/R/Elixir)                                | `execute`                                            |
+| Content index | `index_content`, `search_content`                                                                      | same                                                 |
+| Snapshots     | `create_snapshot`, `restore_snapshot`, `list_snapshots`                                                | `restore_session` (partial)                          |
+| Agent         | `create_agent_profile`, `get_agent_profile`, `update_agent_profile`                                    | none                                                 |
+| Cross-project | `promote_to_global`, `global_search`, `find_tunnels`                                                   | same                                                 |
 
 ---
 
@@ -131,6 +133,7 @@ Engram must match or exceed this with Postgres FTS5-equivalent (`tsvector`) as f
 
 **Package**: `packages/memory-ltm`  
 **Prisma migration**:
+
 ```sql
 ALTER TABLE memories ADD COLUMN content_tsv tsvector
   GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
@@ -138,6 +141,7 @@ CREATE INDEX memories_content_tsv_gin ON memories USING GIN(content_tsv);
 ```
 
 **New method** in `MemoryLtmService`:
+
 ```typescript
 async fullTextSearch(userId: string, query: string, limit: number): Promise<ScoredMemory[]>
 // $queryRaw with ts_rank_cd(content_tsv, plainto_tsquery($query)) with userId filter
@@ -150,16 +154,16 @@ async fullTextSearch(userId: string, query: string, limit: number): Promise<Scor
 Mirror context-mem's architecture: 8 strategies run concurrently via `Promise.all`, results
 merged by `RrfFusion` with per-strategy weights.
 
-| Strategy | Postgres implementation | Fusion weight |
-|---|---|---|
-| AND-mode | `phraseto_tsquery` — all terms required | 2.0 |
-| Phrase matching | Adjacent term pairs via `to_tsquery` with `<->` | 1.9 |
-| Entity-focused | Boost matches in `tags[]` column additionally | 1.8 |
-| Sanitized FTS | `plainto_tsquery` (standard) | 1.5 |
-| Relaxed AND | `plainto_tsquery` with lower rank threshold | 1.2 |
-| OR + synonyms | `to_tsquery` with `|` operators, synonym expansion | 1.0 |
-| Individual keywords | One query per token, union | 0.5 |
-| Individual synonyms | Synonym tokens individually | 0.2 |
+| Strategy            | Postgres implementation                         | Fusion weight                  |
+| ------------------- | ----------------------------------------------- | ------------------------------ | --- |
+| AND-mode            | `phraseto_tsquery` — all terms required         | 2.0                            |
+| Phrase matching     | Adjacent term pairs via `to_tsquery` with `<->` | 1.9                            |
+| Entity-focused      | Boost matches in `tags[]` column additionally   | 1.8                            |
+| Sanitized FTS       | `plainto_tsquery` (standard)                    | 1.5                            |
+| Relaxed AND         | `plainto_tsquery` with lower rank threshold     | 1.2                            |
+| OR + synonyms       | `to_tsquery` with `                             | ` operators, synonym expansion | 1.0 |
+| Individual keywords | One query per token, union                      | 0.5                            |
+| Individual synonyms | Synonym tokens individually                     | 0.2                            |
 
 **Intent-adaptive fusion**: detect query intent (causal, temporal, lookup, general) and
 adjust BM25:vector weight ratio dynamically (e.g., temporal queries boost recency-score).
@@ -169,12 +173,14 @@ adjust BM25:vector weight ratio dynamically (e.g., temporal queries boost recenc
 **Package**: `packages/search`
 
 `HybridSearchService`:
+
 - Runs A2 (8 BM25 strategies) + vector search + trigram search in parallel
 - Fusion weights: BM25=0.45, vector=0.35, trigram=0.15, Levenshtein=0.05
 - `RrfFusion` extracted from `@engram/eval`'s `FusionRetriever` into `@engram/search`
 - `SearchResult<T>` typed with `score`, `source: 'bm25'|'vector'|'trigram'|'fused'`, `rank`, `strategy`
 
 Config:
+
 ```
 HYBRID_SEARCH_ENABLED=true
 HYBRID_RRF_K=60
@@ -188,6 +194,7 @@ Update `recall` tool to use hybrid pipeline. Add `search_memories` tool (keyword
 **Package**: `packages/search`
 
 `RerankerService` (`RERANKER_STRATEGY` env):
+
 - `haiku` (default when key available) — Claude Haiku cross-encoder, blends 50/50 with retrieval score; ~100ms, ~$0.002/query. Matches context-mem's LongMemEval 97.8→100% improvement.
 - `cohere` — Cohere Rerank API
 - `heuristic` — recency (70%) + 7-day recency (20%) + access count (10%) + importance score
@@ -197,6 +204,7 @@ Update `recall` tool to use hybrid pipeline. Add `search_memories` tool (keyword
 **Package**: `packages/search`
 
 `QueryExpander` (`QUERY_EXPANSION=hyde|synonyms|disabled`):
+
 - HyDE: generate a hypothetical ideal memory and embed that instead of the raw query
 - Synonym expansion via lightweight English synonym list
 
@@ -211,6 +219,7 @@ CREATE INDEX memories_content_trgm ON memories USING GIN(content gin_trgm_ops);
 ```
 
 `TrigramSearchService`:
+
 - `similarity(content, $query)` scored search
 - Fusion weight: 0.15 (handles typos, partial matches, code identifiers)
 
@@ -252,16 +261,18 @@ Steps 3, 11, 13 are non-blocking (fire-and-forget). Steps 1-7 are synchronous in
 ### B1 — Importance Scoring with 6 Flags
 
 **Schema**: add to Memory model:
+
 ```
 importanceScore  Float   @default(0.5)
 importanceFlags  String[] // ['DECISION','MILESTONE','PROBLEM','ORIGIN','PIVOT','CORE']
 accessCount      Int      @default(0)
 lastAccessedAt   DateTime?
 pinned           Boolean  @default(false)
-status           String   @default("active") // 'active'|'archived'|'pinned'
+status           String   @default("active") // 'active'|'archived'|'pinned'|'stale'
 ```
 
 `ImportanceScoringService`:
+
 - Base: 0.5
 - Flag boost: DECISION+0.3, MILESTONE+0.2, PROBLEM+0.2, ORIGIN+0.15, PIVOT+0.15, CORE+0.1
 - Access boost: `score += 0.01 * log(accessCount + 1)` (diminishing returns)
@@ -275,17 +286,20 @@ status           String   @default("active") // 'active'|'archived'|'pinned'
 **Schema**: add `compressionTier Int @default(0)` (0=verbatim, 1=light, 2=medium, 3=distilled)
 
 `CompressionTierService` (scheduled cron, daily):
+
 - Tier 0 (0-7 days): stored verbatim
 - Tier 1 (7-30 days): light compression applied
 - Tier 2 (30-90 days): medium compression
 - Tier 3 (90+ days): maximum distillation
 
 Priority cascade (immune to compression regardless of age):
+
 - `pinned=true` → always verbatim
 - `importanceFlags` contains DECISION/MILESTONE/PROBLEM → always verbatim
 - `importanceScore >= 0.8` → always verbatim
 
 Config:
+
 ```
 COMPRESSION_ENABLED=true
 COMPRESSION_TIER1_DAYS=7
@@ -301,23 +315,23 @@ COMPRESSION_TIER3_DAYS=90
 Context-mem achieves 99.1% token savings (365KB → 3.2KB) via content-type detection and
 appropriate compression strategy. Engram must implement equivalent:
 
-| Summarizer | Detection heuristic | Target compression |
-|---|---|---|
-| Binary/hex | `/^[0-9a-fA-F\s]+$/` or buffer-like | 98% |
-| Log output | Lines with timestamps, log levels | 97% |
-| Errors | Stack traces, error: prefixes | 95% |
-| Shell/CLI | `$` prompts, command outputs | 95% |
-| Build output | webpack/tsc/jest output patterns | 94% |
-| Code | Fenced ``` blocks, indentation | 92% |
-| HTML | `<[^>]+>` density | 92% |
-| JSON | Valid JSON objects/arrays | 89% |
-| Network responses | HTTP headers, REST payloads | 88% |
-| TypeScript errors | `TS[0-9]+:` error codes | 88% |
-| Tests | Test runner output, pass/fail lines | 85% |
-| CSV | Comma-separated tabular data | 80% |
-| Markdown | Headers, bullets, links | 75% |
-| Git logs | `commit [sha]` lines | 90% |
-| Python tracebacks | `Traceback (most recent call last)` | 95% |
+| Summarizer        | Detection heuristic                 | Target compression |
+| ----------------- | ----------------------------------- | ------------------ |
+| Binary/hex        | `/^[0-9a-fA-F\s]+$/` or buffer-like | 98%                |
+| Log output        | Lines with timestamps, log levels   | 97%                |
+| Errors            | Stack traces, error: prefixes       | 95%                |
+| Shell/CLI         | `$` prompts, command outputs        | 95%                |
+| Build output      | webpack/tsc/jest output patterns    | 94%                |
+| Code              | Fenced ``` blocks, indentation      | 92%                |
+| HTML              | `<[^>]+>` density                   | 92%                |
+| JSON              | Valid JSON objects/arrays           | 89%                |
+| Network responses | HTTP headers, REST payloads         | 88%                |
+| TypeScript errors | `TS[0-9]+:` error codes             | 88%                |
+| Tests             | Test runner output, pass/fail lines | 85%                |
+| CSV               | Comma-separated tabular data        | 80%                |
+| Markdown          | Headers, bullets, links             | 75%                |
+| Git logs          | `commit [sha]` lines                | 90%                |
+| Python tracebacks | `Traceback (most recent call last)` | 95%                |
 
 Each summarizer: extract the key fact (error message, command name, function signature,
 decision) and discard boilerplate. LLM used only when rule-based extraction is insufficient.
@@ -325,12 +339,14 @@ decision) and discard boilerplate. LLM used only when rule-based extraction is i
 ### B4 — Decay & Archiving
 
 `DecayService` (`@nestjs/schedule` cron, daily):
+
 - 30 days without access → mark `status='stale'`
 - 90 days without access AND `importanceScore < 0.1` → `status='archived'`
 - 365 days + archived → hard delete (configurable)
 - Emits `memory.archived` / `memory.stale` events
 
 Config:
+
 ```
 DECAY_ENABLED=true
 DECAY_STALE_AFTER_DAYS=30
@@ -363,6 +379,7 @@ Admin MCP tool: `get_dreamer_status`, `trigger_dreamer_cycle` (adminToken requir
 ### B6 — Contradiction Detection
 
 `ContradictionDetector` (runs in Dreamer VerifyPass + on promote):
+
 - Retrieves top-3 similar memories
 - LLM prompt: classify pair as AGREE / CONTRADICT / UNRELATED
 - On CONTRADICT: adds `{ contradiction: true, contradicts: [id], contradictionType: 'factual|temporal|preference' }` to metadata
@@ -371,6 +388,7 @@ Admin MCP tool: `get_dreamer_status`, `trigger_dreamer_cycle` (adminToken requir
 ### B7 — Auto-Summarization / Reflection
 
 `SummarizationService` (triggered by Dreamer SynthesisPass or `reflect` tool):
+
 - Group memories by tag cluster or time window
 - LLM-synthesize group into `type='insight'` memory with `importanceScore=0.8`
 - Archive individual source memories
@@ -387,76 +405,76 @@ registered in `packages/core/src/mcp/tools/index.ts`.
 
 ### C1 — High-Level Agent UX Tools
 
-| Tool | Description |
-|---|---|
-| `remember` | Smart create: auto-detects STM vs LTM, extracts tags, deduplicates |
-| `forget` | Smart delete: semantic search + confirmation, can forget by concept not just ID |
-| `reflect` | Synthesize insights across memories matching a query; returns summary + source IDs |
-| `compress_context` | Retrieve + contextually compress memories for context window injection |
-| `load_context` | Load the most relevant memories for a session opening; returns formatted context block |
+| Tool               | Description                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `remember`         | Smart create: auto-detects STM vs LTM, extracts tags, deduplicates                     |
+| `forget`           | Smart delete: semantic search + confirmation, can forget by concept not just ID        |
+| `reflect`          | Synthesize insights across memories matching a query; returns summary + source IDs     |
+| `compress_context` | Retrieve + contextually compress memories for context window injection                 |
+| `load_context`     | Load the most relevant memories for a session opening; returns formatted context block |
 
 ### C2 — Search Tools
 
-| Tool | Description |
-|---|---|
-| `search_memories` | Full-text / BM25 keyword search (distinct from semantic `recall`) |
-| `find_similar` | Given a memory ID, find semantically similar memories |
+| Tool              | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `search_memories` | Full-text / BM25 keyword search (distinct from semantic `recall`)        |
+| `find_similar`    | Given a memory ID, find semantically similar memories                    |
 | `filter_memories` | List with rich filters: date ranges, importance thresholds, status, type |
 
 ### C3 — Organization Tools
 
-| Tool | Description |
-|---|---|
-| `add_tags` | Add tags to an existing memory |
-| `remove_tags` | Remove specific tags |
-| `list_tags` | List all unique tags for a user with counts |
-| `archive_memory` | Manually archive (soft-hide) a memory |
-| `unarchive_memory` | Restore archived memory |
-| `pin_memory` | Pin (protect from decay) |
-| `bulk_tag` | Apply tags to all memories matching a filter |
+| Tool               | Description                                  |
+| ------------------ | -------------------------------------------- |
+| `add_tags`         | Add tags to an existing memory               |
+| `remove_tags`      | Remove specific tags                         |
+| `list_tags`        | List all unique tags for a user with counts  |
+| `archive_memory`   | Manually archive (soft-hide) a memory        |
+| `unarchive_memory` | Restore archived memory                      |
+| `pin_memory`       | Pin (protect from decay)                     |
+| `bulk_tag`         | Apply tags to all memories matching a filter |
 
 ### C4 — Relationship Tools
 
-| Tool | Description |
-|---|---|
-| `link_memories` | Create a typed directional link between two memories |
-| `unlink_memories` | Remove a link |
-| `get_linked_memories` | Traverse links (depth 1 or 2) from a memory |
-| `find_related` | Find memories related by entity overlap or semantic proximity |
+| Tool                  | Description                                                   |
+| --------------------- | ------------------------------------------------------------- |
+| `link_memories`       | Create a typed directional link between two memories          |
+| `unlink_memories`     | Remove a link                                                 |
+| `get_linked_memories` | Traverse links (depth 1 or 2) from a memory                   |
+| `find_related`        | Find memories related by entity overlap or semantic proximity |
 
 ### C5 — Bulk & Import/Export Tools
 
-| Tool | Description |
-|---|---|
-| `bulk_create` | Create up to 100 memories in a single call |
-| `bulk_delete` | Delete by filter (tag, date range, status) |
+| Tool              | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `bulk_create`     | Create up to 100 memories in a single call           |
+| `bulk_delete`     | Delete by filter (tag, date range, status)           |
 | `export_memories` | Export all memories as JSON or markdown vault format |
-| `import_memories` | Import from JSON or markdown vault |
+| `import_memories` | Import from JSON or markdown vault                   |
 
 ### C6 — Analytics Tools
 
-| Tool | Description |
-|---|---|
-| `get_memory_stats` | Count by type, status, tag distribution, storage size |
+| Tool               | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| `get_memory_stats` | Count by type, status, tag distribution, storage size           |
 | `get_recall_stats` | Top recalled memories, recall frequency, last 7/30 day activity |
-| `get_user_stats` | Quota usage, memory age distribution, importance histogram |
+| `get_user_stats`   | Quota usage, memory age distribution, importance histogram      |
 
 ### C7 — Session Tools
 
-| Tool | Description |
-|---|---|
-| `start_session` | Create a working-memory session (returns sessionId, loads agent profile context) |
-| `end_session` | Close session: promote important working memories to LTM |
-| `get_session_context` | Return the current session's working memory formatted for injection |
-| `clear_working_memory` | Wipe session working memory without promoting |
+| Tool                   | Description                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `start_session`        | Create a working-memory session (returns sessionId, loads agent profile context) |
+| `end_session`          | Close session: promote important working memories to LTM                         |
+| `get_session_context`  | Return the current session's working memory formatted for injection              |
+| `clear_working_memory` | Wipe session working memory without promoting                                    |
 
 ### C8 — Snapshot Tools
 
-| Tool | Description |
-|---|---|
-| `create_snapshot` | Create a point-in-time snapshot of all memories (stored in Postgres) |
-| `restore_snapshot` | Restore from snapshot (creates copies, does not overwrite) |
-| `list_snapshots` | List available snapshots |
+| Tool               | Description                                                          |
+| ------------------ | -------------------------------------------------------------------- |
+| `create_snapshot`  | Create a point-in-time snapshot of all memories (stored in Postgres) |
+| `restore_snapshot` | Restore from snapshot (creates copies, does not overwrite)           |
+| `list_snapshots`   | List available snapshots                                             |
 
 ---
 
@@ -517,6 +535,7 @@ registered in `packages/core/src/mcp/tools/index.ts`.
 - Docker image: `engram-lite` — ~150MB vs ~400MB full
 
 **CLI**:
+
 ```bash
 ENGRAM_MODE=lite pnpm --filter mcp-server start
 # or
@@ -526,6 +545,7 @@ npx engram-lite   # zero-install via npx
 ### D6 — Markdown Vault Export (context-mem compatibility)
 
 `MarkdownVaultService`:
+
 - On each LTM memory create/update/delete, optionally writes to `VAULT_PATH` directory
 - One `.md` file per memory: frontmatter (id, tags, importance, createdAt) + content body
 - BM25 search over vault via `minisearch` (used in lite mode instead of Postgres FTS)
@@ -595,6 +615,7 @@ model OrgQuota {
 ### E3 — API Key Management
 
 **New MCP tools** (admin-scoped):
+
 - `create_api_key` — generate key, return once (only hash stored)
 - `list_api_keys` — list by prefix + metadata (never full key)
 - `revoke_api_key` — delete by prefix or id
@@ -641,7 +662,8 @@ model MemoryLink {
 ```
 
 **New service**: `MemoryGraphService`
-- `link(sourceId, targetId, linkType, weight?)` 
+
+- `link(sourceId, targetId, linkType, weight?)`
 - `unlink(sourceId, targetId)`
 - `getNeighbors(memoryId, depth: 1|2, types?: string[])` — BFS/DFS traversal
 - `getSubgraph(memoryIds[])` — return all links within a set
@@ -661,6 +683,7 @@ model MemoryLink {
 **Enhancement to `HybridSearchService`**:
 
 After initial retrieval, expand results by traversing `MemoryLink` graph:
+
 - Fetch direct neighbors (depth 1) of top-k results
 - Score neighbor expansion: `neighbor_score = parent_score * link_weight * 0.5`
 - Merge into ranked list, remove duplicates
@@ -823,6 +846,7 @@ results = client.recall("data science", limit=5)
 ### I1 — Event Log (immutable audit trail)
 
 **New Prisma model**:
+
 ```prisma
 model MemoryEvent {
   id         String   @id @default(cuid())
@@ -883,6 +907,7 @@ decay trajectory. Allows agents to pin critical memories before they fade.
 ### J1 — Token Budget Tracker
 
 **New Prisma model**:
+
 ```prisma
 model TokenBudget {
   userId           String  @id
@@ -896,6 +921,7 @@ model TokenBudget {
 ```
 
 **New service**: `TokenBudgetService`
+
 - `estimate(memories[])` — count tokens via `tiktoken` (cl100k_base)
 - `allocate(userId, totalBudget)` — apply profile/knowledge/decisions/entities fractions
 - `applyOverflow(memories[], budget, strategy)` — trim to budget via selected strategy
@@ -910,6 +936,7 @@ The most important single tool for agent UX — equivalent to "good morning brie
 
 Input: `{ userId, agentId?, maxTokens?: number, sessionContext?: string }`  
 Logic:
+
 1. Load AgentProfile for system prompt context (J1 profile fraction)
 2. Load top critical knowledge by importanceScore (J1 knowledge fraction)
 3. Load recent DECISION/MILESTONE flagged memories (J1 decisions fraction)
@@ -941,18 +968,18 @@ before feeding to LLM context. Uses B3 content-aware summarizer selection.
 
 Execute all streams in parallel. Within each stream, sequence tasks in order listed.
 
-| Priority | Stream | Why first |
-|---|---|---|
-| **P0** | A — Search | Closes biggest quality gap; unblocks C search tools |
-| **P0** | B — Intelligence + Dreamer | 13-step pipeline is the core architecture; Dreamer is unique differentiator |
-| **P0** | D — Lite Mode | Enables fast local testing; zero-dep deployment for adoption |
-| **P0** | J — Token Budget | `wake_up` is the highest-impact single agent UX feature |
-| P1 | E — Multi-tenancy & Auth | Required for enterprise production use |
-| P1 | G — Agent-native Patterns | Depends on E for scoping; high impact |
-| P1 | I — Temporal & Decision Trail | Unique capability; `MemoryEvent` log is a one-time schema change |
-| P2 | C — Tool Expansion | User-visible; depends on A+B+J for quality tools |
-| P2 | F — Knowledge Graph | Powerful but additive; can ship incrementally |
-| P3 | H — Observability & SDK | Production polish; benefits from all other streams |
+| Priority | Stream                        | Why first                                                                   |
+| -------- | ----------------------------- | --------------------------------------------------------------------------- |
+| **P0**   | A — Search                    | Closes biggest quality gap; unblocks C search tools                         |
+| **P0**   | B — Intelligence + Dreamer    | 13-step pipeline is the core architecture; Dreamer is unique differentiator |
+| **P0**   | D — Lite Mode                 | Enables fast local testing; zero-dep deployment for adoption                |
+| **P0**   | J — Token Budget              | `wake_up` is the highest-impact single agent UX feature                     |
+| P1       | E — Multi-tenancy & Auth      | Required for enterprise production use                                      |
+| P1       | G — Agent-native Patterns     | Depends on E for scoping; high impact                                       |
+| P1       | I — Temporal & Decision Trail | Unique capability; `MemoryEvent` log is a one-time schema change            |
+| P2       | C — Tool Expansion            | User-visible; depends on A+B+J for quality tools                            |
+| P2       | F — Knowledge Graph           | Powerful but additive; can ship incrementally                               |
+| P3       | H — Observability & SDK       | Production polish; benefits from all other streams                          |
 
 ---
 
@@ -960,21 +987,20 @@ Execute all streams in parallel. Within each stream, sequence tasks in order lis
 
 All migrations are additive (no breaking changes to existing tables).
 
-| Migration | Tables affected | Breaking? | Stream |
-|---|---|---|---|
-| Add FTS tsvector column + GIN index | memories | No | A |
-| Add pg_trgm extension + trigram index | memories | No | A |
-| Add importanceScore, importanceFlags, accessCount, lastAccessedAt, pinned, status, compressionTier | memories | No | B |
-| Add threadId | memories | No | G |
-| Add MemoryEvent (immutable audit log with snapshots) | new table | No | I |
-| Add DreamerRun | new table | No | B |
-| Add Organization, OrganizationMember, ApiKey, OrgQuota | new tables | No | E |
-| Add MemoryLink | new table | No | F |
-| Add AgentProfile | new table | No | G |
-| Add WorkingMemory (session-scoped) | new table | No | G |
-| Add TokenBudget | new table | No | J |
-| Add WebhookConfig | new table | No | H |
-| Add AnalyticsEvent | new table | No | H |
+| Migration                                                                                          | Tables affected | Breaking? | Stream |
+| -------------------------------------------------------------------------------------------------- | --------------- | --------- | ------ |
+| Add FTS tsvector column + GIN index                                                                | memories        | No        | A      |
+| Add pg_trgm extension + trigram index                                                              | memories        | No        | A      |
+| Add importanceScore, importanceFlags, accessCount, lastAccessedAt, pinned, status, compressionTier | memories        | No        | B      |
+| Add threadId                                                                                       | memories        | No        | G      |
+| Add MemoryEvent (immutable audit log with snapshots)                                               | new table       | No        | I      |
+| Add DreamerRun                                                                                     | new table       | No        | B      |
+| Add Organization, OrganizationMember, ApiKey, OrgQuota                                             | new tables      | No        | E      |
+| Add MemoryLink                                                                                     | new table       | No        | F      |
+| Add AgentProfile                                                                                   | new table       | No        | G      |
+| Add TokenBudget                                                                                    | new table       | No        | J      |
+| Add WebhookConfig                                                                                  | new table       | No        | H      |
+| Add AnalyticsEvent                                                                                 | new table       | No        | H      |
 
 ---
 
@@ -1022,14 +1048,14 @@ pnpm eval                    # recall quality regression
 pnpm bench:backends          # latency regression (p99 < 100ms for recall)
 ```
 
-| Stream | Additional gate |
-|---|---|
-| A | Hybrid precision@5 ≥ 0.40 (vs 0.267 vector-only); p99 recall latency ≤ 100ms |
-| B | Dreamer cycle completes in < 30s on 10k memories; compression ratio ≥ 80% for log content |
-| D | Lite-mode cold start < 3s; memory footprint < 150MB |
-| E | Auth integration test: no userId cross-contamination between tenants |
-| I | `temporal_query` correctness test: state at T1 never includes events after T1 |
-| J | `wake_up` response ≤ maxTokens budget (test with tiktoken); latency < 500ms |
+| Stream | Additional gate                                                                           |
+| ------ | ----------------------------------------------------------------------------------------- |
+| A      | Hybrid precision@5 ≥ 0.40 (vs 0.267 vector-only); p99 recall latency ≤ 100ms              |
+| B      | Dreamer cycle completes in < 30s on 10k memories; compression ratio ≥ 80% for log content |
+| D      | Lite-mode cold start < 3s; memory footprint < 150MB                                       |
+| E      | Auth integration test: no userId cross-contamination between tenants                      |
+| I      | `temporal_query` correctness test: state at T1 never includes events after T1             |
+| J      | `wake_up` response ≤ maxTokens budget (test with tiktoken); latency < 500ms               |
 
 ---
 
