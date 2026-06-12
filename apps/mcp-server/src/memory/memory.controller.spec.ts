@@ -177,7 +177,7 @@ describe('MemoryController', () => {
           createdFrom: '2025-06-01T00:00:00Z',
           createdTo: '2025-01-01T00:00:00Z',
         }),
-      ).rejects.toThrow(/Failed to recall memories/);
+      ).rejects.toThrow(/createdFrom must be before or equal to createdTo/);
     });
 
     it('should reject invalid input', async () => {
