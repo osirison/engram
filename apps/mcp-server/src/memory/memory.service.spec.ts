@@ -500,7 +500,23 @@ describe('MemoryService', () => {
           limit: undefined,
           scope: undefined,
           tags: undefined,
+          createdFrom: undefined,
+          createdTo: undefined,
         },
+      );
+    });
+
+    it('should forward date-range filters to the LTM service', async () => {
+      const createdFrom = new Date('2025-01-01T00:00:00Z');
+      const createdTo = new Date('2025-06-01T00:00:00Z');
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      await service.recall('user-1', 'query', { createdFrom, createdTo });
+
+      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+        'user-1',
+        'query',
+        expect.objectContaining({ createdFrom, createdTo }),
       );
     });
   });

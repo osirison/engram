@@ -132,6 +132,8 @@ describe('MemoryController', () => {
         limit: 5,
         scope: 'project-a',
         tags: ['greeting'],
+        createdFrom: undefined,
+        createdTo: undefined,
       });
 
       const payload = parseResponsePayload<{
@@ -143,6 +145,39 @@ describe('MemoryController', () => {
       expect(payload.count).toBe(1);
       expect(payload.results[0]!.score).toBe(0.92);
       expect(payload.results[0]!.memory.id).toBe('ltm-1');
+    });
+
+    it('should pass date-range filters to the service', async () => {
+      const userId = 'clm0000000000000000000000';
+      mockMemoryService.recall.mockResolvedValue([]);
+
+      await controller.recall({
+        userId,
+        query: 'recent notes',
+        createdFrom: '2025-01-01T00:00:00Z',
+        createdTo: '2025-06-01T00:00:00Z',
+      });
+
+      expect(mockMemoryService.recall).toHaveBeenCalledWith(
+        userId,
+        'recent notes',
+        expect.objectContaining({
+          createdFrom: new Date('2025-01-01T00:00:00Z'),
+          createdTo: new Date('2025-06-01T00:00:00Z'),
+        }),
+      );
+    });
+
+    it('should reject when createdFrom is after createdTo', async () => {
+      const userId = 'clm0000000000000000000000';
+      await expect(
+        controller.recall({
+          userId,
+          query: 'notes',
+          createdFrom: '2025-06-01T00:00:00Z',
+          createdTo: '2025-01-01T00:00:00Z',
+        }),
+      ).rejects.toThrow(/createdFrom must be before or equal to createdTo/);
     });
 
     it('should reject invalid input', async () => {
