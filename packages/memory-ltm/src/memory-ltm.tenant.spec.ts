@@ -232,7 +232,7 @@ describe('MemoryLtmService — tenant isolation', () => {
     });
 
     it('cannot delete org A memory by specifying org B', async () => {
-      // findFirst with ORG_B will return null → update call will not be reached
+      // deleteMany with organizationId=ORG_B will match 0 rows → returns false
       const deleted = await service.delete(USER_A, 'mem-a1', ORG_B);
       expect(deleted).toBe(false);
     });

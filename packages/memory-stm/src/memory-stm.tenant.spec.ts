@@ -115,6 +115,15 @@ describe('STM tenant isolation', () => {
       const key = kb.buildMemoryKey(USER_A, MEM_ID);
       expect(kb.extractOrgId(key)).toBeNull();
     });
+
+    it('extractOrgId handles prefix with extra colons (e.g. memory:stm:v2)', () => {
+      const kb2 = new StmKeyBuilder('memory:stm:v2');
+      const orgKey = kb2.buildMemoryKey(USER_A, MEM_ID, ORG_A);
+      const personalKey = kb2.buildMemoryKey(USER_A, MEM_ID);
+      // Should correctly identify org vs personal regardless of prefix depth
+      expect(kb2.extractOrgId(orgKey)).toBe(ORG_A);
+      expect(kb2.extractOrgId(personalKey)).toBeNull();
+    });
   });
 
   describe('MemoryStmService — cross-tenant isolation', () => {

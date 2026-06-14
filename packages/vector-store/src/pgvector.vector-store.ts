@@ -213,7 +213,10 @@ export class PgVectorStore implements VectorStore {
     params.push(filter.userId);
     clauses.push(`"userId" = $${params.length}`);
 
-    if (filter.organizationId) {
+    if (filter.organizationId !== undefined) {
+      if (!filter.organizationId) {
+        throw new Error('organizationId must not be empty when provided');
+      }
       params.push(filter.organizationId);
       clauses.push(`"organizationId" = $${params.length}`);
     }

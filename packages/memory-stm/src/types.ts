@@ -29,6 +29,7 @@ export interface ListStmMemoryOptions {
   limit?: number;
   cursor?: string;
   tags?: string[];
+  organizationId?: string;
 }
 
 // Paginated result for list operations
@@ -147,8 +148,8 @@ export class StmKeyBuilder {
    * Build Redis key for a memory.
    *
    * Key format:
-   * - Org-scoped:  `{prefix}:{orgId}:{userId}:{memoryId}` (5 segments)
-   * - Personal:    `{prefix}:{userId}:{memoryId}` (4 segments)
+   * - Org-scoped:  `{prefix}:{orgId}:{userId}:{memoryId}` (prefixParts + 3 segments)
+   * - Personal:    `{prefix}:{userId}:{memoryId}` (prefixParts + 2 segments)
    */
   buildMemoryKey(userId: string, memoryId: string, organizationId?: string): string {
     if (organizationId) {
@@ -203,14 +204,17 @@ export class StmKeyBuilder {
 
   /**
    * Extract organization ID from Redis key.
-   * Returns null for personal (4-segment) keys.
+   * Returns null for personal (prefixParts + 2 segment) keys.
+   *
+   * Uses the prefix colon-count to determine the expected segment lengths so
+   * a prefix containing extra `:` characters does not cause misclassification.
    */
   extractOrgId(key: string): string | null {
+    const prefixParts = this.prefix.split(':').length;
     const parts = key.split(':');
-    // 5-segment key: [prefix-part, 'stm', orgId, userId, memoryId]
-    // prefix itself may contain colons; org is always 3rd from end
-    if (parts.length >= 5) {
-      return parts[parts.length - 3] ?? null;
+    // Org-scoped key: prefixParts + orgId + userId + memId = prefixParts + 3
+    if (parts.length === prefixParts + 3) {
+      return parts[prefixParts] ?? null;
     }
     return null;
   }

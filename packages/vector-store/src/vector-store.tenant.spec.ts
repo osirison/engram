@@ -70,6 +70,12 @@ describe('QdrantVectorStore — tenant isolation', () => {
     ).rejects.toThrow('userId');
   });
 
+  it('throws when organizationId is provided as empty string', async () => {
+    await expect(store.search(VEC, { userId: USER_A, organizationId: '' })).rejects.toThrow(
+      'organizationId must not be empty when provided'
+    );
+  });
+
   it('org A and org B filters are distinct', async () => {
     await store.search(VEC, { userId: USER_A, organizationId: ORG_A });
     await store.search(VEC, { userId: USER_A, organizationId: ORG_B });
@@ -197,5 +203,11 @@ describe('PgVectorStore — tenant isolation', () => {
     const results = await store.search(VEC, { userId: USER_A });
     expect(results).toHaveLength(1);
     expect(results[0]!.payload).not.toHaveProperty('organizationId');
+  });
+
+  it('throws when organizationId is provided as empty string', async () => {
+    await expect(store.search(VEC, { userId: USER_A, organizationId: '' })).rejects.toThrow(
+      'organizationId must not be empty when provided'
+    );
   });
 });
