@@ -9,7 +9,6 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { MemoryStmService } from '@engram/memory-stm';
 import {
   MemoryLtmService,
-  LtmPromotionError,
   LtmMemoryQuotaExceededError,
 } from '@engram/memory-ltm';
 
@@ -32,14 +31,22 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly stmService?: MemoryStmService,
     @Optional() private readonly ltmService?: MemoryLtmService,
   ) {
-    this.accessThreshold = parseInt(
-      process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD ?? '3',
-      10,
+    this.accessThreshold = ConsolidationService.parseEnvInt(
+      process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD,
+      3,
     );
-    this.intervalMs = parseInt(
-      process.env.STM_CONSOLIDATION_INTERVAL_MS ?? '300000',
-      10,
+    this.intervalMs = ConsolidationService.parseEnvInt(
+      process.env.STM_CONSOLIDATION_INTERVAL_MS,
+      300_000,
     );
+  }
+
+  private static parseEnvInt(
+    raw: string | undefined,
+    fallback: number,
+  ): number {
+    const n = parseInt(raw ?? '', 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
   }
 
   onModuleInit(): void {
@@ -131,17 +138,15 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
   }
 
   private isAlreadyPromoted(error: unknown): boolean {
-    if (error instanceof LtmPromotionError) {
-      return false;
-    }
-    // Prisma unique constraint violation (P2002) — memory ID already exists in LTM.
-    if (error instanceof Error) {
-      return (
-        error.message.includes('Unique constraint') ||
-        error.message.includes('unique constraint') ||
-        error.message.includes('P2002')
-      );
-    }
-    return false;
+    if (!(error instanceof Error)) return false;
+    // Prisma P2002 (unique constraint) means the memory was already promoted.
+    // MemoryLtmService.promote() wraps unexpected errors in LtmPromotionError,
+    // so the signal may appear either as a raw Prisma error or inside the
+    // LtmPromotionError message. Check the message in both cases.
+    return (
+      error.message.includes('Unique constraint') ||
+      error.message.includes('unique constraint') ||
+      error.message.includes('P2002')
+    );
   }
 }

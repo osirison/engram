@@ -187,6 +187,7 @@ describe('MCP Tools Integration', () => {
       expect(names).toContain('get_reindex_status');
       expect(names).toContain('cancel_reindex_job');
       expect(names).toContain('retry_reindex_job');
+      expect(names).toContain('consolidate_memories');
     });
 
     it('should attach a callable handler to each tool', () => {

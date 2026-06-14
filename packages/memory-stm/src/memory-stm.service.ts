@@ -98,33 +98,33 @@ export class MemoryStmService {
       throw new StmMemoryNotFoundError(memoryId);
     }
 
+    // Narrow the parse error so Redis/network failures later in this method
+    // are not silently converted to StmMemoryNotFoundError.
+    let memory: StmMemory;
     try {
-      const memory: StmMemory = JSON.parse(redisValue);
-
-      // Check if memory has expired (additional safety check)
-      if (memory.expiresAt && new Date() > new Date(memory.expiresAt)) {
-        await this.redisService.del(redisKey);
-        throw new StmMemoryExpiredError(memoryId);
-      }
-
-      // Increment access counter and persist back to Redis.
-      // We read the remaining TTL first so the SET doesn't silently remove
-      // the expiry. Under concurrent reads the count may be under-reported by
-      // at most (readers - 1), which is acceptable for a promotion heuristic.
-      const updatedMemory: StmMemory = { ...memory, accessCount: (memory.accessCount ?? 0) + 1 };
-      const remainingTtl = await this.redisService.ttl(redisKey);
-      if (remainingTtl > 0) {
-        await this.redisService.set(redisKey, JSON.stringify(updatedMemory), remainingTtl);
-      }
-
-      return updatedMemory;
-    } catch (error) {
-      if (error instanceof StmMemoryExpiredError) {
-        throw error;
-      }
-      this.logger.error(`Failed to parse STM memory ${memoryId}: ${error}`);
+      memory = JSON.parse(redisValue) as StmMemory;
+    } catch {
+      this.logger.error(`Failed to parse STM memory ${memoryId}`);
       throw new StmMemoryNotFoundError(memoryId);
     }
+
+    // Check if memory has expired (additional safety check)
+    if (memory.expiresAt && new Date() > new Date(memory.expiresAt)) {
+      await this.redisService.del(redisKey);
+      throw new StmMemoryExpiredError(memoryId);
+    }
+
+    // Increment access counter and persist back to Redis.
+    // We read the remaining TTL first so the SET doesn't silently remove
+    // the expiry. Under concurrent reads the count may be under-reported by
+    // at most (readers - 1), which is acceptable for a promotion heuristic.
+    const updatedMemory: StmMemory = { ...memory, accessCount: (memory.accessCount ?? 0) + 1 };
+    const remainingTtl = await this.redisService.ttl(redisKey);
+    if (remainingTtl > 0) {
+      await this.redisService.set(redisKey, JSON.stringify(updatedMemory), remainingTtl);
+    }
+
+    return updatedMemory;
   }
 
   /**
@@ -387,6 +387,12 @@ export class MemoryStmService {
    * @param userId    - When provided, restrict the scan to this user only.
    */
   async findCandidates(threshold: number, userId?: string): Promise<StmMemory[]> {
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      throw new Error(
+        `Invalid consolidation threshold: ${threshold}. Must be a positive finite number.`
+      );
+    }
+
     this.logger.debug(`Scanning for consolidation candidates (threshold=${threshold})`);
 
     const pattern = userId

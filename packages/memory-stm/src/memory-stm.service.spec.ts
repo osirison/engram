@@ -885,5 +885,45 @@ describe('MemoryStmService', () => {
       expect(candidates).toHaveLength(1);
       expect(candidates[0]?.id).toBe('m2');
     });
+
+    it('should throw for non-positive threshold', async () => {
+      await expect(service.findCandidates(0)).rejects.toThrow('Invalid consolidation threshold');
+      await expect(service.findCandidates(-1)).rejects.toThrow('Invalid consolidation threshold');
+    });
+
+    it('should throw for NaN or Infinity threshold', async () => {
+      await expect(service.findCandidates(NaN)).rejects.toThrow('Invalid consolidation threshold');
+      await expect(service.findCandidates(Infinity)).rejects.toThrow(
+        'Invalid consolidation threshold'
+      );
+    });
+  });
+
+  describe('findById error handling', () => {
+    const userId = 'clq1234567890abcdef1234';
+    const memoryId = 'clq0000000001abcdef0001';
+
+    it('should propagate Redis errors from ttl() without masking as NotFound', async () => {
+      mockRedisService.get.mockResolvedValue(
+        JSON.stringify({
+          id: memoryId,
+          userId,
+          content: 'x',
+          metadata: null,
+          tags: [],
+          embedding: [],
+          type: 'short-term',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+          ttl: 3600,
+          accessCount: 0,
+        })
+      );
+      const redisError = new Error('ECONNREFUSED');
+      mockRedisService.ttl.mockRejectedValue(redisError);
+
+      await expect(service.findById(userId, memoryId)).rejects.toThrow('ECONNREFUSED');
+    });
   });
 });

@@ -126,7 +126,24 @@ describe('ConsolidationService', () => {
       expect(result.failed).toBe(1);
     });
 
-    it('should not treat LtmPromotionError as already-promoted', async () => {
+    it('should count skipped when LtmPromotionError wraps a P2002 unique constraint', async () => {
+      // promote() wraps Prisma errors in LtmPromotionError; the P2002 signal
+      // appears in the LtmPromotionError message.
+      stmService.findCandidates.mockResolvedValue([makeStmMemory()]);
+      ltmService.promote.mockRejectedValue(
+        new LtmPromotionError(
+          'clq0000000001abcdef0001',
+          'Unique constraint failed on the fields: P2002',
+        ),
+      );
+
+      const result = await service.run();
+
+      expect(result.skipped).toBe(1);
+      expect(result.failed).toBe(0);
+    });
+
+    it('should count failed for LtmPromotionError without unique-constraint signal', async () => {
       stmService.findCandidates.mockResolvedValue([makeStmMemory()]);
       ltmService.promote.mockRejectedValue(
         new LtmPromotionError('clq0000000001abcdef0001', 'STM not found'),
