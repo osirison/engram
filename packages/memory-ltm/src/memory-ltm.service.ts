@@ -29,6 +29,7 @@ import {
 type PrismaMemory = {
   id: string;
   userId: string;
+  organizationId: string | null;
   content: string;
   metadata: unknown; // Using unknown for type safety; must be type-checked before use
   tags: string[];
@@ -86,6 +87,7 @@ export class MemoryLtmService {
       const memory = await (this.prisma as any).memory.create({
         data: {
           userId: validatedInput.userId,
+          organizationId: validatedInput.organizationId ?? null,
           content: validatedInput.content,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           metadata: validatedInput.metadata as any,
@@ -266,6 +268,10 @@ export class MemoryLtmService {
         type: MemoryType.LONG_TERM,
       };
 
+      if (validatedOptions.organizationId) {
+        whereClause.organizationId = validatedOptions.organizationId;
+      }
+
       // Add filters
       if (validatedOptions.tags && validatedOptions.tags.length > 0) {
         whereClause.tags = {
@@ -355,6 +361,10 @@ export class MemoryLtmService {
         userId: userId,
         type: MemoryType.LONG_TERM,
       };
+
+      if (filters?.organizationId) {
+        whereClause.organizationId = filters.organizationId;
+      }
 
       // Add filters if provided
       if (filters?.tags && filters.tags.length > 0) {
@@ -810,6 +820,7 @@ export class MemoryLtmService {
   private mapToLtmMemory(memory: PrismaMemory): LtmMemory {
     return {
       ...memory,
+      organizationId: memory.organizationId ?? undefined,
       type: 'long-term' as const,
       expiresAt: null,
       metadata: memory.metadata as Record<string, unknown> | null,

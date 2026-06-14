@@ -11,6 +11,37 @@ datasource db {
   extensions = [vector]
 }
 
+model Organization {
+  id        String   @id @default(cuid(2))
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  memberships Membership[]
+  memories    Memory[]
+
+  @@map("organizations")
+}
+
+model Membership {
+  id             String       @id @default(cuid(2))
+  userId         String
+  organizationId String
+  role           String       @default("member") // 'owner' | 'admin' | 'member'
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relationships
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
 model User {
   id        String   @id @default(cuid(2))
   email     String   @unique
@@ -18,22 +49,24 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relationships
-  memories  Memory[]
+  memberships Membership[]
+  memories    Memory[]
 
   @@map("users")
 }
 
 model Memory {
-  id        String   @id @default(cuid(2))
-  userId    String
-  content   String   @db.Text // Support up to 10KB content
-  metadata  Json?
-  tags      String[]
-  type      String   // 'short-term' | 'long-term'
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  expiresAt DateTime? // For short-term memories only
-  embedding Float[]   // Vector embedding (1536 dims for text-embedding-3-small)
+  id             String   @id @default(cuid(2))
+  userId         String
+  organizationId String?
+  content        String   @db.Text // Support up to 10KB content
+  metadata       Json?
+  tags           String[]
+  type           String   // 'short-term' | 'long-term'
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  expiresAt      DateTime? // For short-term memories only
+  embedding      Float[]   // Vector embedding (1536 dims for text-embedding-3-small)
 
   // Native pgvector column used by the pgvector VectorStore backend. Managed via
   // raw SQL (see migration 20260601090000_pgvector_provider); typed as
@@ -41,11 +74,14 @@ model Memory {
   embeddingVec Unsupported("vector(1536)")? @map("embedding_vec")
 
   // Relationships
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   // Indexes for performance
   @@index([userId])
   @@index([userId, type])
+  @@index([organizationId])
+  @@index([organizationId, type])
   @@index([expiresAt])
   @@map("memories")
 }
