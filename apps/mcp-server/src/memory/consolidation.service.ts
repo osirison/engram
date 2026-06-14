@@ -105,7 +105,11 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
 
     for (const memory of candidates) {
       try {
-        await this.ltmService.promote(memory.userId, memory.id);
+        await this.ltmService.promote(
+          memory.userId,
+          memory.id,
+          memory.organizationId,
+        );
         promoted++;
         this.logger.debug(
           `Promoted STM memory ${memory.id} for user ${memory.userId}`,

@@ -180,4 +180,61 @@ describe('MemoryLtmService — tenant isolation', () => {
       expect(call.where).not.toHaveProperty('organizationId');
     });
   });
+
+  describe('get — org scope filter', () => {
+    it('returns memory when organizationId matches', async () => {
+      const result = await service.get(USER_A, 'mem-a1', ORG_A);
+      expect(result).not.toBeNull();
+      expect(result!.organizationId).toBe(ORG_A);
+    });
+
+    it('returns null when organizationId does not match', async () => {
+      const result = await service.get(USER_A, 'mem-a1', ORG_B);
+      expect(result).toBeNull();
+    });
+
+    it('passes organizationId to prisma.memory.findFirst when provided', async () => {
+      await service.get(USER_A, 'mem-a1', ORG_A);
+
+      expect(prisma.memory.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_A }),
+        })
+      );
+    });
+
+    it('omits organizationId from findFirst when not provided', async () => {
+      await service.get(USER_A, 'mem-a1');
+
+      const call = prisma.memory.findFirst.mock.calls[0]![0];
+      expect(call.where).not.toHaveProperty('organizationId');
+    });
+  });
+
+  describe('delete — org scope filter', () => {
+    it('passes organizationId to prisma.memory.deleteMany when provided', async () => {
+      prisma.memory.deleteMany.mockResolvedValueOnce({ count: 1 });
+      await service.delete(USER_A, 'mem-a1', ORG_A);
+
+      expect(prisma.memory.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_A }),
+        })
+      );
+    });
+
+    it('omits organizationId from deleteMany when not provided', async () => {
+      prisma.memory.deleteMany.mockResolvedValueOnce({ count: 1 });
+      await service.delete(USER_A, 'mem-a1');
+
+      const call = prisma.memory.deleteMany.mock.calls[0]![0];
+      expect(call.where).not.toHaveProperty('organizationId');
+    });
+
+    it('cannot delete org A memory by specifying org B', async () => {
+      // findFirst with ORG_B will return null → update call will not be reached
+      const deleted = await service.delete(USER_A, 'mem-a1', ORG_B);
+      expect(deleted).toBe(false);
+    });
+  });
 });

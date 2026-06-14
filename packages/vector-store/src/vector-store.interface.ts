@@ -31,6 +31,8 @@ export interface VectorRecord {
 export interface VectorPayload {
   /** Owning user/tenant; every search must be scoped by this. */
   userId: string;
+  /** Organization the memory belongs to; absent for personal memories. */
+  organizationId?: string;
   /** Optional logical namespace (agent / session / project). */
   scope?: string;
   /** Memory type, e.g. `long-term`. */
@@ -51,6 +53,8 @@ export interface VectorPayload {
  */
 export interface VectorSearchFilter {
   userId: string;
+  /** When set, restricts results to the given organization. */
+  organizationId?: string;
   scope?: string;
   type?: string;
   /** Match records containing all of these tags. */

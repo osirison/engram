@@ -116,20 +116,27 @@ export class MemoryLtmService {
   }
 
   /**
-   * Retrieve a long-term memory by ID
+   * Retrieve a long-term memory by ID.
+   *
+   * When `organizationId` is provided the query is narrowed to that org's rows,
+   * preventing cross-tenant access. Omitting it is permitted for admin / system
+   * callers (e.g. reindex) but must NOT be used in user-facing paths — the auth
+   * layer (#128, #130) must always supply the caller's org context.
    */
-  async get(userId: string, memoryId: string): Promise<LtmMemory | null> {
+  async get(userId: string, memoryId: string, organizationId?: string): Promise<LtmMemory | null> {
     this.logger.debug(`Getting LTM memory: ${memoryId} for user: ${userId}`);
 
     try {
+      const where: Record<string, unknown> = {
+        id: memoryId,
+        userId: userId,
+        type: MemoryType.LONG_TERM,
+      };
+      if (organizationId !== undefined) {
+        where.organizationId = organizationId;
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const memory = await (this.prisma as any).memory.findFirst({
-        where: {
-          id: memoryId,
-          userId: userId,
-          type: MemoryType.LONG_TERM,
-        },
-      });
+      const memory = await (this.prisma as any).memory.findFirst({ where });
 
       if (!memory) {
         return null;
@@ -143,17 +150,24 @@ export class MemoryLtmService {
   }
 
   /**
-   * Update a long-term memory
+   * Update a long-term memory.
+   * Pass `organizationId` in user-facing paths to prevent cross-tenant writes.
+   * See `get()` for the full isolation contract.
    */
-  async update(userId: string, memoryId: string, input: UpdateLtmMemoryData): Promise<LtmMemory> {
+  async update(
+    userId: string,
+    memoryId: string,
+    input: UpdateLtmMemoryData,
+    organizationId?: string
+  ): Promise<LtmMemory> {
     this.logger.debug(`Updating LTM memory: ${memoryId} for user: ${userId}`);
 
     // Validate input
     const validatedInput = validateUpdateLtmMemory(input);
 
     try {
-      // Check if memory exists and belongs to user
-      const existing = await this.get(userId, memoryId);
+      // Check if memory exists and belongs to user (org-scoped when provided)
+      const existing = await this.get(userId, memoryId, organizationId);
       if (!existing) {
         throw new LtmMemoryNotFoundError(memoryId);
       }
@@ -184,14 +198,22 @@ export class MemoryLtmService {
         }
       }
 
+      // Build the where clause; Prisma requires a unique filter for update.
+      // We enforce org scope via the prior get() call and pass it here too so
+      // a concurrent row move cannot be exploited between the two queries.
+      const updateWhere: Record<string, unknown> = {
+        id: memoryId,
+        userId: userId,
+        type: MemoryType.LONG_TERM,
+      };
+      if (organizationId !== undefined) {
+        updateWhere.organizationId = organizationId;
+      }
+
       // Update memory in database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const memory = await (this.prisma as any).memory.update({
-        where: {
-          id: memoryId,
-          userId: userId,
-          type: MemoryType.LONG_TERM,
-        },
+        where: updateWhere,
         data: updateData,
       });
 
@@ -220,20 +242,24 @@ export class MemoryLtmService {
   }
 
   /**
-   * Delete a long-term memory
+   * Delete a long-term memory.
+   * Pass `organizationId` in user-facing paths to prevent cross-tenant deletes.
+   * See `get()` for the full isolation contract.
    */
-  async delete(userId: string, memoryId: string): Promise<boolean> {
+  async delete(userId: string, memoryId: string, organizationId?: string): Promise<boolean> {
     this.logger.debug(`Deleting LTM memory: ${memoryId} for user: ${userId}`);
 
     try {
+      const deleteWhere: Record<string, unknown> = {
+        id: memoryId,
+        userId: userId,
+        type: MemoryType.LONG_TERM,
+      };
+      if (organizationId !== undefined) {
+        deleteWhere.organizationId = organizationId;
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (this.prisma as any).memory.deleteMany({
-        where: {
-          id: memoryId,
-          userId: userId,
-          type: MemoryType.LONG_TERM,
-        },
-      });
+      const result = await (this.prisma as any).memory.deleteMany({ where: deleteWhere });
 
       const deleted = result.count > 0;
       if (deleted) {
@@ -425,10 +451,10 @@ export class MemoryLtmService {
   }
 
   /**
-   * Promote a memory from short-term to long-term storage
-   * This method transfers a memory from Redis STM to PostgreSQL LTM
+   * Promote a memory from short-term to long-term storage.
+   * Pass `organizationId` to preserve the org scope through the STM→LTM transfer.
    */
-  async promote(userId: string, memoryId: string): Promise<LtmMemory> {
+  async promote(userId: string, memoryId: string, organizationId?: string): Promise<LtmMemory> {
     this.logger.debug(`Promoting memory ${memoryId} to LTM for user: ${userId}`);
 
     if (!this.stmService) {
@@ -436,8 +462,8 @@ export class MemoryLtmService {
     }
 
     try {
-      // Step 1: Get memory from STM service
-      const stmMemory = await this.stmService.findById(userId, memoryId);
+      // Step 1: Get memory from STM service (org-scoped so we find the right key)
+      const stmMemory = await this.stmService.findById(userId, memoryId, organizationId);
       if (!stmMemory) {
         throw new LtmPromotionError(memoryId, 'Memory not found in short-term storage');
       }
@@ -454,17 +480,21 @@ export class MemoryLtmService {
         embedding = result?.embedding ?? [];
       }
 
+      // Org scope: prefer the explicit param, fall back to what's stored in the STM payload.
+      const resolvedOrgId = organizationId ?? stmMemory.organizationId ?? null;
+
       // Step 4: Begin database transaction for atomic operation
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (this.prisma as any).$transaction(async (prisma: any) => {
         // Re-check quota inside transaction to guard against races.
         await this.checkQuota(userId);
 
-        // Create memory in LTM
+        // Create memory in LTM, preserving the org scope from STM.
         return await prisma.memory.create({
           data: {
             id: stmMemory.id,
             userId: stmMemory.userId,
+            organizationId: resolvedOrgId,
             content: stmMemory.content,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             metadata: stmMemory.metadata as any,
@@ -480,7 +510,7 @@ export class MemoryLtmService {
 
       // Step 5: Delete from STM storage (only after successful LTM creation)
       try {
-        await this.stmService.delete(userId, memoryId);
+        await this.stmService.delete(userId, memoryId, organizationId ?? stmMemory.organizationId);
         this.logger.debug(`Successfully promoted memory ${memoryId} from STM to LTM`);
       } catch (stmDeleteError) {
         // Log warning but don't fail the operation since LTM creation succeeded
@@ -583,6 +613,7 @@ export class MemoryLtmService {
         queryVector,
         {
           userId,
+          organizationId: options?.organizationId,
           type: MemoryType.LONG_TERM,
           scope: options?.scope,
           tags: options?.tags,
@@ -597,14 +628,16 @@ export class MemoryLtmService {
       }
 
       const ids = hits.map((hit) => hit.id);
+      const memWhere: Record<string, unknown> = {
+        id: { in: ids },
+        userId,
+        type: MemoryType.LONG_TERM,
+      };
+      if (options?.organizationId) {
+        memWhere.organizationId = options.organizationId;
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const memories = await (this.prisma as any).memory.findMany({
-        where: {
-          id: { in: ids },
-          userId,
-          type: MemoryType.LONG_TERM,
-        },
-      });
+      const memories = await (this.prisma as any).memory.findMany({ where: memWhere });
 
       const byId = new Map<string, PrismaMemory>(
         memories.map((memory: PrismaMemory) => [memory.id, memory])
@@ -799,6 +832,9 @@ export class MemoryLtmService {
       tags: memory.tags ?? [],
       createdAt: memory.createdAt.getTime(),
     };
+    if (memory.organizationId) {
+      payload.organizationId = memory.organizationId;
+    }
     const scope = this.extractScope(memory.metadata);
     if (scope) {
       payload.scope = scope;
