@@ -463,8 +463,8 @@ describe('MemoryLtmService', () => {
 
       const result = await service.promote(mockUserId, mockMemoryId);
 
-      expect(stmService.findById).toHaveBeenCalledWith(mockUserId, mockMemoryId);
-      expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId);
+      expect(stmService.findById).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
+      expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
       expect(result).toEqual(
         expect.objectContaining({
           type: 'long-term',

@@ -29,6 +29,7 @@ export interface ListStmMemoryOptions {
   limit?: number;
   cursor?: string;
   tags?: string[];
+  organizationId?: string;
 }
 
 // Paginated result for list operations
@@ -53,6 +54,8 @@ export interface StmMemory extends Memory {
    * scans do not increment this counter.
    */
   accessCount: number;
+  /** Organization scope; absent for personal (non-org) memories. */
+  organizationId?: string;
 }
 
 // Validation schemas for STM operations
@@ -84,6 +87,7 @@ const ttlSchema = z
 // Create STM memory schema
 export const createStmMemorySchema = z.object({
   userId: userIdSchema,
+  organizationId: z.string().cuid2().optional(),
   content: contentSchema,
   metadata: metadataSchema,
   tags: tagsSchema.optional(),
@@ -106,6 +110,7 @@ export const listStmOptionsSchema = z.object({
     .optional()
     .default('0'),
   tags: z.array(z.string()).optional(),
+  organizationId: z.string().cuid2().optional(),
 });
 
 // Type exports
@@ -140,16 +145,32 @@ export class StmKeyBuilder {
   constructor(private readonly prefix: string = 'memory:stm') {}
 
   /**
-   * Build Redis key for a memory
+   * Build Redis key for a memory.
+   *
+   * Key format:
+   * - Org-scoped:  `{prefix}:{orgId}:{userId}:{memoryId}` (prefixParts + 3 segments)
+   * - Personal:    `{prefix}:{userId}:{memoryId}` (prefixParts + 2 segments)
    */
-  buildMemoryKey(userId: string, memoryId: string): string {
+  buildMemoryKey(userId: string, memoryId: string, organizationId?: string): string {
+    if (organizationId) {
+      return `${this.prefix}:${organizationId}:${userId}:${memoryId}`;
+    }
     return `${this.prefix}:${userId}:${memoryId}`;
   }
 
   /**
-   * Build Redis key pattern for user memories
+   * Build Redis SCAN pattern for a user's memories.
+   *
+   * - With `organizationId`: matches only keys in that org's namespace.
+   * - Without: matches only the user's personal (non-org) keys.
+   *
+   * To scan across both namespaces, call `buildGlobalPattern()` and
+   * filter the results by `extractUserId`.
    */
-  buildUserPattern(userId: string): string {
+  buildUserPattern(userId: string, organizationId?: string): string {
+    if (organizationId) {
+      return `${this.prefix}:${organizationId}:${userId}:*`;
+    }
     return `${this.prefix}:${userId}:*`;
   }
 
@@ -162,7 +183,8 @@ export class StmKeyBuilder {
   }
 
   /**
-   * Extract memory ID from Redis key
+   * Extract memory ID from Redis key (last segment).
+   * Works for both 4-segment and 5-segment key formats.
    */
   extractMemoryId(key: string): string | null {
     const parts = key.split(':');
@@ -171,12 +193,30 @@ export class StmKeyBuilder {
   }
 
   /**
-   * Extract user ID from Redis key
+   * Extract user ID from Redis key (second-to-last segment).
+   * Works for both 4-segment and 5-segment key formats.
    */
   extractUserId(key: string): string | null {
     const parts = key.split(':');
     const userId = parts[parts.length - 2];
     return userId && userId.length > 0 ? userId : null;
+  }
+
+  /**
+   * Extract organization ID from Redis key.
+   * Returns null for personal (prefixParts + 2 segment) keys.
+   *
+   * Uses the prefix colon-count to determine the expected segment lengths so
+   * a prefix containing extra `:` characters does not cause misclassification.
+   */
+  extractOrgId(key: string): string | null {
+    const prefixParts = this.prefix.split(':').length;
+    const parts = key.split(':');
+    // Org-scoped key: prefixParts + orgId + userId + memId = prefixParts + 3
+    if (parts.length === prefixParts + 3) {
+      return parts[prefixParts] ?? null;
+    }
+    return null;
   }
 }
 

@@ -119,6 +119,12 @@ export class QdrantVectorStore implements VectorStore {
 
   private buildFilter(filter: VectorSearchFilter): QdrantFilter {
     const must: QdrantFilter['must'] = [{ key: 'userId', match: { value: filter.userId } }];
+    if (filter.organizationId !== undefined) {
+      if (!filter.organizationId) {
+        throw new Error('organizationId must not be empty when provided');
+      }
+      must.push({ key: 'organizationId', match: { value: filter.organizationId } });
+    }
     if (filter.scope) {
       must.push({ key: 'scope', match: { value: filter.scope } });
     }

@@ -63,6 +63,7 @@ export class MemoryStmService {
     const memory: StmMemory = {
       id: memoryId,
       userId: validatedInput.userId,
+      organizationId: validatedInput.organizationId,
       content: validatedInput.content,
       metadata: validatedInput.metadata || null,
       tags: validatedInput.tags || [],
@@ -76,7 +77,11 @@ export class MemoryStmService {
     };
 
     // Store in Redis with TTL
-    const redisKey = this.keyBuilder.buildMemoryKey(validatedInput.userId, memoryId);
+    const redisKey = this.keyBuilder.buildMemoryKey(
+      validatedInput.userId,
+      memoryId,
+      validatedInput.organizationId
+    );
     const redisValue = JSON.stringify(memory);
 
     await this.redisService.set(redisKey, redisValue, ttl);
@@ -88,10 +93,10 @@ export class MemoryStmService {
   /**
    * Retrieve a short-term memory by ID
    */
-  async findById(userId: string, memoryId: string): Promise<StmMemory> {
+  async findById(userId: string, memoryId: string, organizationId?: string): Promise<StmMemory> {
     this.logger.debug(`Finding STM memory: ${memoryId} for user: ${userId}`);
 
-    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId);
+    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
     const redisValue = await this.redisService.get(redisKey);
 
     if (!redisValue) {
@@ -130,14 +135,19 @@ export class MemoryStmService {
   /**
    * Update a short-term memory
    */
-  async update(userId: string, memoryId: string, input: UpdateStmMemoryData): Promise<StmMemory> {
+  async update(
+    userId: string,
+    memoryId: string,
+    input: UpdateStmMemoryData,
+    organizationId?: string
+  ): Promise<StmMemory> {
     this.logger.debug(`Updating STM memory: ${memoryId} for user: ${userId}`);
 
     // Validate input
     const validatedInput = updateStmMemorySchema.parse(input);
 
-    // Get existing memory
-    const existing = await this.findById(userId, memoryId);
+    // Get existing memory (must use same org scope to find the key)
+    const existing = await this.findById(userId, memoryId, organizationId);
 
     // Validate new TTL if provided
     const newTtl = validatedInput.ttl ?? existing.ttl;
@@ -159,7 +169,7 @@ export class MemoryStmService {
     };
 
     // Store updated memory in Redis with new TTL
-    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId);
+    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
     const redisValue = JSON.stringify(updatedMemory);
 
     await this.redisService.set(redisKey, redisValue, newTtl);
@@ -171,10 +181,10 @@ export class MemoryStmService {
   /**
    * Delete a short-term memory
    */
-  async delete(userId: string, memoryId: string): Promise<void> {
+  async delete(userId: string, memoryId: string, organizationId?: string): Promise<void> {
     this.logger.debug(`Deleting STM memory: ${memoryId} for user: ${userId}`);
 
-    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId);
+    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
     const deleted = await this.redisService.del(redisKey);
 
     if (deleted === 0) {
@@ -196,7 +206,7 @@ export class MemoryStmService {
     const limit = options.limit || 20;
     const cursor = options.cursor || '0';
     const tags = options.tags || [];
-    const pattern = this.keyBuilder.buildUserPattern(userId);
+    const pattern = this.keyBuilder.buildUserPattern(userId, options.organizationId);
 
     // Use Redis SCAN for memory-efficient iteration
     const scanResult = await this.redisService.scan(cursor, {
@@ -240,7 +250,7 @@ export class MemoryStmService {
     }
 
     // Get total count for pagination metadata
-    const totalCount = await this.count(userId, { tags });
+    const totalCount = await this.count(userId, { tags, organizationId: options.organizationId });
 
     return {
       items: memories,
@@ -255,10 +265,10 @@ export class MemoryStmService {
   /**
    * Get the remaining TTL for a memory
    */
-  async getTtl(userId: string, memoryId: string): Promise<number> {
+  async getTtl(userId: string, memoryId: string, organizationId?: string): Promise<number> {
     this.logger.debug(`Getting TTL for STM memory: ${memoryId}`);
 
-    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId);
+    const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
     const ttl = await this.redisService.ttl(redisKey);
 
     if (ttl === -2) {
@@ -277,32 +287,45 @@ export class MemoryStmService {
   /**
    * Extend TTL for a memory
    */
-  async extendTtl(userId: string, memoryId: string, additionalSeconds: number): Promise<StmMemory> {
+  async extendTtl(
+    userId: string,
+    memoryId: string,
+    additionalSeconds: number,
+    organizationId?: string
+  ): Promise<StmMemory> {
     this.logger.debug(`Extending TTL for STM memory: ${memoryId} by ${additionalSeconds} seconds`);
 
     // Get existing memory
-    const existing = await this.findById(userId, memoryId);
+    const existing = await this.findById(userId, memoryId, organizationId);
 
     // Calculate new TTL
-    const currentTtl = await this.getTtl(userId, memoryId);
+    const currentTtl = await this.getTtl(userId, memoryId, organizationId);
     const newTtl = currentTtl + additionalSeconds;
 
     this.validateTtl(newTtl);
 
     // Update memory with new TTL
-    return this.update(userId, memoryId, {
-      ttl: newTtl,
-      tags: existing.tags, // Preserve existing tags value (tags is optional in schema)
-    });
+    return this.update(
+      userId,
+      memoryId,
+      {
+        ttl: newTtl,
+        tags: existing.tags, // Preserve existing tags value (tags is optional in schema)
+      },
+      organizationId
+    );
   }
 
   /**
    * Count total memories for a user with optional tag filtering
    */
-  async count(userId: string, options: { tags?: string[] } = {}): Promise<number> {
+  async count(
+    userId: string,
+    options: { tags?: string[]; organizationId?: string } = {}
+  ): Promise<number> {
     this.logger.debug(`Counting STM memories for user: ${userId}`);
 
-    const pattern = this.keyBuilder.buildUserPattern(userId);
+    const pattern = this.keyBuilder.buildUserPattern(userId, options.organizationId);
     const tags = options.tags || [];
     let cursor = '0';
     let count = 0;
@@ -348,12 +371,12 @@ export class MemoryStmService {
   }
 
   /**
-   * Clear all memories for a user
+   * Clear all memories for a user, optionally scoped to an organization.
    */
-  async clear(userId: string): Promise<number> {
+  async clear(userId: string, organizationId?: string): Promise<number> {
     this.logger.debug(`Clearing all STM memories for user: ${userId}`);
 
-    const pattern = this.keyBuilder.buildUserPattern(userId);
+    const pattern = this.keyBuilder.buildUserPattern(userId, organizationId);
     let cursor = '0';
     let deletedCount = 0;
 
@@ -383,8 +406,13 @@ export class MemoryStmService {
    * scans all users.  Used by the consolidation job to identify promotion
    * candidates without coupling the scheduler to per-user iteration logic.
    *
+   * NOTE: when `userId` is provided the scan uses `buildUserPattern(userId)` which
+   * only matches personal (non-org) keys. Org-scoped memories for that user are
+   * still found by the global scan (`userId` omitted) used by the consolidation
+   * service.
+   *
    * @param threshold - Minimum accessCount required for a memory to qualify.
-   * @param userId    - When provided, restrict the scan to this user only.
+   * @param userId    - When provided, restrict the scan to this user only (personal keys).
    */
   async findCandidates(threshold: number, userId?: string): Promise<StmMemory[]> {
     if (!Number.isFinite(threshold) || threshold <= 0) {

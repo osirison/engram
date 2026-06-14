@@ -67,6 +67,7 @@ function assertOptionalIntInRange(
 interface PgVectorSearchRow {
   id: string;
   userId: string;
+  organizationId: string | null;
   type: string | null;
   tags: string[] | null;
   scope: string | null;
@@ -212,6 +213,14 @@ export class PgVectorStore implements VectorStore {
     params.push(filter.userId);
     clauses.push(`"userId" = $${params.length}`);
 
+    if (filter.organizationId !== undefined) {
+      if (!filter.organizationId) {
+        throw new Error('organizationId must not be empty when provided');
+      }
+      params.push(filter.organizationId);
+      clauses.push(`"organizationId" = $${params.length}`);
+    }
+
     if (filter.type) {
       params.push(filter.type);
       clauses.push(`"type" = $${params.length}`);
@@ -234,7 +243,7 @@ export class PgVectorStore implements VectorStore {
     }
 
     const sql =
-      `SELECT "id", "userId", "type", "tags", "metadata"->>'scope' AS scope, "createdAt", ` +
+      `SELECT "id", "userId", "organizationId", "type", "tags", "metadata"->>'scope' AS scope, "createdAt", ` +
       `1 - ("${this.column}" <=> $1::vector) AS score ` +
       `FROM "${this.table}" WHERE ${clauses.join(' AND ')} ` +
       `ORDER BY "${this.column}" <=> $1::vector LIMIT ${safeLimit}`;
@@ -268,6 +277,9 @@ export class PgVectorStore implements VectorStore {
       userId: row.userId,
       tags: row.tags ?? [],
     };
+    if (row.organizationId) {
+      payload.organizationId = row.organizationId;
+    }
     if (row.type) {
       payload.type = row.type;
     }

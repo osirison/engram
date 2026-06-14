@@ -53,6 +53,8 @@ export interface LtmQueryOptions {
 export interface SemanticSearchOptions {
   /** Maximum number of results to return. */
   limit?: number;
+  /** When set, restricts results to the given organization's memories. */
+  organizationId?: string;
   /** Optional logical namespace filter (agent / session / project). */
   scope?: string;
   /** Restrict results to memories carrying all of these tags. */
