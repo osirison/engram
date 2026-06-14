@@ -23,6 +23,7 @@ export interface LtmMemory extends Memory {
 // LTM creation input
 export interface CreateLtmMemoryData {
   userId: string;
+  organizationId?: string;
   content: string;
   metadata?: Record<string, unknown>;
   tags?: string[];
@@ -39,6 +40,7 @@ export interface UpdateLtmMemoryData {
 export interface LtmQueryOptions {
   limit?: number;
   cursor?: string;
+  organizationId?: string;
   tags?: string[];
   dateFrom?: Date;
   dateTo?: Date;
@@ -124,6 +126,7 @@ export interface ReindexResult extends ReindexProgress {
 // Create LTM memory schema
 export const createLtmMemorySchema = z.object({
   userId: userIdSchema,
+  organizationId: z.string().cuid2().optional(),
   content: z.string().min(1, 'Content cannot be empty').max(10240, 'Content cannot exceed 10KB'),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   tags: z.array(z.string()).optional().default([]),
@@ -144,6 +147,7 @@ export const updateLtmMemorySchema = z.object({
 export const ltmQueryOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
   cursor: cursorIdSchema.optional(),
+  organizationId: z.string().cuid2().optional(),
   tags: z.array(z.string()).optional(),
   dateFrom: z.date().optional(),
   dateTo: z.date().optional(),

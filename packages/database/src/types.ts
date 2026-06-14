@@ -16,10 +16,39 @@ export const MemoryType = {
 
 export type MemoryTypeValues = (typeof MemoryType)[keyof typeof MemoryType];
 
+// Organization roles
+export const MembershipRole = {
+  OWNER: 'owner',
+  ADMIN: 'admin',
+  MEMBER: 'member',
+} as const;
+
+export type MembershipRoleValues = (typeof MembershipRole)[keyof typeof MembershipRole];
+
+// Core Organization interface
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Core Membership interface
+export interface Membership {
+  id: string;
+  userId: string;
+  organizationId: string;
+  role: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // Core Memory interface (matches Prisma generated types)
 export interface Memory {
   id: string;
   userId: string;
+  organizationId?: string | null;
   content: string;
   metadata?: Record<string, unknown> | null;
   tags: string[];
