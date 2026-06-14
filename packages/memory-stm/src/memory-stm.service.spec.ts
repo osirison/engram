@@ -712,4 +712,218 @@ describe('MemoryStmService', () => {
       await expect(service.create(input)).rejects.toThrow('TTL cannot exceed 7 days');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Consolidation: accessCount tracking and findCandidates
+  // ---------------------------------------------------------------------------
+
+  describe('accessCount', () => {
+    const userId = 'clq1234567890abcdef1234';
+    const memoryId = 'clq0000000001abcdef0001';
+    const makeStoredMemory = (accessCount = 0): string =>
+      JSON.stringify({
+        id: memoryId,
+        userId,
+        content: 'test',
+        metadata: null,
+        tags: [],
+        embedding: [],
+        type: 'short-term',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+        ttl: 3600,
+        accessCount,
+      });
+
+    it('should initialize accessCount to 0 on create', async () => {
+      mockRedisService.set.mockResolvedValue('OK');
+      const result = await service.create({ userId, content: 'hello', ttl: 3600 });
+      expect(result.accessCount).toBe(0);
+    });
+
+    it('should increment accessCount on findById', async () => {
+      mockRedisService.get.mockResolvedValue(makeStoredMemory(0));
+      mockRedisService.ttl.mockResolvedValue(3600);
+      mockRedisService.set.mockResolvedValue('OK');
+
+      const result = await service.findById(userId, memoryId);
+
+      expect(result.accessCount).toBe(1);
+      // The updated JSON should be written back with the remaining TTL
+      expect(mockRedisService.set).toHaveBeenCalledWith(
+        expect.stringContaining(memoryId),
+        expect.stringContaining('"accessCount":1'),
+        3600
+      );
+    });
+
+    it('should accumulate accessCount across successive findById calls', async () => {
+      mockRedisService.get
+        .mockResolvedValueOnce(makeStoredMemory(2))
+        .mockResolvedValueOnce(makeStoredMemory(3));
+      mockRedisService.ttl.mockResolvedValue(3600);
+      mockRedisService.set.mockResolvedValue('OK');
+
+      const first = await service.findById(userId, memoryId);
+      expect(first.accessCount).toBe(3);
+
+      const second = await service.findById(userId, memoryId);
+      expect(second.accessCount).toBe(4);
+    });
+
+    it('should not update Redis when remaining TTL is zero or negative', async () => {
+      mockRedisService.get.mockResolvedValue(makeStoredMemory(0));
+      mockRedisService.ttl.mockResolvedValue(-2); // key doesn't exist (edge case)
+      mockRedisService.set.mockResolvedValue('OK');
+
+      await service.findById(userId, memoryId);
+
+      // set should NOT have been called since TTL <= 0
+      expect(mockRedisService.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findCandidates', () => {
+    const userId = 'clq1234567890abcdef1234';
+
+    const makeMemory = (id: string, accessCount: number): string =>
+      JSON.stringify({
+        id,
+        userId,
+        content: `memory ${id}`,
+        metadata: null,
+        tags: [],
+        embedding: [],
+        type: 'short-term',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+        ttl: 3600,
+        accessCount,
+      });
+
+    it('should return memories at or above the threshold', async () => {
+      const pipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([
+          [null, makeMemory('m1', 5)],
+          [null, makeMemory('m2', 1)],
+          [null, makeMemory('m3', 3)],
+        ]),
+      };
+      mockRedisService.scan.mockResolvedValue({ keys: ['k1', 'k2', 'k3'], cursor: '0' });
+      mockRedisService.pipeline.mockReturnValue(pipeline);
+
+      const candidates = await service.findCandidates(3);
+
+      expect(candidates).toHaveLength(2);
+      expect(candidates.map((c) => c.id)).toEqual(expect.arrayContaining(['m1', 'm3']));
+    });
+
+    it('should return an empty array when no memory meets the threshold', async () => {
+      const pipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([
+          [null, makeMemory('m1', 0)],
+          [null, makeMemory('m2', 2)],
+        ]),
+      };
+      mockRedisService.scan.mockResolvedValue({ keys: ['k1', 'k2'], cursor: '0' });
+      mockRedisService.pipeline.mockReturnValue(pipeline);
+
+      const candidates = await service.findCandidates(3);
+
+      expect(candidates).toHaveLength(0);
+    });
+
+    it('should use user-specific pattern when userId is provided', async () => {
+      const pipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([]),
+      };
+      mockRedisService.scan.mockResolvedValue({ keys: [], cursor: '0' });
+      mockRedisService.pipeline.mockReturnValue(pipeline);
+
+      await service.findCandidates(3, userId);
+
+      expect(mockRedisService.scan).toHaveBeenCalledWith(
+        '0',
+        expect.objectContaining({ match: `memory:stm:${userId}:*` })
+      );
+    });
+
+    it('should use global pattern when no userId is provided', async () => {
+      const pipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([]),
+      };
+      mockRedisService.scan.mockResolvedValue({ keys: [], cursor: '0' });
+      mockRedisService.pipeline.mockReturnValue(pipeline);
+
+      await service.findCandidates(3);
+
+      expect(mockRedisService.scan).toHaveBeenCalledWith(
+        '0',
+        expect.objectContaining({ match: 'memory:stm:*' })
+      );
+    });
+
+    it('should skip entries that fail to parse', async () => {
+      const pipeline = {
+        get: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([
+          [null, 'not-valid-json'],
+          [null, makeMemory('m2', 5)],
+        ]),
+      };
+      mockRedisService.scan.mockResolvedValue({ keys: ['k1', 'k2'], cursor: '0' });
+      mockRedisService.pipeline.mockReturnValue(pipeline);
+
+      const candidates = await service.findCandidates(3);
+
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0]?.id).toBe('m2');
+    });
+
+    it('should throw for non-positive threshold', async () => {
+      await expect(service.findCandidates(0)).rejects.toThrow('Invalid consolidation threshold');
+      await expect(service.findCandidates(-1)).rejects.toThrow('Invalid consolidation threshold');
+    });
+
+    it('should throw for NaN or Infinity threshold', async () => {
+      await expect(service.findCandidates(NaN)).rejects.toThrow('Invalid consolidation threshold');
+      await expect(service.findCandidates(Infinity)).rejects.toThrow(
+        'Invalid consolidation threshold'
+      );
+    });
+  });
+
+  describe('findById error handling', () => {
+    const userId = 'clq1234567890abcdef1234';
+    const memoryId = 'clq0000000001abcdef0001';
+
+    it('should propagate Redis errors from ttl() without masking as NotFound', async () => {
+      mockRedisService.get.mockResolvedValue(
+        JSON.stringify({
+          id: memoryId,
+          userId,
+          content: 'x',
+          metadata: null,
+          tags: [],
+          embedding: [],
+          type: 'short-term',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+          ttl: 3600,
+          accessCount: 0,
+        })
+      );
+      const redisError = new Error('ECONNREFUSED');
+      mockRedisService.ttl.mockRejectedValue(redisError);
+
+      await expect(service.findById(userId, memoryId)).rejects.toThrow('ECONNREFUSED');
+    });
+  });
 });

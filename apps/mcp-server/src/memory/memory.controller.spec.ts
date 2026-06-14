@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
 import { ReindexQueueService } from './reindex-queue.service';
+import { ConsolidationService } from './consolidation.service';
 
 describe('MemoryController', () => {
   let controller: MemoryController;
@@ -25,6 +26,10 @@ describe('MemoryController', () => {
     get: jest.fn(),
     cancel: jest.fn(),
     retry: jest.fn(),
+  };
+
+  const mockConsolidationService = {
+    run: jest.fn(),
   };
 
   const parseResponsePayload = <T>(response: {
@@ -53,6 +58,10 @@ describe('MemoryController', () => {
         {
           provide: ReindexQueueService,
           useValue: mockReindexQueueService,
+        },
+        {
+          provide: ConsolidationService,
+          useValue: mockConsolidationService,
         },
       ],
     }).compile();

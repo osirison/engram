@@ -30,24 +30,30 @@ import {
   reindexRetryToolSchema,
   ReindexRetryToolInput,
 } from './dto/reindex-job.dto';
+import {
+  consolidateToolSchema,
+  ConsolidateToolInput,
+} from './dto/consolidate.dto';
 import { ReindexQueueService } from './reindex-queue.service';
+import { ConsolidationService } from './consolidation.service';
 
 /**
  * MCP Memory Tools Controller
  *
- * Implements 12 MCP tools for memory management:
- * 1. create_memory - Create short-term or long-term memory
- * 2. get_memory - Retrieve memory by ID
- * 3. list_memories - List memories with pagination
- * 4. update_memory - Update existing memory
- * 5. delete_memory - Delete memory by ID
- * 6. promote_memory - Convert STM memory to LTM
- * 7. recall - Semantic (vector) recall over long-term memories
- * 8. reindex_memories - Backfill/rebuild the vector store from Postgres
- * 9. queue_reindex_memories - Queue resumable reindex processing as a job
- * 10. get_reindex_status - Poll queued reindex progress by job id
- * 11. cancel_reindex_job - Request cancellation for a queued/running job
- * 12. retry_reindex_job - Retry a failed/cancelled job from its last cursor
+ * Implements 13 MCP tools for memory management:
+ * 1.  create_memory          - Create short-term or long-term memory
+ * 2.  get_memory             - Retrieve memory by ID
+ * 3.  list_memories          - List memories with pagination
+ * 4.  update_memory          - Update existing memory
+ * 5.  delete_memory          - Delete memory by ID
+ * 6.  promote_memory         - Convert STM memory to LTM
+ * 7.  recall                 - Semantic (vector) recall over long-term memories
+ * 8.  reindex_memories       - Backfill/rebuild the vector store from Postgres
+ * 9.  queue_reindex_memories - Queue resumable reindex processing as a job
+ * 10. get_reindex_status     - Poll queued reindex progress by job id
+ * 11. cancel_reindex_job     - Request cancellation for a queued/running job
+ * 12. retry_reindex_job      - Retry a failed/cancelled job from its last cursor
+ * 13. consolidate_memories   - Trigger STM→LTM consolidation pass (admin)
  */
 @Controller('memory')
 @Injectable()
@@ -57,6 +63,7 @@ export class MemoryController {
   constructor(
     private readonly memoryService: MemoryService,
     private readonly reindexQueue: ReindexQueueService,
+    private readonly consolidation: ConsolidationService,
   ) {}
 
   private assertAdminAuthorized(adminToken: string): void {
@@ -615,6 +622,46 @@ export class MemoryController {
   }
 
   /**
+   * MCP Tool: consolidate_memories (admin)
+   * Trigger a synchronous STM→LTM consolidation pass.
+   */
+  async consolidateMemories(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('consolidate_memories tool called');
+      const validatedInput: ConsolidateToolInput =
+        consolidateToolSchema.parse(input);
+      this.assertAdminAuthorized(validatedInput.adminToken);
+
+      const result = await this.consolidation.run(validatedInput.userId);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: true,
+                promoted: result.promoted,
+                skipped: result.skipped,
+                failed: result.failed,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in consolidate_memories tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to run consolidation: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Get MCP tools in the format required by the MCP handler
    * This method creates Tool objects that bind controller methods as handlers
    */
@@ -717,6 +764,15 @@ export class MemoryController {
           'Retry a failed/cancelled reindex job from its last persisted cursor',
         inputSchema: reindexRetryToolSchema,
         handler: this.retryReindexJob.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'consolidate_memories',
+        description:
+          'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage.',
+        inputSchema: consolidateToolSchema,
+        handler: this.consolidateMemories.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
       },

@@ -24,6 +24,8 @@ describe('envSchema', () => {
         EMBEDDING_PROVIDER: 'openai',
         MCP_TRANSPORT: 'stdio',
         VECTOR_BACKEND: 'qdrant',
+        STM_CONSOLIDATION_ACCESS_THRESHOLD: 3,
+        STM_CONSOLIDATION_INTERVAL_MS: 300_000,
       });
     });
 

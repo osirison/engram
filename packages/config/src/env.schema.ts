@@ -22,6 +22,16 @@ export const envSchema = z.object({
   VECTOR_DIMENSIONS: z.coerce.number().int().positive().optional(),
   /** MCP transport selection: stdio for local clients, streamable-http for Inspector. */
   MCP_TRANSPORT: z.enum(['stdio', 'streamable-http']).default('stdio'),
+  /**
+   * Number of times an STM memory must be accessed before it qualifies for
+   * automatic promotion to LTM. Defaults to 3.
+   */
+  STM_CONSOLIDATION_ACCESS_THRESHOLD: z.coerce.number().int().min(1).optional().default(3),
+  /**
+   * How often the consolidation job scans for promotion candidates, in
+   * milliseconds. Defaults to 5 minutes. Set to 0 to disable the scheduler.
+   */
+  STM_CONSOLIDATION_INTERVAL_MS: z.coerce.number().int().min(0).optional().default(300_000),
   /** Optional pgvector HNSW build-time `m` (max connections per layer). */
   PGVECTOR_HNSW_M: z.coerce.number().int().min(2).max(100).optional(),
   /** Optional pgvector HNSW build-time `ef_construction` (candidate list size). */
