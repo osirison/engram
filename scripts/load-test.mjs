@@ -50,6 +50,14 @@ function parseArgs(argv) {
         break;
     }
   }
+
+  if (!Number.isFinite(args.durationMs) || args.durationMs <= 0) {
+    throw new Error(`--duration-ms must be a positive number, got: ${args.durationMs}`);
+  }
+  if (!Number.isFinite(args.concurrency) || args.concurrency <= 0) {
+    throw new Error(`--concurrency must be a positive number, got: ${args.concurrency}`);
+  }
+
   return args;
 }
 
@@ -64,16 +72,18 @@ function summarize(samples, elapsedMs) {
   if (samples.length === 0) {
     return { count: 0, opsPerSec: 0, min: 0, mean: 0, p50: 0, p95: 0, p99: 0, max: 0 };
   }
+  const min = samples.reduce((a, b) => (b < a ? b : a), Infinity);
+  const max = samples.reduce((a, b) => (b > a ? b : a), -Infinity);
   const mean = samples.reduce((sum, v) => sum + v, 0) / samples.length;
   return {
     count: samples.length,
     opsPerSec: Number(((samples.length / elapsedMs) * 1000).toFixed(1)),
-    min: Number(Math.min(...samples).toFixed(2)),
+    min: Number(min.toFixed(2)),
     mean: Number(mean.toFixed(2)),
     p50: Number(percentile(samples, 50).toFixed(2)),
     p95: Number(percentile(samples, 95).toFixed(2)),
     p99: Number(percentile(samples, 99).toFixed(2)),
-    max: Number(Math.max(...samples).toFixed(2)),
+    max: Number(max.toFixed(2)),
   };
 }
 
@@ -132,7 +142,7 @@ async function runRecallScenario(prisma, userId, durationMs, concurrency) {
       const t0 = performance.now();
       try {
         await prisma.$queryRawUnsafe(
-          'SELECT "id", "content" FROM "memories" WHERE "userId" = $2 AND "embedding_vec" IS NOT NULL ORDER BY "embedding_vec" <=> $1::vector LIMIT 10',
+          'SELECT "id" FROM "memories" WHERE "userId" = $2 AND "embedding_vec" IS NOT NULL ORDER BY "embedding_vec" <=> $1::vector LIMIT 10',
           literal,
           userId,
         );
@@ -159,6 +169,9 @@ async function main() {
 
   console.log(`ENGRAM load test  duration=${durationMs}ms  concurrency=${concurrency}`);
 
+  let writeResult;
+  let recallResult;
+
   try {
     await prisma.$connect();
 
@@ -177,7 +190,7 @@ async function main() {
 
     // --- Write scenario ---
     console.log('\n[1/3] Write scenario (concurrent memory create)...');
-    const writeResult = await runWriteScenario(prisma, userId, durationMs, concurrency);
+    writeResult = await runWriteScenario(prisma, userId, durationMs, concurrency);
     const writeStats = summarize(writeResult.samples, writeResult.elapsedMs);
     console.log(
       `      ops=${writeStats.count}  ops/sec=${writeStats.opsPerSec}  ` +
@@ -188,21 +201,25 @@ async function main() {
     }
 
     // Backfill embedding_vec so the recall scenario has indexed vectors to search.
+    // Fetch only IDs to avoid loading large content/embedding fields into memory.
     console.log('\n[2/3] Backfilling embedding_vec for indexed recall...');
-    const memories = await prisma.memory.findMany({ where: { userId } });
-    for (let i = 0; i < memories.length; i++) {
+    const memoryIds = await prisma.memory.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    for (let i = 0; i < memoryIds.length; i++) {
       const literal = `[${fakeEmbedding(i).join(',')}]`;
       await prisma.$executeRawUnsafe(
         'UPDATE "memories" SET "embedding_vec" = $1::vector WHERE "id" = $2',
         literal,
-        memories[i].id,
+        memoryIds[i].id,
       );
     }
-    console.log(`      backfilled ${memories.length} vectors`);
+    console.log(`      backfilled ${memoryIds.length} vectors`);
 
     // --- Recall scenario ---
     console.log('\n[3/3] Recall scenario (concurrent vector search)...');
-    const recallResult = await runRecallScenario(prisma, userId, durationMs, concurrency);
+    recallResult = await runRecallScenario(prisma, userId, durationMs, concurrency);
     const recallStats = summarize(recallResult.samples, recallResult.elapsedMs);
     console.log(
       `      ops=${recallStats.count}  ops/sec=${recallStats.opsPerSec}  ` +
@@ -241,9 +258,18 @@ async function main() {
       console.log(`\nLoad test report written to ${output}`);
     }
   } finally {
-    await prisma.memory.deleteMany({ where: { userId } });
-    await prisma.user.deleteMany({ where: { id: userId } });
-    await prisma.$disconnect();
+    // Best-effort cleanup — swallow errors so the original failure is not masked.
+    try {
+      await prisma.memory.deleteMany({ where: { userId } });
+      await prisma.user.deleteMany({ where: { id: userId } });
+    } catch {
+      // ignore cleanup errors
+    }
+    try {
+      await prisma.$disconnect();
+    } catch {
+      // ignore disconnect errors
+    }
   }
 }
 
