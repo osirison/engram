@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": [
+    "src/**/*.ts",
+    "../database/src/**/*.ts",
+    "../embeddings/src/**/*.ts",
+    "../memory-stm/src/**/*.ts",
+    "../vector-store/src/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "../**/*.spec.ts",
+    "../**/*.test.ts"
+  ]
+}

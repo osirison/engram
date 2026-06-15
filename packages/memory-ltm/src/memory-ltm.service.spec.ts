@@ -135,7 +135,7 @@ describe('MemoryLtmService', () => {
 
       expect(prismaService.memory.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          metadata: undefined,
+          metadata: {},
           tags: [],
         }),
       });
@@ -244,9 +244,12 @@ describe('MemoryLtmService', () => {
           userId: mockUserId,
           type: MemoryType.LONG_TERM,
         },
-        data: {
+        data: expect.objectContaining({
           content: 'New content only',
-        },
+          metadata: expect.objectContaining({
+            test: 'data',
+          }),
+        }),
       });
     });
   });

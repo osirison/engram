@@ -60,6 +60,9 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     raw: string | undefined,
     fallback: number,
   ): number {
+    if (raw === undefined || raw.trim().length === 0) {
+      return fallback;
+    }
     const n = Number(raw ?? '');
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   }
@@ -119,14 +122,15 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     let failed = 0;
 
     for (const memory of candidates) {
-      const importanceScore = this.importanceService?.score({
+      const importanceResult = this.importanceService?.score({
         content: memory.content,
         metadata: memory.metadata,
         tags: memory.tags,
         accessCount: memory.accessCount,
         createdAt: memory.createdAt,
         lastAccessedAt: memory.updatedAt,
-      }).score;
+      });
+      const importanceScore = importanceResult?.score;
       if (
         importanceScore !== undefined &&
         importanceScore < this.importanceThreshold
