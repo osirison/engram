@@ -8,6 +8,8 @@ import {
   DEFAULT_LTM_CONFIG,
 } from './types';
 import { MemoryType } from '@engram/database';
+import { ImportanceScoringService } from './importance.service';
+import { DuplicateDetectionService } from './duplicate-detection.service';
 
 describe('MemoryLtmService', () => {
   let service: MemoryLtmService;
@@ -133,7 +135,7 @@ describe('MemoryLtmService', () => {
 
       expect(prismaService.memory.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          metadata: undefined,
+          metadata: {},
           tags: [],
         }),
       });
@@ -190,6 +192,31 @@ describe('MemoryLtmService', () => {
 
       await expect(service.get(mockUserId, mockMemoryId)).rejects.toThrow(LtmDatabaseError);
     });
+
+    it('should swallow record access failures', async () => {
+      const importanceService = new ImportanceScoringService();
+      const serviceWithImportance = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        undefined,
+        undefined,
+        importanceService as never
+      );
+      const logger = (
+        serviceWithImportance as unknown as { logger: { warn: (...args: unknown[]) => void } }
+      ).logger;
+      const warnSpy = vi.spyOn(logger, 'warn');
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockRejectedValue(new Error('write failed'));
+
+      const result = await serviceWithImportance.get(mockUserId, mockMemoryId);
+      await vi.waitFor(() => {
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining(`Failed to record access for memory ${mockMemoryId}`)
+        );
+      });
+      expect(result?.id).toBe(mockMemoryId);
+    });
   });
 
   describe('update', () => {
@@ -242,9 +269,12 @@ describe('MemoryLtmService', () => {
           userId: mockUserId,
           type: MemoryType.LONG_TERM,
         },
-        data: {
+        data: expect.objectContaining({
           content: 'New content only',
-        },
+          metadata: expect.objectContaining({
+            test: 'data',
+          }),
+        }),
       });
     });
   });
@@ -694,6 +724,237 @@ describe('MemoryLtmService', () => {
       prismaService.$transaction.mockImplementation(mockTransaction);
 
       await expect(serviceWithVector.promote(mockUserId, mockMemoryId)).resolves.toBeDefined();
+    });
+  });
+
+  describe('stream B behaviors', () => {
+    it('stores computed importance metadata on create', async () => {
+      const importanceService = new ImportanceScoringService();
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.create.mockResolvedValue(mockMemory);
+
+      const serviceWithImportance = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        undefined,
+        undefined,
+        importanceService as never
+      );
+
+      await serviceWithImportance.create({
+        userId: mockUserId,
+        content: 'Decision: keep this important note',
+      });
+
+      expect(prismaService.memory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            importance: expect.any(Number),
+            status: expect.any(String),
+          }),
+        }),
+      });
+    });
+
+    it('returns the existing memory when duplicate detection matches on create', async () => {
+      const importanceService = new ImportanceScoringService();
+      const duplicateService = new DuplicateDetectionService();
+      const vectorStore = {
+        backend: 'qdrant' as const,
+        upsert: vi.fn(),
+        delete: vi.fn(),
+        ensureReady: vi.fn(),
+        search: vi.fn().mockResolvedValue([{ id: mockMemoryId, score: 0.99 }]),
+      };
+      const embeddingsService = {
+        generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      };
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      const serviceWithDuplicate = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        embeddingsService as never,
+        vectorStore as never,
+        importanceService as never,
+        duplicateService as never
+      );
+
+      const result = await serviceWithDuplicate.create({
+        userId: mockUserId,
+        content: 'Test memory content',
+      });
+
+      expect(prismaService.memory.create).not.toHaveBeenCalled();
+      expect(prismaService.memory.update).toHaveBeenCalled();
+      expect(prismaService.memory.update).toHaveBeenCalledWith({
+        where: { id: mockMemoryId },
+        data: {
+          metadata: expect.objectContaining({
+            duplicateMatches: expect.arrayContaining([
+              expect.objectContaining({
+                memoryId: mockMemoryId,
+                score: 0.99,
+              }),
+            ]),
+          }),
+        },
+      });
+      expect(result.id).toBe(mockMemoryId);
+    });
+
+    it('applies decay updates and prunes low-importance memories', async () => {
+      const importanceService = new ImportanceScoringService();
+      const oldMemory = {
+        ...mockMemory,
+        id: 'old-memory',
+        content: 'misc note',
+        createdAt: new Date('2025-01-01T00:00:00Z'),
+        metadata: {},
+      };
+      const strongMemory = {
+        ...mockMemory,
+        id: 'strong-memory',
+        content: 'Decision: keep after launch milestone',
+        createdAt: new Date('2026-06-10T00:00:00Z'),
+        metadata: {},
+      };
+      prismaService.memory.findMany
+        .mockResolvedValueOnce([oldMemory, strongMemory])
+        .mockResolvedValueOnce([]);
+      prismaService.memory.deleteMany.mockResolvedValue({ count: 1 });
+      prismaService.memory.update.mockResolvedValue(strongMemory);
+
+      const serviceWithImportance = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        undefined,
+        undefined,
+        importanceService as never
+      );
+
+      const result = await serviceWithImportance.applyDecayPolicy({
+        pruneOlderThanDays: 30,
+        pruneScoreThreshold: 0.15,
+      });
+
+      expect(result.processed).toBe(2);
+      expect(result.pruned).toBe(1);
+      expect(result.updated).toBe(1);
+      expect(prismaService.memory.deleteMany).toHaveBeenCalledWith({
+        where: {
+          id: 'old-memory',
+          userId: mockUserId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
+    });
+
+    it('supports dry run decay without writes', async () => {
+      const importanceService = new ImportanceScoringService();
+      const oldMemory = {
+        ...mockMemory,
+        id: 'old-memory-dry-run',
+        content: 'misc note',
+        createdAt: new Date('2025-01-01T00:00:00Z'),
+        metadata: {},
+      };
+      prismaService.memory.findMany.mockResolvedValueOnce([oldMemory]).mockResolvedValueOnce([]);
+
+      const serviceWithImportance = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        undefined,
+        undefined,
+        importanceService as never
+      );
+
+      const result = await serviceWithImportance.applyDecayPolicy({
+        dryRun: true,
+        pruneOlderThanDays: 30,
+        pruneScoreThreshold: 0.15,
+      });
+
+      expect(result.processed).toBe(1);
+      expect(result.pruned).toBe(1);
+      expect(prismaService.memory.deleteMany).not.toHaveBeenCalled();
+      expect(prismaService.memory.update).not.toHaveBeenCalled();
+    });
+
+    it('continues decay pass when a prune operation fails', async () => {
+      const importanceService = new ImportanceScoringService();
+      const oldMemoryA = {
+        ...mockMemory,
+        id: 'old-memory-a',
+        content: 'misc note',
+        createdAt: new Date('2025-01-01T00:00:00Z'),
+        metadata: {},
+      };
+      const oldMemoryB = {
+        ...mockMemory,
+        id: 'old-memory-b',
+        content: 'misc note',
+        createdAt: new Date('2025-01-01T00:00:00Z'),
+        metadata: {},
+      };
+      prismaService.memory.findMany
+        .mockResolvedValueOnce([oldMemoryA, oldMemoryB])
+        .mockResolvedValueOnce([]);
+      prismaService.memory.deleteMany
+        .mockRejectedValueOnce(new Error('vector failure'))
+        .mockResolvedValueOnce({ count: 1 });
+
+      const serviceWithImportance = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        undefined,
+        undefined,
+        importanceService as never
+      );
+
+      const result = await serviceWithImportance.applyDecayPolicy({
+        pruneOlderThanDays: 30,
+        pruneScoreThreshold: 0.15,
+      });
+
+      expect(result.processed).toBe(2);
+      expect(result.pruned).toBe(1);
+      expect(prismaService.memory.deleteMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('deletes STM memory when duplicate is detected during promote', async () => {
+      const importanceService = new ImportanceScoringService();
+      const duplicateService = new DuplicateDetectionService();
+      const vectorStore = {
+        backend: 'qdrant' as const,
+        upsert: vi.fn(),
+        delete: vi.fn(),
+        ensureReady: vi.fn(),
+        search: vi.fn().mockResolvedValue([{ id: mockMemoryId, score: 0.99 }]),
+      };
+      const embeddingsService = {
+        generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      };
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      stmService.delete.mockResolvedValue(undefined);
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      const serviceWithDuplicate = new MemoryLtmService(
+        prismaService as never,
+        stmService as never,
+        embeddingsService as never,
+        vectorStore as never,
+        importanceService as never,
+        duplicateService as never
+      );
+
+      await serviceWithDuplicate.promote(mockUserId, mockMemoryId);
+
+      expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
     });
   });
 });

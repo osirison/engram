@@ -9,6 +9,7 @@ export default defineConfig({
       '@engram/embeddings': path.resolve(__dirname, '../../packages/embeddings/src/index.ts'),
       '@engram/redis': path.resolve(__dirname, '../../packages/redis/src/index.ts'),
       '@engram/memory-stm': path.resolve(__dirname, '../../packages/memory-stm/src/index.ts'),
+      '@engram/vector-store': path.resolve(__dirname, '../../packages/vector-store/src/index.ts'),
     },
   },
   test: {

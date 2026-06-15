@@ -1,6 +1,8 @@
 // Main exports for the memory-ltm package
 export { MemoryLtmService } from './memory-ltm.service';
 export { MemoryLtmModule } from './memory-ltm.module';
+export { ImportanceScoringService } from './importance.service';
+export { DuplicateDetectionService } from './duplicate-detection.service';
 
 // Export types and interfaces
 export type {
@@ -14,6 +16,11 @@ export type {
   ReindexOptions,
   ReindexProgress,
   ReindexResult,
+  ImportanceSignals,
+  ImportanceScoreResult,
+  DuplicateDetectionMatch,
+  DecayPolicyOptions,
+  DecayPolicyResult,
   CreateLtmMemoryValidated,
   UpdateLtmMemoryValidated,
   LtmQueryOptionsValidated,

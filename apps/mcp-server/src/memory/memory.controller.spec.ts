@@ -294,6 +294,18 @@ describe('MemoryController', () => {
       expect(payload.jobId).toBe('2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1');
       expect(payload.state).toBe('queued');
     });
+
+    it('wraps enqueue errors', async () => {
+      mockReindexQueueService.enqueue.mockRejectedValue(
+        new Error('queue unavailable'),
+      );
+
+      await expect(
+        controller.queueReindexMemories({
+          adminToken: 'test-admin-token-12345',
+        }),
+      ).rejects.toThrow('Failed to queue reindex job: queue unavailable');
+    });
   });
 
   describe('getReindexStatus', () => {
@@ -334,6 +346,17 @@ describe('MemoryController', () => {
       expect(payload.state).toBe('running');
       expect(payload.summary.cursor).toBe('c1');
     });
+
+    it('wraps lookup errors', async () => {
+      mockReindexQueueService.get.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        controller.getReindexStatus({
+          adminToken: 'test-admin-token-12345',
+          jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
+        }),
+      ).rejects.toThrow('Failed to get reindex status: db down');
+    });
   });
 
   describe('cancelReindexJob', () => {
@@ -354,6 +377,29 @@ describe('MemoryController', () => {
         '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       );
     });
+
+    it('returns not_found when no such job exists', async () => {
+      mockReindexQueueService.cancel.mockResolvedValue(null);
+
+      const response = await controller.cancelReindexJob({
+        adminToken: 'test-admin-token-12345',
+        jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
+      });
+      const payload = parseResponsePayload<{ state: string }>(response);
+
+      expect(payload.state).toBe('not_found');
+    });
+
+    it('wraps cancel errors', async () => {
+      mockReindexQueueService.cancel.mockRejectedValue(new Error('db error'));
+
+      await expect(
+        controller.cancelReindexJob({
+          adminToken: 'test-admin-token-12345',
+          jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
+        }),
+      ).rejects.toThrow('Failed to cancel reindex job: db error');
+    });
   });
 
   describe('retryReindexJob', () => {
@@ -373,6 +419,29 @@ describe('MemoryController', () => {
       expect(mockReindexQueueService.retry).toHaveBeenCalledWith(
         '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
       );
+    });
+
+    it('returns not_found when no such job exists', async () => {
+      mockReindexQueueService.retry.mockResolvedValue(null);
+
+      const response = await controller.retryReindexJob({
+        adminToken: 'test-admin-token-12345',
+        jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
+      });
+      const payload = parseResponsePayload<{ state: string }>(response);
+
+      expect(payload.state).toBe('not_found');
+    });
+
+    it('wraps retry errors', async () => {
+      mockReindexQueueService.retry.mockRejectedValue(new Error('db error'));
+
+      await expect(
+        controller.retryReindexJob({
+          adminToken: 'test-admin-token-12345',
+          jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
+        }),
+      ).rejects.toThrow('Failed to retry reindex job: db error');
     });
   });
 
@@ -664,6 +733,82 @@ describe('MemoryController', () => {
       await expect(
         controller.promoteMemory({ userId, memoryId }),
       ).rejects.toThrow(/Failed to promote memory: quota exceeded/);
+    });
+  });
+
+  describe('consolidateMemories', () => {
+    it('runs a consolidation pass and returns counts', async () => {
+      mockConsolidationService.run.mockResolvedValue({
+        promoted: 3,
+        skipped: 1,
+        failed: 0,
+      });
+
+      const response = await controller.consolidateMemories({
+        adminToken: 'test-admin-token-12345',
+      });
+      const payload = parseResponsePayload<{
+        success: boolean;
+        promoted: number;
+        skipped: number;
+        failed: number;
+      }>(response);
+
+      expect(payload.success).toBe(true);
+      expect(payload.promoted).toBe(3);
+      expect(payload.skipped).toBe(1);
+      expect(payload.failed).toBe(0);
+      expect(mockConsolidationService.run).toHaveBeenCalledWith(undefined);
+    });
+
+    it('passes userId filter when provided', async () => {
+      mockConsolidationService.run.mockResolvedValue({
+        promoted: 0,
+        skipped: 0,
+        failed: 0,
+      });
+      const userId = 'clm0000000000000000000000';
+
+      await controller.consolidateMemories({
+        adminToken: 'test-admin-token-12345',
+        userId,
+      });
+
+      expect(mockConsolidationService.run).toHaveBeenCalledWith(userId);
+    });
+
+    it('wraps consolidation errors', async () => {
+      mockConsolidationService.run.mockRejectedValue(
+        new Error('service unavailable'),
+      );
+
+      await expect(
+        controller.consolidateMemories({
+          adminToken: 'test-admin-token-12345',
+        }),
+      ).rejects.toThrow('Failed to run consolidation: service unavailable');
+    });
+
+    it('rejects unauthorized admin token', async () => {
+      await expect(
+        controller.consolidateMemories({
+          adminToken: 'wrong-token-12345678',
+        }),
+      ).rejects.toThrow(/Unauthorized/);
+    });
+  });
+
+  describe('getMcpToolDefinitions', () => {
+    it('returns a list of tool definitions including create_memory', () => {
+      const defs = controller.getMcpToolDefinitions();
+
+      expect(Array.isArray(defs)).toBe(true);
+      expect(defs.length).toBeGreaterThan(0);
+      expect(defs[0]).toMatchObject({
+        name: 'create_memory',
+        description: expect.stringContaining('memory') as unknown,
+        inputSchema: expect.objectContaining({ type: 'object' }) as unknown,
+      });
     });
   });
 

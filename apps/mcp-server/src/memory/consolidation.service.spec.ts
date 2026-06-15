@@ -6,6 +6,7 @@ import {
   MemoryLtmService,
   LtmMemoryQuotaExceededError,
   LtmPromotionError,
+  ImportanceScoringService,
 } from '@engram/memory-ltm';
 import type { StmMemory } from '@engram/memory-stm';
 import type { LtmMemory } from '@engram/memory-ltm';
@@ -44,6 +45,7 @@ describe('ConsolidationService', () => {
   let service: ConsolidationService;
   let stmService: jest.Mocked<MemoryStmService>;
   let ltmService: jest.Mocked<MemoryLtmService>;
+  let importanceService: jest.Mocked<ImportanceScoringService>;
 
   beforeEach(async () => {
     delete process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD;
@@ -55,6 +57,20 @@ describe('ConsolidationService', () => {
     const ltmMock: Partial<jest.Mocked<MemoryLtmService>> = {
       promote: jest.fn(),
     };
+    const importanceMock: Partial<jest.Mocked<ImportanceScoringService>> = {
+      score: jest.fn().mockReturnValue({
+        score: 0.8,
+        status: 'active',
+        factors: {
+          base: 0.35,
+          recencyMultiplier: 1,
+          accessBoost: 0.1,
+          cueBoost: 0.1,
+          pinBoost: 0,
+        },
+        reasons: [],
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       imports: [ScheduleModule.forRoot()],
@@ -62,12 +78,14 @@ describe('ConsolidationService', () => {
         ConsolidationService,
         { provide: MemoryStmService, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
+        { provide: ImportanceScoringService, useValue: importanceMock },
       ],
     }).compile();
 
     service = module.get<ConsolidationService>(ConsolidationService);
     stmService = module.get(MemoryStmService);
     ltmService = module.get(MemoryLtmService);
+    importanceService = module.get(ImportanceScoringService);
   });
 
   describe('run()', () => {
@@ -197,6 +215,126 @@ describe('ConsolidationService', () => {
 
       expect(result.promoted).toBe(2);
       expect(result.failed).toBe(1);
+    });
+
+    it('should skip low-importance candidates', async () => {
+      stmService.findCandidates.mockResolvedValue([makeStmMemory()]);
+      importanceService.score.mockReturnValue({
+        score: 0.2,
+        status: 'stale',
+        factors: {
+          base: 0.35,
+          recencyMultiplier: 0.4,
+          accessBoost: 0,
+          cueBoost: 0,
+          pinBoost: 0,
+        },
+        reasons: ['stale'],
+      });
+
+      const result = await service.run();
+
+      expect(result.skipped).toBe(1);
+      expect(ltmService.promote).not.toHaveBeenCalled();
+    });
+
+    it('should use metadata lastAccessedAt for importance scoring', async () => {
+      const lastAccessedAt = '2026-01-02T12:00:00.000Z';
+      stmService.findCandidates.mockResolvedValue([
+        makeStmMemory({ metadata: { lastAccessedAt } }),
+      ]);
+      ltmService.promote.mockResolvedValue(makeLtmMemory());
+
+      await service.run();
+
+      expect(importanceService.score).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lastAccessedAt: new Date(lastAccessedAt),
+        }),
+      );
+    });
+
+    it('should use Date object in metadata lastAccessedAt directly', async () => {
+      const lastAccessedAt = new Date('2026-01-02T12:00:00.000Z');
+      stmService.findCandidates.mockResolvedValue([
+        makeStmMemory({ metadata: { lastAccessedAt } }),
+      ]);
+      ltmService.promote.mockResolvedValue(makeLtmMemory());
+
+      await service.run();
+
+      expect(importanceService.score).toHaveBeenCalledWith(
+        expect.objectContaining({ lastAccessedAt }),
+      );
+    });
+  });
+
+  describe('scheduler lifecycle', () => {
+    it('skips scheduler when STM_CONSOLIDATION_INTERVAL_MS=0', async () => {
+      process.env.STM_CONSOLIDATION_INTERVAL_MS = '0';
+
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [ScheduleModule.forRoot()],
+        providers: [
+          ConsolidationService,
+          { provide: MemoryStmService, useValue: stmService },
+          { provide: MemoryLtmService, useValue: ltmService },
+          { provide: ImportanceScoringService, useValue: importanceService },
+        ],
+      }).compile();
+
+      const svc = module.get<ConsolidationService>(ConsolidationService);
+      svc.onModuleInit();
+      expect(() => svc.onModuleDestroy()).not.toThrow();
+
+      delete process.env.STM_CONSOLIDATION_INTERVAL_MS;
+    });
+
+    it('registers and tears down interval when interval > 0', async () => {
+      process.env.STM_CONSOLIDATION_INTERVAL_MS = '999999';
+
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [ScheduleModule.forRoot()],
+        providers: [
+          ConsolidationService,
+          { provide: MemoryStmService, useValue: stmService },
+          { provide: MemoryLtmService, useValue: ltmService },
+          { provide: ImportanceScoringService, useValue: importanceService },
+        ],
+      }).compile();
+
+      const svc = module.get<ConsolidationService>(ConsolidationService);
+      svc.onModuleInit();
+      expect(() => svc.onModuleDestroy()).not.toThrow();
+
+      delete process.env.STM_CONSOLIDATION_INTERVAL_MS;
+    });
+  });
+
+  describe('parseEnvFloat', () => {
+    it('falls back to default when value is not a valid finite number', async () => {
+      process.env.STM_CONSOLIDATION_IMPORTANCE_THRESHOLD = 'not-a-number';
+
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [ScheduleModule.forRoot()],
+        providers: [
+          ConsolidationService,
+          { provide: MemoryStmService, useValue: stmService },
+          { provide: MemoryLtmService, useValue: ltmService },
+          { provide: ImportanceScoringService, useValue: importanceService },
+        ],
+      }).compile();
+
+      const svc = module.get<ConsolidationService>(ConsolidationService);
+      stmService.findCandidates.mockResolvedValue([makeStmMemory()]);
+      ltmService.promote.mockResolvedValue(makeLtmMemory());
+
+      // If threshold fell back correctly to 0.5 and importanceService returns 0.8,
+      // the memory should be promoted (not skipped).
+      const result = await svc.run();
+      expect(result.promoted).toBe(1);
+
+      delete process.env.STM_CONSOLIDATION_IMPORTANCE_THRESHOLD;
     });
   });
 });
