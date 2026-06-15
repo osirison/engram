@@ -797,22 +797,36 @@ export class MemoryLtmService {
           ageDays >= pruneOlderThanDays &&
           !this.readPinned(nextMetadata)
         ) {
-          if (!options.dryRun) {
-            await this.delete(memory.userId, memory.id, memory.organizationId ?? undefined);
+          if (options.dryRun) {
+            pruned += 1;
+            continue;
           }
-          pruned += 1;
+          try {
+            await this.delete(memory.userId, memory.id, memory.organizationId ?? undefined);
+            pruned += 1;
+          } catch (error) {
+            this.logger.warn(`Decay prune failed for memory ${memory.id}: ${String(error)}`);
+          }
           continue;
         }
 
         if (!this.metadataEquals(metadata, nextMetadata)) {
-          if (!options.dryRun) {
+          if (options.dryRun) {
+            updated += 1;
+            continue;
+          }
+          try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (this.prisma as any).memory.update({
               where: { id: memory.id, userId: memory.userId, type: MemoryType.LONG_TERM },
               data: { metadata: nextMetadata },
             });
+            updated += 1;
+          } catch (error) {
+            this.logger.warn(
+              `Decay metadata update failed for memory ${memory.id}: ${String(error)}`
+            );
           }
-          updated += 1;
         }
       }
 
@@ -1065,7 +1079,7 @@ export class MemoryLtmService {
     left: Record<string, unknown> | null | undefined,
     right: Record<string, unknown> | null | undefined
   ): boolean {
-    return JSON.stringify(left ?? {}) === JSON.stringify(right ?? {});
+    return this.stableSerialize(left ?? {}) === this.stableSerialize(right ?? {});
   }
 
   private async findDuplicate(
@@ -1096,18 +1110,27 @@ export class MemoryLtmService {
       throw new LtmMemoryNotFoundError(memoryId);
     }
     const existingMemory = this.mapToLtmMemory(existing);
-    const metadataWithDuplicate = this.normalizeMetadata(existingMemory.metadata);
-    const existingMatches = Array.isArray(metadataWithDuplicate['duplicateMatches'])
-      ? (metadataWithDuplicate['duplicateMatches'] as unknown[])
-      : [];
-    metadataWithDuplicate['duplicateMatches'] = [
-      ...existingMatches,
-      {
-        score,
-        summary: content.slice(0, 120),
-        detectedAt: new Date().toISOString(),
-      },
-    ];
+    const match: DuplicateDetectionMatch = { memoryId, score };
+    const metadataWithDuplicate = this.duplicateDetectionService
+      ? this.duplicateDetectionService.annotateMetadata(
+          existingMemory.metadata,
+          match,
+          content.slice(0, 120)
+        )
+      : {
+          ...this.normalizeMetadata(existingMemory.metadata),
+          duplicateMatches: [
+            ...(Array.isArray(existingMemory.metadata?.['duplicateMatches'])
+              ? (existingMemory.metadata['duplicateMatches'] as unknown[])
+              : []),
+            {
+              memoryId,
+              score,
+              summary: content.slice(0, 120),
+              detectedAt: new Date().toISOString(),
+            },
+          ],
+        };
     const metadata = this.annotateImportance(metadataWithDuplicate, {
       content: existingMemory.content,
       metadata: metadataWithDuplicate,
@@ -1126,6 +1149,9 @@ export class MemoryLtmService {
   }
 
   private async recordAccess(memory: LtmMemory): Promise<void> {
+    if (!this.importanceService) {
+      return;
+    }
     try {
       const accessCount = this.readAccessCount(memory.metadata) + 1;
       const metadata = this.annotateImportance(memory.metadata, {
@@ -1148,7 +1174,26 @@ export class MemoryLtmService {
   }
 
   private async recordAccessMany(memories: LtmMemory[]): Promise<void> {
-    await Promise.all(memories.map((memory) => this.recordAccess(memory)));
+    const unique = new Map(memories.map((memory) => [memory.id, memory]));
+    await Promise.all([...unique.values()].map((memory) => this.recordAccess(memory)));
+  }
+
+  private stableSerialize(value: unknown): string {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableSerialize(item)).join(',')}]`;
+    }
+    if (value instanceof Date) {
+      return `"${value.toISOString()}"`;
+    }
+    if (value && typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+        a.localeCompare(b)
+      );
+      return `{${entries
+        .map(([key, entryValue]) => `${JSON.stringify(key)}:${this.stableSerialize(entryValue)}`)
+        .join(',')}}`;
+    }
+    return JSON.stringify(value);
   }
 
   /**

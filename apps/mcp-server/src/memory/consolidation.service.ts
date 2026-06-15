@@ -63,8 +63,24 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     if (raw === undefined || raw.trim().length === 0) {
       return fallback;
     }
-    const n = Number(raw ?? '');
+    const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
+
+  private readLastAccessedAtFromMetadata(
+    metadata: Record<string, unknown> | null | undefined,
+  ): Date | undefined {
+    const raw = metadata?.['lastAccessedAt'];
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return undefined;
   }
 
   onModuleInit(): void {
@@ -128,7 +144,7 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
         tags: memory.tags,
         accessCount: memory.accessCount,
         createdAt: memory.createdAt,
-        lastAccessedAt: memory.updatedAt,
+        lastAccessedAt: this.readLastAccessedAtFromMetadata(memory.metadata),
       });
       const importanceScore = importanceResult?.score;
       if (

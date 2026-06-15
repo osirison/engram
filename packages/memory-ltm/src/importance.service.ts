@@ -5,11 +5,6 @@ const DEFAULT_HALF_LIFE_DAYS = 14;
 const BASE_IMPORTANCE = 0.35;
 const MAX_ACCESS_BOOST = 0.25;
 
-const readEnv = (name: string): string | undefined => {
-  const globalValue = globalThis as { process?: { env?: Record<string, string | undefined> } };
-  return globalValue.process?.env?.[name];
-};
-
 @Injectable()
 export class ImportanceScoringService {
   score(signals: ImportanceSignals, now: Date = new Date()): ImportanceScoreResult {
@@ -21,7 +16,7 @@ export class ImportanceScoringService {
     const ageSource = lastAccessedAt ?? createdAt;
     const ageDays = Math.max(0, (now.getTime() - ageSource.getTime()) / 86_400_000);
     const halfLifeDays =
-      this.readPositiveNumber(readEnv('MEMORY_IMPORTANCE_HALF_LIFE_DAYS')) ??
+      this.readPositiveNumber(process.env.MEMORY_IMPORTANCE_HALF_LIFE_DAYS) ??
       DEFAULT_HALF_LIFE_DAYS;
     const recencyMultiplier = pinned ? 1 : Math.exp((-Math.LN2 * ageDays) / halfLifeDays);
     const accessBoost = Math.min(MAX_ACCESS_BOOST, 0.04 * Math.log2(accessCount + 1));

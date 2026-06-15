@@ -4,13 +4,14 @@ import type { DuplicateDetectionMatch } from './types';
 const DEFAULT_DUPLICATE_THRESHOLD = 0.97;
 type SearchHit = { id: string; score: number };
 
-const readEnv = (name: string): string | undefined => {
-  const globalValue = globalThis as { process?: { env?: Record<string, string | undefined> } };
-  return globalValue.process?.env?.[name];
-};
-
 @Injectable()
 export class DuplicateDetectionService {
+  private readonly duplicateThreshold: number;
+
+  constructor() {
+    this.duplicateThreshold = this.resolveThreshold(process.env.MEMORY_DUPLICATE_THRESHOLD);
+  }
+
   findMatch(
     hits: SearchHit[],
     currentId?: string,
@@ -50,7 +51,10 @@ export class DuplicateDetectionService {
   }
 
   threshold(): number {
-    const raw = readEnv('MEMORY_DUPLICATE_THRESHOLD');
+    return this.duplicateThreshold;
+  }
+
+  private resolveThreshold(raw: string | undefined): number {
     const parsed = raw ? Number(raw) : DEFAULT_DUPLICATE_THRESHOLD;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DUPLICATE_THRESHOLD;
   }

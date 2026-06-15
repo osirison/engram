@@ -237,5 +237,21 @@ describe('ConsolidationService', () => {
       expect(result.skipped).toBe(1);
       expect(ltmService.promote).not.toHaveBeenCalled();
     });
+
+    it('should use metadata lastAccessedAt for importance scoring', async () => {
+      const lastAccessedAt = '2026-01-02T12:00:00.000Z';
+      stmService.findCandidates.mockResolvedValue([
+        makeStmMemory({ metadata: { lastAccessedAt } }),
+      ]);
+      ltmService.promote.mockResolvedValue(makeLtmMemory());
+
+      await service.run();
+
+      expect(importanceService.score).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lastAccessedAt: new Date(lastAccessedAt),
+        }),
+      );
+    });
   });
 });
