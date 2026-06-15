@@ -10,6 +10,7 @@ import { MemoryStmService } from '@engram/memory-stm';
 import {
   MemoryLtmService,
   LtmMemoryQuotaExceededError,
+  ImportanceScoringService,
 } from '@engram/memory-ltm';
 
 export interface ConsolidationResult {
@@ -24,16 +25,22 @@ const JOB_NAME = 'stm_consolidation';
 export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConsolidationService.name);
   private readonly accessThreshold: number;
+  private readonly importanceThreshold: number;
   private readonly intervalMs: number;
 
   constructor(
     private readonly schedulerRegistry: SchedulerRegistry,
     @Optional() private readonly stmService?: MemoryStmService,
     @Optional() private readonly ltmService?: MemoryLtmService,
+    @Optional() private readonly importanceService?: ImportanceScoringService,
   ) {
     this.accessThreshold = ConsolidationService.parseEnvInt(
       process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD,
       3,
+    );
+    this.importanceThreshold = ConsolidationService.parseEnvFloat(
+      process.env.STM_CONSOLIDATION_IMPORTANCE_THRESHOLD,
+      0.5,
     );
     this.intervalMs = ConsolidationService.parseEnvInt(
       process.env.STM_CONSOLIDATION_INTERVAL_MS,
@@ -46,6 +53,14 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     fallback: number,
   ): number {
     const n = parseInt(raw ?? '', 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
+
+  private static parseEnvFloat(
+    raw: string | undefined,
+    fallback: number,
+  ): number {
+    const n = Number(raw ?? '');
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   }
 
@@ -104,6 +119,24 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     let failed = 0;
 
     for (const memory of candidates) {
+      const importanceScore = this.importanceService?.score({
+        content: memory.content,
+        metadata: memory.metadata,
+        tags: memory.tags,
+        accessCount: memory.accessCount,
+        createdAt: memory.createdAt,
+        lastAccessedAt: memory.updatedAt,
+      }).score;
+      if (
+        importanceScore !== undefined &&
+        importanceScore < this.importanceThreshold
+      ) {
+        skipped++;
+        this.logger.debug(
+          `Skipping STM memory ${memory.id}; importance ${importanceScore.toFixed(3)} below threshold`,
+        );
+        continue;
+      }
       try {
         await this.ltmService.promote(
           memory.userId,

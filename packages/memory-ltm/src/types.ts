@@ -123,6 +123,54 @@ export interface ReindexResult extends ReindexProgress {
   cursor: string | null;
 }
 
+export interface ImportanceFactors {
+  base: number;
+  recencyMultiplier: number;
+  accessBoost: number;
+  cueBoost: number;
+  pinBoost: number;
+}
+
+export interface ImportanceScoreResult {
+  score: number;
+  status: 'active' | 'stale' | 'archived' | 'pinned';
+  factors: ImportanceFactors;
+  reasons: string[];
+}
+
+export interface ImportanceSignals {
+  content: string;
+  metadata?: Record<string, unknown> | null;
+  tags?: string[];
+  accessCount?: number;
+  pinned?: boolean;
+  createdAt?: Date;
+  lastAccessedAt?: Date | string | null;
+}
+
+export interface DuplicateDetectionMatch {
+  memoryId: string;
+  score: number;
+}
+
+export interface DecayPolicyOptions {
+  userId?: string;
+  batchSize?: number;
+  cursor?: string;
+  staleScoreThreshold?: number;
+  pruneScoreThreshold?: number;
+  pruneOlderThanDays?: number;
+  dryRun?: boolean;
+}
+
+export interface DecayPolicyResult {
+  processed: number;
+  updated: number;
+  pruned: number;
+  stale: number;
+  cursor: string | null;
+}
+
 // Zod validation schemas
 
 // Create LTM memory schema

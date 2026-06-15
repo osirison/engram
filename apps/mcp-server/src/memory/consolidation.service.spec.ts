@@ -6,6 +6,7 @@ import {
   MemoryLtmService,
   LtmMemoryQuotaExceededError,
   LtmPromotionError,
+  ImportanceScoringService,
 } from '@engram/memory-ltm';
 import type { StmMemory } from '@engram/memory-stm';
 import type { LtmMemory } from '@engram/memory-ltm';
@@ -44,6 +45,7 @@ describe('ConsolidationService', () => {
   let service: ConsolidationService;
   let stmService: jest.Mocked<MemoryStmService>;
   let ltmService: jest.Mocked<MemoryLtmService>;
+  let importanceService: jest.Mocked<ImportanceScoringService>;
 
   beforeEach(async () => {
     delete process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD;
@@ -55,6 +57,20 @@ describe('ConsolidationService', () => {
     const ltmMock: Partial<jest.Mocked<MemoryLtmService>> = {
       promote: jest.fn(),
     };
+    const importanceMock: Partial<jest.Mocked<ImportanceScoringService>> = {
+      score: jest.fn().mockReturnValue({
+        score: 0.8,
+        status: 'active',
+        factors: {
+          base: 0.35,
+          recencyMultiplier: 1,
+          accessBoost: 0.1,
+          cueBoost: 0.1,
+          pinBoost: 0,
+        },
+        reasons: [],
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       imports: [ScheduleModule.forRoot()],
@@ -62,12 +78,14 @@ describe('ConsolidationService', () => {
         ConsolidationService,
         { provide: MemoryStmService, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
+        { provide: ImportanceScoringService, useValue: importanceMock },
       ],
     }).compile();
 
     service = module.get<ConsolidationService>(ConsolidationService);
     stmService = module.get(MemoryStmService);
     ltmService = module.get(MemoryLtmService);
+    importanceService = module.get(ImportanceScoringService);
   });
 
   describe('run()', () => {
@@ -197,6 +215,27 @@ describe('ConsolidationService', () => {
 
       expect(result.promoted).toBe(2);
       expect(result.failed).toBe(1);
+    });
+
+    it('should skip low-importance candidates', async () => {
+      stmService.findCandidates.mockResolvedValue([makeStmMemory()]);
+      importanceService.score.mockReturnValue({
+        score: 0.2,
+        status: 'stale',
+        factors: {
+          base: 0.35,
+          recencyMultiplier: 0.4,
+          accessBoost: 0,
+          cueBoost: 0,
+          pinBoost: 0,
+        },
+        reasons: ['stale'],
+      });
+
+      const result = await service.run();
+
+      expect(result.skipped).toBe(1);
+      expect(ltmService.promote).not.toHaveBeenCalled();
     });
   });
 });

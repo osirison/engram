@@ -5,6 +5,8 @@ import { MemoryStmService } from '@engram/memory-stm';
 import { EmbeddingsService } from '@engram/embeddings';
 import { VECTOR_STORE_TOKEN, type VectorStore, type VectorPayload } from '@engram/vector-store';
 import { rankResults, DEFAULT_RANKING_WEIGHTS, type RankingWeights } from './rank';
+import { ImportanceScoringService } from './importance.service';
+import { DuplicateDetectionService } from './duplicate-detection.service';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -20,6 +22,9 @@ import {
   SemanticSearchResult,
   ReindexOptions,
   ReindexResult,
+  DecayPolicyOptions,
+  DecayPolicyResult,
+  DuplicateDetectionMatch,
   validateCreateLtmMemory,
   validateUpdateLtmMemory,
   validateLtmQueryOptions,
@@ -51,7 +56,9 @@ export class MemoryLtmService {
     @Optional() private readonly embeddingsService?: EmbeddingsService,
     @Optional()
     @Inject(VECTOR_STORE_TOKEN)
-    private readonly vectorStore?: VectorStore
+    private readonly vectorStore?: VectorStore,
+    @Optional() private readonly importanceService?: ImportanceScoringService,
+    @Optional() private readonly duplicateDetectionService?: DuplicateDetectionService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -82,6 +89,28 @@ export class MemoryLtmService {
         embedding = result?.embedding ?? [];
       }
 
+      const duplicate = await this.findDuplicate(
+        validatedInput.userId,
+        validatedInput.organizationId,
+        embedding
+      );
+      if (duplicate) {
+        return await this.linkDuplicateAndReturn(
+          duplicate.memoryId,
+          validatedInput.userId,
+          validatedInput.organizationId,
+          duplicate.score,
+          validatedInput.content
+        );
+      }
+
+      const metadata = this.annotateImportance(validatedInput.metadata, {
+        content: validatedInput.content,
+        metadata: validatedInput.metadata,
+        tags: validatedInput.tags,
+        accessCount: 0,
+      });
+
       // Create memory in database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const memory = await (this.prisma as any).memory.create({
@@ -90,7 +119,7 @@ export class MemoryLtmService {
           organizationId: validatedInput.organizationId ?? null,
           content: validatedInput.content,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          metadata: validatedInput.metadata as any,
+          metadata: metadata as any,
           tags: validatedInput.tags || [],
           type: MemoryType.LONG_TERM,
           expiresAt: null,
@@ -141,8 +170,9 @@ export class MemoryLtmService {
       if (!memory) {
         return null;
       }
-
-      return this.mapToLtmMemory(memory);
+      const ltmMemory = this.mapToLtmMemory(memory);
+      void this.recordAccess(ltmMemory);
+      return ltmMemory;
     } catch (error) {
       this.logger.error(`Failed to get LTM memory ${memoryId}: ${error}`);
       throw new LtmDatabaseError('get', error instanceof Error ? error.message : String(error));
@@ -166,11 +196,11 @@ export class MemoryLtmService {
     const validatedInput = validateUpdateLtmMemory(input);
 
     try {
-      // Check if memory exists and belongs to user (org-scoped when provided)
-      const existing = await this.get(userId, memoryId, organizationId);
-      if (!existing) {
+      const existingRow = await this.findRawMemory(userId, memoryId, organizationId);
+      if (!existingRow) {
         throw new LtmMemoryNotFoundError(memoryId);
       }
+      const existing = this.mapToLtmMemory(existingRow);
 
       // Prepare update data (only include fields that are provided)
       const updateData: Record<string, unknown> = {};
@@ -196,6 +226,25 @@ export class MemoryLtmService {
           newEmbedding = result.embedding;
           updateData.embedding = newEmbedding;
         }
+      }
+
+      const nextMetadata =
+        validatedInput.metadata !== undefined
+          ? (validatedInput.metadata ?? null)
+          : existing.metadata;
+      const nextContent = validatedInput.content ?? existing.content;
+      const nextTags = validatedInput.tags ?? existing.tags;
+      updateData.metadata = this.annotateImportance(nextMetadata, {
+        content: nextContent,
+        metadata: nextMetadata,
+        tags: nextTags,
+        accessCount: this.readAccessCount(nextMetadata),
+        pinned: this.readPinned(nextMetadata),
+        createdAt: existing.createdAt,
+        lastAccessedAt: this.readLastAccessedAt(nextMetadata),
+      });
+      if (validatedInput.tags !== undefined) {
+        updateData.tags = validatedInput.tags || [];
       }
 
       // Build the where clause; Prisma requires a unique filter for update.
@@ -483,6 +532,28 @@ export class MemoryLtmService {
       // Org scope: prefer the explicit param, fall back to what's stored in the STM payload.
       const resolvedOrgId = organizationId ?? stmMemory.organizationId ?? null;
 
+      const duplicate = await this.findDuplicate(userId, resolvedOrgId ?? undefined, embedding);
+      if (duplicate) {
+        const existing = await this.linkDuplicateAndReturn(
+          duplicate.memoryId,
+          userId,
+          resolvedOrgId ?? undefined,
+          duplicate.score,
+          stmMemory.content
+        );
+        await this.stmService.delete(userId, memoryId, organizationId ?? stmMemory.organizationId);
+        return existing;
+      }
+
+      const metadata = this.annotateImportance(stmMemory.metadata, {
+        content: stmMemory.content,
+        metadata: stmMemory.metadata,
+        tags: stmMemory.tags,
+        accessCount: stmMemory.accessCount ?? 0,
+        createdAt: stmMemory.createdAt,
+        lastAccessedAt: stmMemory.updatedAt,
+      });
+
       // Step 4: Begin database transaction for atomic operation
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (this.prisma as any).$transaction(async (prisma: any) => {
@@ -497,7 +568,7 @@ export class MemoryLtmService {
             organizationId: resolvedOrgId,
             content: stmMemory.content,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            metadata: stmMemory.metadata as any,
+            metadata: metadata as any,
             tags: stmMemory.tags,
             type: MemoryType.LONG_TERM,
             createdAt: stmMemory.createdAt,
@@ -627,7 +698,7 @@ export class MemoryLtmService {
         return [];
       }
 
-      const ids = hits.map((hit) => hit.id);
+      const ids = hits.map((hit: { id: string }) => hit.id);
       const memWhere: Record<string, unknown> = {
         id: { in: ids },
         userId,
@@ -644,17 +715,21 @@ export class MemoryLtmService {
       );
 
       const hydrated = hits
-        .map((hit) => {
+        .map((hit: { id: string; score: number }) => {
           const memory = byId.get(hit.id);
           if (!memory) {
             return null;
           }
           return { memory: this.mapToLtmMemory(memory), score: hit.score };
         })
-        .filter((result): result is SemanticSearchResult => result !== null);
+        .filter(
+          (result: SemanticSearchResult | null): result is SemanticSearchResult => result !== null
+        );
 
       // Re-rank by blended similarity + recency + importance, then trim to requested limit.
-      return rankResults(hydrated, weights, halfLifeDays).slice(0, limit);
+      const ranked = rankResults(hydrated, weights, halfLifeDays).slice(0, limit);
+      void this.recordAccessMany(ranked.map((result) => result.memory));
+      return ranked;
     } catch (error) {
       this.logger.error(`Semantic search failed for user ${userId}: ${error}`);
       throw new LtmDatabaseError(
@@ -662,6 +737,94 @@ export class MemoryLtmService {
         error instanceof Error ? error.message : String(error)
       );
     }
+  }
+
+  async applyDecayPolicy(options: DecayPolicyOptions = {}): Promise<DecayPolicyResult> {
+    const batchSize = this.normalizeBatchSize(options.batchSize);
+    const staleScoreThreshold = this.normalizeThreshold(options.staleScoreThreshold, 0.3);
+    const pruneScoreThreshold = this.normalizeThreshold(options.pruneScoreThreshold, 0.15);
+    const pruneOlderThanDays =
+      typeof options.pruneOlderThanDays === 'number' && options.pruneOlderThanDays >= 0
+        ? options.pruneOlderThanDays
+        : 30;
+
+    let cursor = options.cursor;
+    let processed = 0;
+    let updated = 0;
+    let pruned = 0;
+    let stale = 0;
+    let exhausted = false;
+
+    for (;;) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const batch: PrismaMemory[] = await (this.prisma as any).memory.findMany({
+        where: {
+          type: MemoryType.LONG_TERM,
+          ...(options.userId ? { userId: options.userId } : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: batchSize,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      });
+
+      if (batch.length === 0) {
+        break;
+      }
+
+      for (const row of batch) {
+        processed += 1;
+        const memory = this.mapToLtmMemory(row);
+        const metadata = this.normalizeMetadata(memory.metadata);
+        const nextMetadata = this.annotateImportance(metadata, {
+          content: memory.content,
+          metadata,
+          tags: memory.tags,
+          accessCount: this.readAccessCount(metadata),
+          pinned: this.readPinned(metadata),
+          createdAt: memory.createdAt,
+          lastAccessedAt: this.readLastAccessedAt(metadata),
+        });
+        const score = this.readImportance(nextMetadata);
+        const ageDays = this.ageDays(memory.createdAt);
+        const status =
+          typeof nextMetadata['status'] === 'string' ? nextMetadata['status'] : 'active';
+        if (status !== 'active' || score < staleScoreThreshold) {
+          stale += 1;
+        }
+
+        if (
+          score < pruneScoreThreshold &&
+          ageDays >= pruneOlderThanDays &&
+          !this.readPinned(nextMetadata)
+        ) {
+          if (!options.dryRun) {
+            await this.delete(memory.userId, memory.id, memory.organizationId ?? undefined);
+          }
+          pruned += 1;
+          continue;
+        }
+
+        if (!this.metadataEquals(metadata, nextMetadata)) {
+          if (!options.dryRun) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (this.prisma as any).memory.update({
+              where: { id: memory.id, userId: memory.userId, type: MemoryType.LONG_TERM },
+              data: { metadata: nextMetadata },
+            });
+          }
+          updated += 1;
+        }
+      }
+
+      const lastRow = batch[batch.length - 1];
+      cursor = lastRow?.id ?? cursor;
+      if (batch.length < batchSize) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    return { processed, updated, pruned, stale, cursor: exhausted ? null : (cursor ?? null) };
   }
 
   /**
@@ -787,6 +950,10 @@ export class MemoryLtmService {
     return Math.min(batchSize, 1000);
   }
 
+  private normalizeThreshold(value: number | undefined, fallback: number): number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+  }
+
   /**
    * Upsert a memory's embedding into the vector store. Non-fatal: failures are
    * logged and swallowed so Postgres remains the source of truth.
@@ -820,6 +987,168 @@ export class MemoryLtmService {
     } catch (error) {
       this.logger.warn(`Failed to remove ${ids.length} vector(s) from vector store: ${error}`);
     }
+  }
+
+  private async findRawMemory(
+    userId: string,
+    memoryId: string,
+    organizationId?: string
+  ): Promise<PrismaMemory | null> {
+    const where: Record<string, unknown> = {
+      id: memoryId,
+      userId,
+      type: MemoryType.LONG_TERM,
+    };
+    if (organizationId !== undefined) {
+      where.organizationId = organizationId;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
+  }
+
+  private normalizeMetadata(
+    metadata: Record<string, unknown> | null | undefined
+  ): Record<string, unknown> {
+    return { ...(metadata ?? {}) };
+  }
+
+  private annotateImportance(
+    metadata: Record<string, unknown> | null | undefined,
+    signals: {
+      content: string;
+      metadata?: Record<string, unknown> | null;
+      tags?: string[];
+      accessCount?: number;
+      pinned?: boolean;
+      createdAt?: Date;
+      lastAccessedAt?: Date | string | null;
+    }
+  ): Record<string, unknown> {
+    if (!this.importanceService) {
+      return this.normalizeMetadata(metadata);
+    }
+    return this.importanceService.annotateMetadata(metadata, signals);
+  }
+
+  private readAccessCount(metadata: Record<string, unknown> | null | undefined): number {
+    return typeof metadata?.['accessCount'] === 'number' && Number.isFinite(metadata['accessCount'])
+      ? (metadata['accessCount'] as number)
+      : 0;
+  }
+
+  private readPinned(metadata: Record<string, unknown> | null | undefined): boolean {
+    return metadata?.['pinned'] === true;
+  }
+
+  private readLastAccessedAt(metadata: Record<string, unknown> | null | undefined): Date | null {
+    const raw = metadata?.['lastAccessedAt'];
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      const parsed = new Date(raw);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+  }
+
+  private readImportance(metadata: Record<string, unknown> | null | undefined): number {
+    const importance = metadata?.['importance'];
+    return typeof importance === 'number' && Number.isFinite(importance) ? importance : 0.5;
+  }
+
+  private ageDays(date: Date): number {
+    return Math.max(0, (Date.now() - date.getTime()) / 86_400_000);
+  }
+
+  private metadataEquals(
+    left: Record<string, unknown> | null | undefined,
+    right: Record<string, unknown> | null | undefined
+  ): boolean {
+    return JSON.stringify(left ?? {}) === JSON.stringify(right ?? {});
+  }
+
+  private async findDuplicate(
+    userId: string,
+    organizationId: string | undefined,
+    embedding: number[]
+  ): Promise<DuplicateDetectionMatch | null> {
+    if (!this.vectorStore || !this.duplicateDetectionService || embedding.length === 0) {
+      return null;
+    }
+    const hits = await this.vectorStore.search(
+      embedding,
+      { userId, organizationId, type: MemoryType.LONG_TERM },
+      3
+    );
+    return this.duplicateDetectionService.findMatch(hits);
+  }
+
+  private async linkDuplicateAndReturn(
+    memoryId: string,
+    userId: string,
+    organizationId: string | undefined,
+    score: number,
+    content: string
+  ): Promise<LtmMemory> {
+    const existing = await this.findRawMemory(userId, memoryId, organizationId);
+    if (!existing) {
+      throw new LtmMemoryNotFoundError(memoryId);
+    }
+    const existingMemory = this.mapToLtmMemory(existing);
+    const metadataWithDuplicate = this.normalizeMetadata(existingMemory.metadata);
+    const existingMatches = Array.isArray(metadataWithDuplicate['duplicateMatches'])
+      ? (metadataWithDuplicate['duplicateMatches'] as unknown[])
+      : [];
+    metadataWithDuplicate['duplicateMatches'] = [
+      ...existingMatches,
+      {
+        score,
+        summary: content.slice(0, 120),
+        detectedAt: new Date().toISOString(),
+      },
+    ];
+    const metadata = this.annotateImportance(metadataWithDuplicate, {
+      content: existingMemory.content,
+      metadata: metadataWithDuplicate,
+      tags: existingMemory.tags,
+      accessCount: this.readAccessCount(existingMemory.metadata),
+      pinned: this.readPinned(existingMemory.metadata),
+      createdAt: existingMemory.createdAt,
+      lastAccessedAt: this.readLastAccessedAt(existingMemory.metadata),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updated = await (this.prisma as any).memory.update({
+      where: { id: existingMemory.id, userId: existingMemory.userId, type: MemoryType.LONG_TERM },
+      data: { metadata },
+    });
+    return this.mapToLtmMemory(updated);
+  }
+
+  private async recordAccess(memory: LtmMemory): Promise<void> {
+    try {
+      const accessCount = this.readAccessCount(memory.metadata) + 1;
+      const metadata = this.annotateImportance(memory.metadata, {
+        content: memory.content,
+        metadata: memory.metadata,
+        tags: memory.tags,
+        accessCount,
+        pinned: this.readPinned(memory.metadata),
+        createdAt: memory.createdAt,
+        lastAccessedAt: new Date(),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (this.prisma as any).memory.update({
+        where: { id: memory.id, userId: memory.userId, type: MemoryType.LONG_TERM },
+        data: { metadata },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to record access for memory ${memory.id}: ${error}`);
+    }
+  }
+
+  private async recordAccessMany(memories: LtmMemory[]): Promise<void> {
+    await Promise.all(memories.map((memory) => this.recordAccess(memory)));
   }
 
   /**

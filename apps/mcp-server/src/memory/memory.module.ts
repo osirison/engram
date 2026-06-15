@@ -8,6 +8,7 @@ import { PrismaModule } from '@engram/database';
 import { RedisModule } from '@engram/redis';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
+import { DecayService } from './decay.service';
 
 @Module({
   imports: [
@@ -18,7 +19,12 @@ import { ConsolidationService } from './consolidation.service';
     RedisModule,
   ],
   controllers: [MemoryController],
-  providers: [MemoryService, ReindexQueueService, ConsolidationService],
-  exports: [MemoryService, ConsolidationService],
+  providers: [
+    MemoryService,
+    ReindexQueueService,
+    ConsolidationService,
+    DecayService,
+  ],
+  exports: [MemoryService, ConsolidationService, DecayService],
 })
 export class MemoryModule {}

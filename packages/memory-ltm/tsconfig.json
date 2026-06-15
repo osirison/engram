@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "types": ["node"],
+    "paths": {
+      "@engram/database": ["../database/src/index.ts"],
+      "@engram/embeddings": ["../embeddings/src/index.ts"],
+      "@engram/memory-stm": ["../memory-stm/src/index.ts"],
+      "@engram/vector-store": ["../vector-store/src/index.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
