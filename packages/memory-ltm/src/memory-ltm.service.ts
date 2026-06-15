@@ -818,7 +818,7 @@ export class MemoryLtmService {
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (this.prisma as any).memory.update({
-              where: { id: memory.id, userId: memory.userId, type: MemoryType.LONG_TERM },
+              where: { id: memory.id },
               data: { metadata: nextMetadata },
             });
             updated += 1;
@@ -1142,7 +1142,7 @@ export class MemoryLtmService {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updated = await (this.prisma as any).memory.update({
-      where: { id: existingMemory.id, userId: existingMemory.userId, type: MemoryType.LONG_TERM },
+      where: { id: existingMemory.id },
       data: { metadata },
     });
     return this.mapToLtmMemory(updated);
@@ -1165,7 +1165,7 @@ export class MemoryLtmService {
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (this.prisma as any).memory.update({
-        where: { id: memory.id, userId: memory.userId, type: MemoryType.LONG_TERM },
+        where: { id: memory.id },
         data: { metadata },
       });
     } catch (error) {

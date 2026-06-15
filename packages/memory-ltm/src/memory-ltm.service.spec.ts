@@ -790,7 +790,7 @@ describe('MemoryLtmService', () => {
       expect(prismaService.memory.create).not.toHaveBeenCalled();
       expect(prismaService.memory.update).toHaveBeenCalled();
       expect(prismaService.memory.update).toHaveBeenCalledWith({
-        where: { id: mockMemoryId, userId: mockUserId, type: MemoryType.LONG_TERM },
+        where: { id: mockMemoryId },
         data: {
           metadata: expect.objectContaining({
             duplicateMatches: expect.arrayContaining([
