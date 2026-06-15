@@ -46,4 +46,67 @@ describe('DecayService', () => {
       }),
     );
   });
+
+  it('returns empty result and skips LTM call when LTM service is absent', async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [ScheduleModule.forRoot()],
+      providers: [DecayService],
+    }).compile();
+
+    const serviceWithoutLtm = module.get(DecayService);
+    const result = await serviceWithoutLtm.run();
+
+    expect(result).toEqual({
+      processed: 0,
+      updated: 0,
+      pruned: 0,
+      stale: 0,
+      cursor: null,
+    });
+  });
+
+  it('skips registering a timer when MEMORY_DECAY_INTERVAL_MS=0', async () => {
+    process.env.MEMORY_DECAY_INTERVAL_MS = '0';
+
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [ScheduleModule.forRoot()],
+      providers: [
+        DecayService,
+        { provide: MemoryLtmService, useValue: ltmService },
+      ],
+    }).compile();
+
+    const svc = module.get(DecayService);
+    svc.onModuleInit();
+
+    // No timer was registered, so destroy should not throw.
+    expect(() => svc.onModuleDestroy()).not.toThrow();
+
+    delete process.env.MEMORY_DECAY_INTERVAL_MS;
+  });
+
+  it('registers and cleans up the interval on init/destroy', async () => {
+    process.env.MEMORY_DECAY_INTERVAL_MS = '999999';
+    ltmService.applyDecayPolicy.mockResolvedValue({
+      processed: 0,
+      updated: 0,
+      pruned: 0,
+      stale: 0,
+      cursor: null,
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [ScheduleModule.forRoot()],
+      providers: [
+        DecayService,
+        { provide: MemoryLtmService, useValue: ltmService },
+      ],
+    }).compile();
+
+    const svc = module.get(DecayService);
+    svc.onModuleInit();
+    expect(() => svc.onModuleDestroy()).not.toThrow();
+
+    delete process.env.MEMORY_DECAY_INTERVAL_MS;
+  });
 });

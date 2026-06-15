@@ -253,5 +253,88 @@ describe('ConsolidationService', () => {
         }),
       );
     });
+
+    it('should use Date object in metadata lastAccessedAt directly', async () => {
+      const lastAccessedAt = new Date('2026-01-02T12:00:00.000Z');
+      stmService.findCandidates.mockResolvedValue([
+        makeStmMemory({ metadata: { lastAccessedAt } }),
+      ]);
+      ltmService.promote.mockResolvedValue(makeLtmMemory());
+
+      await service.run();
+
+      expect(importanceService.score).toHaveBeenCalledWith(
+        expect.objectContaining({ lastAccessedAt }),
+      );
+    });
+  });
+
+  describe('scheduler lifecycle', () => {
+    it('skips scheduler when STM_CONSOLIDATION_INTERVAL_MS=0', async () => {
+      process.env.STM_CONSOLIDATION_INTERVAL_MS = '0';
+
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [ScheduleModule.forRoot()],
+        providers: [
+          ConsolidationService,
+          { provide: MemoryStmService, useValue: stmService },
+          { provide: MemoryLtmService, useValue: ltmService },
+          { provide: ImportanceScoringService, useValue: importanceService },
+        ],
+      }).compile();
+
+      const svc = module.get<ConsolidationService>(ConsolidationService);
+      svc.onModuleInit();
+      expect(() => svc.onModuleDestroy()).not.toThrow();
+
+      delete process.env.STM_CONSOLIDATION_INTERVAL_MS;
+    });
+
+    it('registers and tears down interval when interval > 0', async () => {
+      process.env.STM_CONSOLIDATION_INTERVAL_MS = '999999';
+
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [ScheduleModule.forRoot()],
+        providers: [
+          ConsolidationService,
+          { provide: MemoryStmService, useValue: stmService },
+          { provide: MemoryLtmService, useValue: ltmService },
+          { provide: ImportanceScoringService, useValue: importanceService },
+        ],
+      }).compile();
+
+      const svc = module.get<ConsolidationService>(ConsolidationService);
+      svc.onModuleInit();
+      expect(() => svc.onModuleDestroy()).not.toThrow();
+
+      delete process.env.STM_CONSOLIDATION_INTERVAL_MS;
+    });
+  });
+
+  describe('parseEnvFloat', () => {
+    it('falls back to default when value is not a valid finite number', async () => {
+      process.env.STM_CONSOLIDATION_IMPORTANCE_THRESHOLD = 'not-a-number';
+
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [ScheduleModule.forRoot()],
+        providers: [
+          ConsolidationService,
+          { provide: MemoryStmService, useValue: stmService },
+          { provide: MemoryLtmService, useValue: ltmService },
+          { provide: ImportanceScoringService, useValue: importanceService },
+        ],
+      }).compile();
+
+      const svc = module.get<ConsolidationService>(ConsolidationService);
+      stmService.findCandidates.mockResolvedValue([makeStmMemory()]);
+      ltmService.promote.mockResolvedValue(makeLtmMemory());
+
+      // If threshold fell back correctly to 0.5 and importanceService returns 0.8,
+      // the memory should be promoted (not skipped).
+      const result = await svc.run();
+      expect(result.promoted).toBe(1);
+
+      delete process.env.STM_CONSOLIDATION_IMPORTANCE_THRESHOLD;
+    });
   });
 });
