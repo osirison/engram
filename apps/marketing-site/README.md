@@ -1,3 +1,8 @@
+---
+title: ENGRAM
+description: Developer setup and project entry points for the ENGRAM MCP memory server
+---
+
 # Engram marketing site
 
 A radically minimal marketing site for Engram (agent memory / MCP server).

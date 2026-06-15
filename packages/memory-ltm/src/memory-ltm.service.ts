@@ -541,7 +541,17 @@ export class MemoryLtmService {
           duplicate.score,
           stmMemory.content
         );
-        await this.stmService.delete(userId, memoryId, organizationId ?? stmMemory.organizationId);
+        try {
+          await this.stmService.delete(
+            userId,
+            memoryId,
+            organizationId ?? stmMemory.organizationId
+          );
+        } catch (stmDeleteError) {
+          this.logger.warn(
+            `Failed to delete STM memory ${memoryId} after duplicate link: ${stmDeleteError}`
+          );
+        }
         return existing;
       }
 
@@ -810,7 +820,9 @@ export class MemoryLtmService {
           continue;
         }
 
-        if (!this.metadataEquals(metadata, nextMetadata)) {
+        const oldStatus = typeof metadata['status'] === 'string' ? metadata['status'] : 'active';
+        const oldImportance = this.readImportance(metadata);
+        if (oldStatus !== status || Math.abs(oldImportance - score) > 0.01) {
           if (options.dryRun) {
             updated += 1;
             continue;
@@ -1075,13 +1087,6 @@ export class MemoryLtmService {
     return Math.max(0, (Date.now() - date.getTime()) / 86_400_000);
   }
 
-  private metadataEquals(
-    left: Record<string, unknown> | null | undefined,
-    right: Record<string, unknown> | null | undefined
-  ): boolean {
-    return this.stableSerialize(left ?? {}) === this.stableSerialize(right ?? {});
-  }
-
   private async findDuplicate(
     userId: string,
     organizationId: string | undefined,
@@ -1111,26 +1116,13 @@ export class MemoryLtmService {
     }
     const existingMemory = this.mapToLtmMemory(existing);
     const match: DuplicateDetectionMatch = { memoryId, score };
-    const metadataWithDuplicate = this.duplicateDetectionService
-      ? this.duplicateDetectionService.annotateMetadata(
-          existingMemory.metadata,
-          match,
-          content.slice(0, 120)
-        )
-      : {
-          ...this.normalizeMetadata(existingMemory.metadata),
-          duplicateMatches: [
-            ...(Array.isArray(existingMemory.metadata?.['duplicateMatches'])
-              ? (existingMemory.metadata['duplicateMatches'] as unknown[])
-              : []),
-            {
-              memoryId,
-              score,
-              summary: content.slice(0, 120),
-              detectedAt: new Date().toISOString(),
-            },
-          ],
-        };
+    // duplicateDetectionService is guaranteed non-null here: findDuplicate() returns null
+    // when it is absent, and linkDuplicateAndReturn is only called on a non-null result.
+    const metadataWithDuplicate = this.duplicateDetectionService!.annotateMetadata(
+      existingMemory.metadata,
+      match,
+      content.slice(0, 120)
+    );
     const metadata = this.annotateImportance(metadataWithDuplicate, {
       content: existingMemory.content,
       metadata: metadataWithDuplicate,
@@ -1176,24 +1168,6 @@ export class MemoryLtmService {
   private async recordAccessMany(memories: LtmMemory[]): Promise<void> {
     const unique = new Map(memories.map((memory) => [memory.id, memory]));
     await Promise.all([...unique.values()].map((memory) => this.recordAccess(memory)));
-  }
-
-  private stableSerialize(value: unknown): string {
-    if (Array.isArray(value)) {
-      return `[${value.map((item) => this.stableSerialize(item)).join(',')}]`;
-    }
-    if (value instanceof Date) {
-      return `"${value.toISOString()}"`;
-    }
-    if (value && typeof value === 'object') {
-      const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-        a.localeCompare(b)
-      );
-      return `{${entries
-        .map(([key, entryValue]) => `${JSON.stringify(key)}:${this.stableSerialize(entryValue)}`)
-        .join(',')}}`;
-    }
-    return JSON.stringify(value);
   }
 
   /**

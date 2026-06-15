@@ -31,7 +31,9 @@
       "Bash(awk '{print $4}')",
       "Bash(git cherry-pick *)",
       "Bash(gh api *)",
-      "Bash(npx *)"
+      "Bash(npx *)",
+      "Bash(git *)",
+      "Bash(node *)"
     ],
     "deny": [],
     "ask": []
