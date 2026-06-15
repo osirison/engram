@@ -21,7 +21,17 @@
       "Bash(gh run *)",
       "Bash(git checkout *)",
       "Bash(git pull *)",
-      "Bash(gh issue *)"
+      "Bash(gh issue *)",
+      "Bash(pnpm *)",
+      "Bash(npm exec *)",
+      "Bash(git stash *)",
+      "Bash(git rebase *)",
+      "Bash(GIT_EDITOR=true git rebase *)",
+      "Bash(EDITOR=true git rebase *)",
+      "Bash(awk '{print $4}')",
+      "Bash(git cherry-pick *)",
+      "Bash(gh api *)",
+      "Bash(npx *)"
     ],
     "deny": [],
     "ask": []
