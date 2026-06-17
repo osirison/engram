@@ -168,9 +168,9 @@ describe('MCP Tools Integration', () => {
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 13 tools', () => {
+    it('should register exactly 18 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(13);
+      expect(tools).toHaveLength(18);
     });
 
     it('should register all expected tool names', () => {
@@ -188,6 +188,12 @@ describe('MCP Tools Integration', () => {
       expect(names).toContain('cancel_reindex_job');
       expect(names).toContain('retry_reindex_job');
       expect(names).toContain('consolidate_memories');
+      // C1 tools
+      expect(names).toContain('remember');
+      expect(names).toContain('forget');
+      expect(names).toContain('reflect');
+      expect(names).toContain('compress_context');
+      expect(names).toContain('load_context');
     });
 
     it('should attach a callable handler to each tool', () => {
