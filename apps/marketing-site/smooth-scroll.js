@@ -6,10 +6,9 @@
  * Only hijacks wheel/trackpad. Touch is already smooth natively, and we bail
  * entirely for coarse pointers and reduced-motion users.
  */
-(function () {
-  var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var coarse = matchMedia("(pointer: coarse)").matches;
-  if (reduce || coarse) return;
+var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+var coarse = matchMedia("(pointer: coarse)").matches;
+if (!reduce && !coarse) {
 
   // our JS owns the easing now — kill CSS smooth so scrollTo() lands instantly per frame
   document.documentElement.style.scrollBehavior = "auto";
@@ -59,4 +58,5 @@
   }, { passive: true });
 
   window.addEventListener("resize", function () { target = clamp(target); current = clamp(current); });
-})();
+}
+
