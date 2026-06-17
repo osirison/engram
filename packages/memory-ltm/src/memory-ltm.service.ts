@@ -99,33 +99,28 @@ export class MemoryLtmService {
 
       if (this.ingestPipeline) {
         ingestCtx = await this.ingestPipeline.runSyncSteps(ingestCtx);
-        if (ingestCtx.aborted) {
-          // Exact duplicate — surface as a vector-similarity duplicate lookup
-          // so the caller gets back the existing memory unchanged.
-          if (ingestCtx.duplicateId) {
-            const existing = await this.get(
-              validatedInput.userId,
-              ingestCtx.duplicateId,
-              validatedInput.organizationId
-            );
-            if (existing) {
-              this.logger.debug(
-                `Exact duplicate (hash) resolved to existing memory: ${ingestCtx.duplicateId}`
-              );
-              return existing;
-            }
-          }
-          // Hash matched but the ID wasn't set — fall through and let vector dedup decide.
-          this.logger.debug(
-            `Ingest aborted (${ingestCtx.abortReason ?? 'unknown'}), continuing with vector dedup`
-          );
-        }
       }
 
-      // Use the pipeline-enriched content and tags from this point on.
       const processedContent = ingestCtx.content;
       const processedTags = ingestCtx.tags;
       const processedMetadata = ingestCtx.metadata;
+
+      // Step 2 (exact): return the existing memory when the privacy-filtered
+      // content matches exactly — avoids the embedding cost and vector dedup path.
+      const exactDupWhere: Record<string, unknown> = {
+        userId: validatedInput.userId,
+        content: processedContent,
+        type: MemoryType.LONG_TERM,
+      };
+      if (validatedInput.organizationId !== undefined) {
+        exactDupWhere.organizationId = validatedInput.organizationId;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const exactDup = await (this.prisma as any).memory.findFirst({ where: exactDupWhere });
+      if (exactDup) {
+        this.logger.debug(`Exact content duplicate; returning existing memory ${exactDup.id}`);
+        return this.mapToLtmMemory(exactDup);
+      }
 
       // ── Step 11: EmbeddingGenerate (non-fatal) ─────────────────────────
       let embedding: number[] = [];

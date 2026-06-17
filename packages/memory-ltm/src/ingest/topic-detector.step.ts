@@ -93,11 +93,20 @@ const TOPIC_BUCKETS: Record<string, string[]> = {
   ],
 };
 
+// Precompile each keyword as a \b…\b word-boundary regex so short tokens
+// like "ci" don't match inside longer words (e.g., "decided", "decision").
+const TOPIC_PATTERNS: Array<[string, RegExp[]]> = Object.entries(TOPIC_BUCKETS).map(
+  ([topic, keywords]) => [
+    topic,
+    keywords.map((kw) => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')),
+  ]
+);
+
 /**
  * Step 4 of the ingest pipeline.
  *
- * Runs a lightweight keyword scan over the content and existing tags to detect
- * topic buckets, then merges them into `ctx.tags` (deduped).  Never aborts.
+ * Runs a lightweight keyword scan over the content to detect topic buckets,
+ * then merges them into `ctx.tags` (deduped).  Never aborts.
  * Rule-based only — no LLM or external call.
  */
 @Injectable()
@@ -105,11 +114,10 @@ export class TopicDetectorStep implements PipelineStep<IngestContext> {
   readonly name = 'TopicDetector';
 
   execute(ctx: IngestContext): Promise<IngestContext> {
-    const lower = ctx.content.toLowerCase();
     const detected: string[] = [];
 
-    for (const [topic, keywords] of Object.entries(TOPIC_BUCKETS)) {
-      if (keywords.some((kw) => lower.includes(kw))) {
+    for (const [topic, patterns] of TOPIC_PATTERNS) {
+      if (patterns.some((re) => re.test(ctx.content))) {
         detected.push(topic);
       }
     }

@@ -7,15 +7,14 @@ import { TopicDetectorStep } from './topic-detector.step.js';
 /**
  * Stream B0 — Typed Ingest Pipeline (13 steps).
  *
- * This service owns the ordered execution of pipeline steps.  Steps 3, 11, and
- * 13 are fire-and-forget (async no-op hooks today, wired in Stream F / D / I).
- * Steps 1–7 run synchronously in the tool response path.
+ * This service owns the ordered execution of pipeline steps.
  *
- * The pipeline only handles steps 1–6 pre-processing; step 7 (PostgresWrite)
- * and steps 11–12 (EmbeddingGenerate / SearchIndexUpdate) remain in
- * MemoryLtmService so they can participate in the existing transaction and
- * error handling.  Steps 8–10 and 13 are registered as no-op hooks here,
- * ready to be filled in by Streams I, F, and D respectively.
+ * - runSyncSteps(): runs steps 1–6 synchronously in the tool response path.
+ * - Step 7 (PostgresWrite) and steps 11–12 (EmbeddingGenerate /
+ *   SearchIndexUpdate) remain in MemoryLtmService so they can participate
+ *   in the existing transaction and error handling.
+ * - runAsyncHooks(): fires steps 3, 8–10, and 13 as fire-and-forget no-ops
+ *   today, to be wired in Streams F, I, and D respectively.
  */
 @Injectable()
 export class IngestPipelineService {
@@ -49,7 +48,7 @@ export class IngestPipelineService {
    * After step 7 succeeds the caller should invoke `runAsyncHooks()` for
    * steps 8–10 and 13.
    */
-  async runSyncSteps(ctx: IngestContext, existingHashes?: Set<string>): Promise<IngestContext> {
+  async runSyncSteps(ctx: IngestContext): Promise<IngestContext> {
     let current = ctx;
 
     for (const step of this.syncSteps) {
@@ -57,19 +56,16 @@ export class IngestPipelineService {
       try {
         current = await step.execute(current);
       } catch (err) {
-        this.logger.warn(`Ingest step '${step.name}' failed, continuing: ${String(err)}`);
+        this.logger.warn(
+          `Ingest step '${step.name}' failed, continuing: ${err instanceof Error ? err.name : 'non-error thrown'}`
+        );
       }
     }
 
     if (!current.aborted) {
-      // Step 2 — ContentHashDedup (inline, after PrivacyFilter so we hash clean content)
+      // Step 2 — compute hash of privacy-filtered content for the caller.
       const hash = this.computeHash(current.content);
       current = { ...current, contentHash: hash };
-
-      if (existingHashes?.has(hash)) {
-        this.logger.debug(`Exact duplicate detected (hash=${hash.slice(0, 8)}…), aborting ingest`);
-        current = { ...current, aborted: true, abortReason: 'exact-duplicate' };
-      }
     }
 
     return current;
@@ -88,7 +84,9 @@ export class IngestPipelineService {
    */
   runAsyncHooks(ctx: IngestContext, memoryId: string): void {
     void this.asyncHooksImpl(ctx, memoryId).catch((err: unknown) =>
-      this.logger.warn(`Async ingest hooks failed for memory ${memoryId}: ${String(err)}`)
+      this.logger.warn(
+        `Async ingest hooks failed for memory ${memoryId}: ${err instanceof Error ? err.name : 'non-error thrown'}`
+      )
     );
   }
 

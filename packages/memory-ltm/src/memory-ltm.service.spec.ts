@@ -10,6 +10,9 @@ import {
 import { MemoryType } from '@engram/database';
 import { ImportanceScoringService } from './importance.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
+import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
+import { PrivacyFilterStep } from './ingest/privacy-filter.step.js';
+import { TopicDetectorStep } from './ingest/topic-detector.step.js';
 
 describe('MemoryLtmService', () => {
   let service: MemoryLtmService;
@@ -129,6 +132,7 @@ describe('MemoryLtmService', () => {
       };
 
       prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
       prismaService.memory.create.mockResolvedValue(mockMemory);
 
       await service.create(minimalInput);
@@ -139,6 +143,77 @@ describe('MemoryLtmService', () => {
           tags: [],
         }),
       });
+    });
+  });
+
+  describe('create with IngestPipelineService', () => {
+    let serviceWithPipeline: MemoryLtmService;
+
+    beforeEach(() => {
+      const pipeline = new IngestPipelineService(new PrivacyFilterStep(), new TopicDetectorStep());
+      serviceWithPipeline = new MemoryLtmService(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        prismaService as any,
+        undefined, // stm
+        undefined, // embeddings
+        undefined, // vectorStore
+        undefined, // importanceService
+        undefined, // duplicateDetectionService
+        pipeline
+      );
+    });
+
+    it('redacts credential content before the Postgres write', async () => {
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.create.mockResolvedValue({
+        ...mockMemory,
+        content: 'user set password = [REDACTED]',
+      });
+
+      await serviceWithPipeline.create({
+        userId: mockUserId,
+        content: 'user set password = hunter2',
+      });
+
+      const callArg = prismaService.memory.create.mock.calls[0][0].data;
+      expect(callArg.content).not.toContain('hunter2');
+      expect(callArg.content).toContain('[REDACTED]');
+    });
+
+    it('auto-tags topic buckets from content before the Postgres write', async () => {
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.create.mockResolvedValue({
+        ...mockMemory,
+        tags: ['decision', 'engineering'],
+      });
+
+      await serviceWithPipeline.create({
+        userId: mockUserId,
+        content: 'decided to refactor the typescript service',
+      });
+
+      const callArg = prismaService.memory.create.mock.calls[0][0].data;
+      expect(callArg.tags).toContain('decision');
+      expect(callArg.tags).toContain('engineering');
+    });
+
+    it('returns existing memory on exact content duplicate without creating', async () => {
+      const existingContent = 'this is some test content';
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue({
+        ...mockMemory,
+        content: existingContent,
+      });
+
+      const result = await serviceWithPipeline.create({
+        userId: mockUserId,
+        content: existingContent,
+      });
+
+      expect(prismaService.memory.create).not.toHaveBeenCalled();
+      expect(result.id).toBe(mockMemoryId);
     });
   });
 
@@ -770,7 +845,9 @@ describe('MemoryLtmService', () => {
         generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       };
       prismaService.memory.count.mockResolvedValue(0);
-      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      // First findFirst: exact-content dedup check → miss (different content is used
+      // so the vector dedup path is exercised).  Second: findRawMemory in linkDuplicateAndReturn.
+      prismaService.memory.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockMemory);
       prismaService.memory.update.mockResolvedValue(mockMemory);
 
       const serviceWithDuplicate = new MemoryLtmService(

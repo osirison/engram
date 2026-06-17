@@ -28,23 +28,6 @@ describe('IngestPipelineService', () => {
     expect(result.contentHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('aborts when hash matches an existing set', async () => {
-    const pipeline = makePipeline();
-    const content = 'duplicate memory content';
-    const hash = pipeline.computeHash(content);
-    const ctx = buildIngestContext({ userId: 'u1', content });
-    const result = await pipeline.runSyncSteps(ctx, new Set([hash]));
-    expect(result.aborted).toBe(true);
-    expect(result.abortReason).toBe('exact-duplicate');
-  });
-
-  it('does not abort when hash differs', async () => {
-    const pipeline = makePipeline();
-    const ctx = buildIngestContext({ userId: 'u1', content: 'unique content here' });
-    const result = await pipeline.runSyncSteps(ctx, new Set(['differenthash']));
-    expect(result.aborted).toBe(false);
-  });
-
   it('produces deterministic hashes for same content', () => {
     const pipeline = makePipeline();
     const h1 = pipeline.computeHash('  Hello World  ');

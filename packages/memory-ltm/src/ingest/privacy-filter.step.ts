@@ -16,8 +16,8 @@ const PATTERNS: Array<[string, RegExp]> = [
   ['aws-key', /\b(?:AKIA|ASIA|AROA|AIPA|ANPA|ANVA|APKA)[A-Z0-9]{16}\b/g],
   // 4. GitHub tokens (ghp_, ghs_, ghr_, gho_, github_pat_)
   ['github-token', /\b(?:ghp|ghs|ghr|gho|github_pat)_[A-Za-z0-9_]{36,255}\b/g],
-  // 5. Bearer tokens in HTTP headers or code
-  ['bearer-token', /Bearer\s+[A-Za-z0-9\-._~+/]{20,}=*/g],
+  // 5. Bearer tokens in HTTP headers or code (case-insensitive for Authorization headers)
+  ['bearer-token', /Bearer\s+[A-Za-z0-9\-._~+/]{20,}=*/gi],
   // 6. Generic API keys / secrets (key=value style with long opaque values)
   [
     'api-key',
@@ -34,7 +34,7 @@ const PATTERNS: Array<[string, RegExp]> = [
 /**
  * Step 1 of the ingest pipeline.
  *
- * Strips explicit `<private>` blocks and redacts 8 common credential / PII
+ * Strips explicit `<private>` blocks and redacts 9 common credential / PII
  * patterns from memory content before it reaches storage. Non-blocking and
  * always produces a result — never aborts the pipeline.
  */
