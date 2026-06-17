@@ -34,13 +34,22 @@ import {
   consolidateToolSchema,
   ConsolidateToolInput,
 } from './dto/consolidate.dto';
+import { rememberToolSchema, RememberToolInput } from './dto/remember.dto';
+import { forgetToolSchema, ForgetToolInput } from './dto/forget.dto';
+import { reflectToolSchema, ReflectToolInput } from './dto/reflect.dto';
+import {
+  compressContextToolSchema,
+  CompressContextToolInput,
+  loadContextToolSchema,
+  LoadContextToolInput,
+} from './dto/context.dto';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 
 /**
  * MCP Memory Tools Controller
  *
- * Implements 13 MCP tools for memory management:
+ * Implements 18 MCP tools for memory management:
  * 1.  create_memory          - Create short-term or long-term memory
  * 2.  get_memory             - Retrieve memory by ID
  * 3.  list_memories          - List memories with pagination
@@ -54,6 +63,11 @@ import { ConsolidationService } from './consolidation.service';
  * 11. cancel_reindex_job     - Request cancellation for a queued/running job
  * 12. retry_reindex_job      - Retry a failed/cancelled job from its last cursor
  * 13. consolidate_memories   - Trigger STM→LTM consolidation pass (admin)
+ * 14. remember               - Smart create: auto-detects type, deduplicates
+ * 15. forget                 - Smart delete: find + optionally delete by concept
+ * 16. reflect                - Synthesise structured insights across memories
+ * 17. compress_context       - Retrieve + format memories as an injectable context block
+ * 18. load_context           - Load recent + important memories for session priming
  */
 @Controller('memory')
 @Injectable()
@@ -661,6 +675,234 @@ export class MemoryController {
     }
   }
 
+  // ─── C1: High-Level Agent UX Tools ──────────────────────────────────────────
+
+  /**
+   * MCP Tool: remember
+   * Smart create: auto-detects STM vs LTM, deduplicates.
+   */
+  async remember(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('remember tool called');
+      const validated: RememberToolInput = rememberToolSchema.parse(input);
+
+      const result = await this.memoryService.remember({
+        userId: validated.userId,
+        content: validated.content,
+        type: validated.type,
+        metadata: validated.metadata,
+        tags: validated.tags,
+        ttl: validated.ttl,
+        skipDuplicateCheck: validated.skipDuplicateCheck,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                memoryId: result.memory.id,
+                resolvedType: result.resolvedType,
+                wasDeduped: result.wasDeduped,
+                memory: result.memory,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in remember tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to remember: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * MCP Tool: forget
+   * Smart delete: find memories by concept, optionally delete them.
+   */
+  async forget(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('forget tool called');
+      const validated: ForgetToolInput = forgetToolSchema.parse(input);
+
+      const result = await this.memoryService.forget({
+        userId: validated.userId,
+        query: validated.query,
+        limit: validated.limit,
+        confirm: validated.confirm,
+        minScore: validated.minScore,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                dryRun: result.dryRun,
+                candidates: result.candidates,
+                deleted: result.deleted,
+                message: result.dryRun
+                  ? `Found ${result.candidates.length} candidate(s). Pass confirm=true to delete.`
+                  : `Deleted ${result.deleted} of ${result.candidates.length} matched memor${result.candidates.length === 1 ? 'y' : 'ies'}.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in forget tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to forget: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * MCP Tool: reflect
+   * Synthesise structured insights across semantically relevant memories.
+   */
+  async reflect(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('reflect tool called');
+      const validated: ReflectToolInput = reflectToolSchema.parse(input);
+
+      const result = await this.memoryService.reflect({
+        userId: validated.userId,
+        query: validated.query,
+        limit: validated.limit,
+        minScore: validated.minScore,
+        scope: validated.scope,
+        tags: validated.tags,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in reflect tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to reflect: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * MCP Tool: compress_context
+   * Retrieve + format memories into a compact, context-window-ready block.
+   */
+  async compressContext(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('compress_context tool called');
+      const validated: CompressContextToolInput =
+        compressContextToolSchema.parse(input);
+
+      const result = await this.memoryService.compressContext({
+        userId: validated.userId,
+        query: validated.query,
+        limit: validated.limit,
+        maxChars: validated.maxChars,
+        minScore: validated.minScore,
+        scope: validated.scope,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result.context,
+          },
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                memoryCount: result.memoryCount,
+                charCount: result.charCount,
+                truncated: result.truncated,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in compress_context tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to compress context: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * MCP Tool: load_context
+   * Load recent + high-importance memories for session priming.
+   */
+  async loadContext(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('load_context tool called');
+      const validated: LoadContextToolInput =
+        loadContextToolSchema.parse(input);
+
+      const result = await this.memoryService.loadContext({
+        userId: validated.userId,
+        maxChars: validated.maxChars,
+        recentLimit: validated.recentLimit,
+        importantLimit: validated.importantLimit,
+        scope: validated.scope,
+        tags: validated.tags,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result.context,
+          },
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                memoryCount: result.memoryCount,
+                charCount: result.charCount,
+                truncated: result.truncated,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in load_context tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to load context: ${errorMessage}`);
+    }
+  }
+
   /**
    * Get MCP tools in the format required by the MCP handler
    * This method creates Tool objects that bind controller methods as handlers
@@ -773,6 +1015,50 @@ export class MemoryController {
           'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage.',
         inputSchema: consolidateToolSchema,
         handler: this.consolidateMemories.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      // ── C1: High-Level Agent UX Tools ────────────────────────────────────────
+      {
+        name: 'remember',
+        description:
+          'Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata.',
+        inputSchema: rememberToolSchema,
+        handler: this.remember.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'forget',
+        description:
+          'Smart delete: find memories by natural-language concept and optionally delete them. Dry-run by default — pass confirm=true to execute deletion.',
+        inputSchema: forgetToolSchema,
+        handler: this.forget.bind(this) as (input: unknown) => Promise<unknown>,
+      },
+      {
+        name: 'reflect',
+        description:
+          'Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range.',
+        inputSchema: reflectToolSchema,
+        handler: this.reflect.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'compress_context',
+        description:
+          'Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget.',
+        inputSchema: compressContextToolSchema,
+        handler: this.compressContext.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'load_context',
+        description:
+          'Load a session-priming context block by blending the most recent memories with the highest-importance memories. Ideal for injecting into a session-opening prompt.',
+        inputSchema: loadContextToolSchema,
+        handler: this.loadContext.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
       },

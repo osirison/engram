@@ -1,6 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
-import { MemoryLtmService, LtmMemoryNotFoundError } from '@engram/memory-ltm';
+import {
+  MemoryLtmService,
+  LtmMemoryNotFoundError,
+  ImportanceScoringService,
+} from '@engram/memory-ltm';
 import { Memory } from '@engram/database';
 
 type MemoryListResult = {
@@ -44,6 +53,7 @@ type LtmServiceContract = {
     content: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
+    skipDuplicateCheck?: boolean;
   }) => Promise<Memory>;
   get: (userId: string, memoryId: string) => Promise<Memory | null>;
   update: (
@@ -63,6 +73,8 @@ type LtmServiceContract = {
       cursor?: string;
       tags?: string[];
       search?: string;
+      sortBy?: 'createdAt' | 'updatedAt';
+      sortOrder?: 'asc' | 'desc';
     },
   ) => Promise<MemoryListResult>;
   promote: (userId: string, memoryId: string) => Promise<Memory>;
@@ -109,6 +121,7 @@ export interface CreateMemoryDto {
   metadata?: Record<string, unknown>;
   tags?: string[];
   ttl?: number;
+  skipDuplicateCheck?: boolean;
 }
 
 export interface UpdateMemoryDto {
@@ -147,6 +160,46 @@ export interface PaginatedMemories {
   endCursor?: string;
 }
 
+// ─── C1: High-Level Agent UX result types ────────────────────────────────────
+
+export interface RememberResult {
+  memory: Memory;
+  /** True when the incoming content matched an existing memory above the duplicate threshold */
+  wasDeduped: boolean;
+  /** Resolved storage tier after auto-detection */
+  resolvedType: 'short-term' | 'long-term';
+}
+
+export interface ForgetCandidate {
+  memoryId: string;
+  content: string;
+  score: number;
+}
+
+export interface ForgetResult {
+  candidates: ForgetCandidate[];
+  /** Number of memories actually deleted (0 when confirm=false) */
+  deleted: number;
+  dryRun: boolean;
+}
+
+export interface ReflectResult {
+  query: string;
+  summary: string;
+  themes: string[];
+  sourceIds: string[];
+  memoryCount: number;
+  dateRange: { earliest: string; latest: string } | null;
+}
+
+export interface ContextBlock {
+  /** Formatted text ready for prompt injection */
+  context: string;
+  memoryCount: number;
+  truncated: boolean;
+  charCount: number;
+}
+
 @Injectable()
 export class MemoryService {
   private readonly logger = new Logger(MemoryService.name);
@@ -156,6 +209,7 @@ export class MemoryService {
   constructor(
     private readonly stmService: MemoryStmService,
     private readonly ltmService: MemoryLtmService,
+    @Optional() private readonly importanceService?: ImportanceScoringService,
   ) {
     this.stm = this.stmService as unknown as StmServiceContract;
     this.ltm = this.ltmService;
@@ -183,6 +237,7 @@ export class MemoryService {
         content: dto.content,
         metadata: dto.metadata,
         tags: dto.tags,
+        skipDuplicateCheck: dto.skipDuplicateCheck,
       });
     }
   }
@@ -396,5 +451,346 @@ export class MemoryService {
     );
 
     return await this.ltm.reindex(options);
+  }
+
+  // ─── C1: High-Level Agent UX Methods ───────────────────────────────────────
+
+  /**
+   * Smart create: auto-detects STM vs LTM, deduplicates.
+   * Returns the stored memory plus routing metadata.
+   */
+  async remember(input: {
+    userId: string;
+    content: string;
+    type: 'auto' | 'short-term' | 'long-term';
+    metadata?: Record<string, unknown>;
+    tags?: string[];
+    ttl?: number;
+    skipDuplicateCheck: boolean;
+  }): Promise<RememberResult> {
+    const resolvedType =
+      input.type === 'auto'
+        ? MemoryService.detectMemoryType(input.content, input.ttl)
+        : input.type;
+
+    const memory = await this.createMemory({
+      userId: input.userId,
+      content: input.content,
+      type: resolvedType,
+      metadata: input.metadata,
+      tags: input.tags,
+      ttl: input.ttl,
+      skipDuplicateCheck: input.skipDuplicateCheck,
+    });
+
+    const wasDeduped = MemoryService.hasDedupeAnnotation(memory.metadata);
+
+    return { memory, wasDeduped, resolvedType };
+  }
+
+  /**
+   * Smart delete: find memories by concept, optionally delete them.
+   */
+  async forget(input: {
+    userId: string;
+    query: string;
+    limit: number;
+    confirm: boolean;
+    minScore: number;
+  }): Promise<ForgetResult> {
+    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
+      limit: input.limit,
+    });
+
+    const candidates: ForgetCandidate[] = hits
+      .filter((h) => h.score >= input.minScore)
+      .map((h) => ({
+        memoryId: h.memory.id,
+        content: h.memory.content,
+        score: h.score,
+      }));
+
+    let deleted = 0;
+    if (input.confirm && candidates.length > 0) {
+      const results = await Promise.allSettled(
+        candidates.map((c) => this.deleteMemory(input.userId, c.memoryId)),
+      );
+      deleted = results.filter(
+        (r) => r.status === 'fulfilled' && r.value,
+      ).length;
+    }
+
+    return { candidates, deleted, dryRun: !input.confirm };
+  }
+
+  /**
+   * Synthesise structured insights across semantically relevant memories.
+   */
+  async reflect(input: {
+    userId: string;
+    query: string;
+    limit: number;
+    minScore: number;
+    scope?: string;
+    tags?: string[];
+  }): Promise<ReflectResult> {
+    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
+      limit: input.limit,
+      scope: input.scope,
+      tags: input.tags,
+    });
+
+    const relevant = hits.filter((h) => h.score >= input.minScore);
+    if (relevant.length === 0) {
+      return {
+        query: input.query,
+        summary: 'No relevant memories found for this query.',
+        themes: [],
+        sourceIds: [],
+        memoryCount: 0,
+        dateRange: null,
+      };
+    }
+
+    const memories = relevant.map((h) => h.memory);
+    const sourceIds = memories.map((m) => m.id);
+
+    // Extract themes from tags
+    const themes = MemoryService.extractThemes(memories);
+
+    // Build a concise structured summary
+    const summary = MemoryService.synthesiseSummary(input.query, relevant);
+
+    const dates = memories.map((m) => m.createdAt.getTime());
+    const dateRange = {
+      earliest: new Date(Math.min(...dates)).toISOString(),
+      latest: new Date(Math.max(...dates)).toISOString(),
+    };
+
+    return {
+      query: input.query,
+      summary,
+      themes,
+      sourceIds,
+      memoryCount: memories.length,
+      dateRange,
+    };
+  }
+
+  /**
+   * Retrieve + contextually compress memories for context window injection.
+   */
+  async compressContext(input: {
+    userId: string;
+    query: string;
+    limit: number;
+    maxChars: number;
+    minScore: number;
+    scope?: string;
+  }): Promise<ContextBlock> {
+    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
+      limit: input.limit,
+      scope: input.scope,
+    });
+
+    const relevant = hits.filter((h) => h.score >= input.minScore);
+    return MemoryService.buildContextBlock(
+      relevant.map((h) => h.memory),
+      input.maxChars,
+    );
+  }
+
+  /**
+   * Load the most relevant memories for a session opening.
+   * Blends recency with importance so the agent is primed with both
+   * fresh context and durable knowledge.
+   */
+  async loadContext(input: {
+    userId: string;
+    maxChars: number;
+    recentLimit: number;
+    importantLimit: number;
+    scope?: string;
+    tags?: string[];
+  }): Promise<ContextBlock> {
+    const [recentResult, importantResult] = await Promise.all([
+      input.recentLimit > 0
+        ? this.ltm.list(input.userId, {
+            limit: input.recentLimit,
+            sortBy: 'createdAt',
+            sortOrder: 'desc',
+            tags: input.tags,
+          })
+        : Promise.resolve({ items: [] as Memory[] }),
+      input.importantLimit > 0
+        ? this.ltm.list(input.userId, {
+            limit: input.importantLimit * 3, // fetch extra, sort by importance, take top N
+            sortBy: 'updatedAt',
+            sortOrder: 'desc',
+            tags: input.tags,
+          })
+        : Promise.resolve({ items: [] as Memory[] }),
+    ]);
+
+    // Sort the broad set by importance score and take top N
+    const importantSorted = this.sortByImportance(importantResult.items).slice(
+      0,
+      input.importantLimit,
+    );
+
+    // Merge: recent first, then important; deduplicate by ID
+    const seen = new Set<string>();
+    const merged: Memory[] = [];
+    for (const m of [...recentResult.items, ...importantSorted]) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        merged.push(m);
+      }
+    }
+
+    return MemoryService.buildContextBlock(merged, input.maxChars);
+  }
+
+  // ─── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Heuristic routing: classify content as short-term or long-term.
+   * Temporal / in-progress cues → STM; factual / knowledge cues → LTM.
+   */
+  private static detectMemoryType(
+    content: string,
+    ttl?: number,
+  ): 'short-term' | 'long-term' {
+    if (ttl !== undefined) {
+      return 'short-term';
+    }
+    const lower = content.toLowerCase();
+    const stmPatterns = [
+      /\b(today|tonight|tomorrow|right now|currently|at the moment)\b/,
+      /\b(working on|in progress|just (started|finished|did|updated))\b/,
+      /\b(this (morning|afternoon|evening|week))\b/,
+      /\b(temporary|reminder|don'?t forget|later today)\b/,
+    ];
+    if (stmPatterns.some((re) => re.test(lower))) {
+      return 'short-term';
+    }
+    return 'long-term';
+  }
+
+  /** Check whether the memory was silently deduplicated by the LTM service. */
+  private static hasDedupeAnnotation(metadata: unknown): boolean {
+    if (!metadata || typeof metadata !== 'object') return false;
+    const m = metadata as Record<string, unknown>;
+    return (
+      Array.isArray(m['duplicateMatches']) &&
+      (m['duplicateMatches'] as unknown[]).length > 0
+    );
+  }
+
+  /** Extract the top recurring tags and content keywords as themes. */
+  private static extractThemes(memories: Memory[]): string[] {
+    const freq = new Map<string, number>();
+    for (const m of memories) {
+      for (const tag of m.tags) {
+        freq.set(tag, (freq.get(tag) ?? 0) + 1);
+      }
+    }
+    return [...freq.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([tag]) => tag);
+  }
+
+  /** Build a plain-text reflective summary from ranked recall hits. */
+  private static synthesiseSummary(
+    query: string,
+    hits: Array<{ memory: Memory; score: number }>,
+  ): string {
+    const lines: string[] = [
+      `Reflection on: "${query}"`,
+      `Based on ${hits.length} relevant memor${hits.length === 1 ? 'y' : 'ies'}:`,
+      '',
+    ];
+    for (const { memory, score } of hits.slice(0, 5)) {
+      const date = memory.createdAt.toISOString().slice(0, 10);
+      const snippet =
+        memory.content.length > 200
+          ? memory.content.slice(0, 197) + '...'
+          : memory.content;
+      lines.push(`[${date} | score ${score.toFixed(2)}] ${snippet}`);
+    }
+    if (hits.length > 5) {
+      lines.push(`… and ${hits.length - 5} more.`);
+    }
+    return lines.join('\n');
+  }
+
+  /** Format memories into an injectable context block, truncating to charBudget. */
+  private static buildContextBlock(
+    memories: Memory[],
+    maxChars: number,
+  ): ContextBlock {
+    if (memories.length === 0) {
+      const context = '(no memories)';
+      return {
+        context,
+        memoryCount: 0,
+        truncated: false,
+        charCount: context.length,
+      };
+    }
+    const lines: string[] = ['## Memory Context', ''];
+    let used = 0;
+    let included = 0;
+    let truncated = false;
+
+    for (const m of memories) {
+      const date = m.createdAt.toISOString().slice(0, 10);
+      const tagPart = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : '';
+      const header = `### [${date}]${tagPart}`;
+      const budget = maxChars - used - header.length - 2;
+      if (budget <= 0) {
+        truncated = true;
+        break;
+      }
+      const content =
+        m.content.length > budget
+          ? m.content.slice(0, budget - 3) + '...'
+          : m.content;
+      const entry = `${header}\n${content}\n`;
+      lines.push(entry);
+      used += entry.length;
+      included++;
+      if (used >= maxChars) {
+        truncated = true;
+        break;
+      }
+    }
+
+    const context = lines.join('\n');
+    return {
+      context,
+      memoryCount: included,
+      truncated,
+      charCount: context.length,
+    };
+  }
+
+  /** Sort memories by importance score (descending), computed from metadata signals. */
+  private sortByImportance(memories: Memory[]): Memory[] {
+    if (!this.importanceService) {
+      return memories;
+    }
+    const scored = memories.map((m) => ({
+      memory: m,
+      score: this.importanceService!.score({
+        content: m.content,
+        metadata: m.metadata,
+        tags: m.tags,
+        createdAt: m.createdAt,
+      }).score,
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.memory);
   }
 }

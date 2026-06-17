@@ -89,11 +89,9 @@ export class MemoryLtmService {
         embedding = result?.embedding ?? [];
       }
 
-      const duplicate = await this.findDuplicate(
-        validatedInput.userId,
-        validatedInput.organizationId,
-        embedding
-      );
+      const duplicate =
+        !input.skipDuplicateCheck &&
+        (await this.findDuplicate(validatedInput.userId, validatedInput.organizationId, embedding));
       if (duplicate) {
         return await this.linkDuplicateAndReturn(
           duplicate.memoryId,

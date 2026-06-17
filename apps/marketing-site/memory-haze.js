@@ -4,10 +4,7 @@
  *   - the cursor acts as a lantern, wiping fog locally
  *   - scrolling walks the focal plane forward through depth
  * Canvas draws faint motes + connective lines; DOM holds legible fragment text.
- * Exposes window.MemoryHaze
  */
-(function () {
-  "use strict";
 
   const FRAGMENTS = [
     "she prefers concise answers", "the API key rotates every 90 days",
@@ -516,5 +513,4 @@
     }
   }
 
-  window.MemoryHaze = MemoryHaze;
-})();
+export { MemoryHaze };

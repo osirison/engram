@@ -1,5 +1,13 @@
 /* app.jsx — Engram marketing site */
-const { useState, useEffect, useRef, useCallback } = React;
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MemoryHaze } from './memory-haze.js';
+import {
+  useTweaks, TweaksPanel, TweakSection,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakNumber, TweakButton,
+} from './tweaks-panel.jsx';
+import './smooth-scroll.js';
 
 // Illustrative agent memories — these surface on recall/hover.
 const SEED_MEMORIES = [
@@ -228,7 +236,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 
 function App() {
   const [haze, setHaze] = useState(null);
-  const [t, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
   // push tweak values into the haze engine whenever they change
   useEffect(() => {
@@ -237,7 +245,7 @@ function App() {
 
   useEffect(() => {
     const root = document.getElementById("haze");
-    const h = new window.MemoryHaze(root, {
+    const h = new MemoryHaze(root, {
       fragments: 26, motes: 90,
       // memories must never sit on top of these — readable copy stays clear
       exclude: ".chrome .mark, .chrome-nav, .eyebrow, .hero-line, .hero-sub, .prompt, .hero-foot, .panel-index, .kicker, .panel-line, .panel-sub, .verb-row, .install-line, .install-sub, .cmd, .install-foot, .verbs-ghost, .scroll-cue, .endmark, .surfaced-card",
@@ -288,48 +296,49 @@ function App() {
       />
       <Verbs />
       <Install />
-      <window.TweaksPanel>
-        <window.TweakSection label="The field" />
-        <window.TweakToggle
+      <TweaksPanel>
+        <TweakSection label="The field" />
+        <TweakToggle
           label="Scroll resolves field"
           value={t.resolveOnScroll}
           onChange={(v) => setTweak("resolveOnScroll", v)}
         />
-        <window.TweakSlider
+        <TweakSlider
           label="Haze / blur" value={t.blur} min={3} max={20} step={1} unit="px"
           onChange={(v) => setTweak("blur", v)}
         />
-        <window.TweakSlider
+        <TweakSlider
           label="Float speed" value={t.floatSpeed} min={0} max={2.5} step={0.1} unit="×"
           onChange={(v) => setTweak("floatSpeed", v)}
         />
-        <window.TweakSection label="Lantern" />
-        <window.TweakSlider
+        <TweakSection label="Lantern" />
+        <TweakSlider
           label="Reach" value={t.lanternRadius} min={140} max={520} step={10} unit="px"
           onChange={(v) => setTweak("lanternRadius", v)}
         />
-        <window.TweakSlider
+        <TweakSlider
           label="Strength" value={t.lanternStrength} min={0.4} max={1.6} step={0.05} unit="×"
           onChange={(v) => setTweak("lanternStrength", v)}
         />
-        <window.TweakSection label="Sacred geometry" />
-        <window.TweakSelect
+        <TweakSection label="Sacred geometry" />
+        <TweakSelect
           label="Shape" value={t.geoShape}
           options={["cycle", "flower", "metatron", "sriYantra", "hexagram", "pentagram", "torus"]}
           onChange={(v) => setTweak("geoShape", v)}
         />
-        <window.TweakToggle
+        <TweakToggle
           label="Lantern drifts when idle"
           value={t.idleDrift}
           onChange={(v) => setTweak("idleDrift", v)}
         />
-        <window.TweakSlider
+        <TweakSlider
           label="Visibility" value={t.geoOpacity} min={0} max={2} step={0.1} unit="×"
           onChange={(v) => setTweak("geoOpacity", v)}
         />
-      </window.TweaksPanel>
+      </TweaksPanel>
     </React.Fragment>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(<App />);
+
