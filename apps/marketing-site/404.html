@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="refresh" content="4;url=/" />
+<title>404 — Engram</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --void: #0a0b0f;
+    --ink: #ECEAE4;
+    --ink-dim: rgba(236,234,228,.56);
+    --ink-faint: rgba(236,234,228,.30);
+    --ink-ghost: rgba(236,234,228,.14);
+    --amber: #F0B274;
+    --line: rgba(236,234,228,.11);
+    --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--void);
+    color: var(--ink);
+    font-family: var(--mono);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: clamp(22px, 6vw, 80px);
+    text-align: center;
+  }
+  .mark {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 11px;
+    padding: 26px clamp(22px, 4vw, 54px);
+  }
+  .mark-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 14px 1px rgba(240,178,116,.7);
+  }
+  .mark-word { font-size: 15px; letter-spacing: .14em; text-transform: lowercase; }
+  .code {
+    font-family: var(--serif); font-style: italic;
+    font-size: clamp(5rem, 18vw, 12rem);
+    line-height: 1; letter-spacing: -.02em;
+    color: var(--ink-ghost);
+  }
+  .message {
+    margin-top: 18px;
+    font-size: clamp(14px, 1.5vw, 18px);
+    color: var(--ink-dim);
+    letter-spacing: .01em;
+  }
+  .message em {
+    color: var(--amber);
+    font-style: normal;
+  }
+  .back {
+    margin-top: 36px;
+    display: inline-flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+    font-size: 13px; letter-spacing: .1em;
+    color: var(--ink-faint);
+    text-decoration: none;
+    transition: color .3s, border-color .3s;
+  }
+  .back:hover { color: var(--amber); border-color: rgba(240,178,116,.45); }
+  .countdown {
+    margin-top: 14px;
+    font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-ghost);
+  }
+</style>
+</head>
+<body>
+  <header class="mark">
+    <span class="mark-dot"></span>
+    <span class="mark-word">engram</span>
+  </header>
+
+  <p class="code">404</p>
+  <p class="message">this memory was <em>forgotten.</em></p>
+
+  <a class="back" href="/">← return home</a>
+  <p class="countdown" id="cd">redirecting in 4s</p>
+
+  <script>
+    (function () {
+      var s = 4;
+      var el = document.getElementById("cd");
+      var t = setInterval(function () {
+        s -= 1;
+        if (s <= 0) {
+          clearInterval(t);
+          window.location.replace("/");
+        } else {
+          el.textContent = "redirecting in " + s + "s";
+        }
+      }, 1000);
+    }());
+  </script>
+</body>
+</html>
