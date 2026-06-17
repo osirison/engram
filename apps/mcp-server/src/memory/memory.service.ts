@@ -53,6 +53,7 @@ type LtmServiceContract = {
     content: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
+    skipDuplicateCheck?: boolean;
   }) => Promise<Memory>;
   get: (userId: string, memoryId: string) => Promise<Memory | null>;
   update: (
@@ -120,6 +121,7 @@ export interface CreateMemoryDto {
   metadata?: Record<string, unknown>;
   tags?: string[];
   ttl?: number;
+  skipDuplicateCheck?: boolean;
 }
 
 export interface UpdateMemoryDto {
@@ -235,6 +237,7 @@ export class MemoryService {
         content: dto.content,
         metadata: dto.metadata,
         tags: dto.tags,
+        skipDuplicateCheck: dto.skipDuplicateCheck,
       });
     }
   }
@@ -477,6 +480,7 @@ export class MemoryService {
       metadata: input.metadata,
       tags: input.tags,
       ttl: input.ttl,
+      skipDuplicateCheck: input.skipDuplicateCheck,
     });
 
     const wasDeduped = MemoryService.hasDedupeAnnotation(memory.metadata);
@@ -551,7 +555,7 @@ export class MemoryService {
     const memories = relevant.map((h) => h.memory);
     const sourceIds = memories.map((m) => m.id);
 
-    // Extract themes from tags and high-frequency content words
+    // Extract themes from tags
     const themes = MemoryService.extractThemes(memories);
 
     // Build a concise structured summary
@@ -727,11 +731,12 @@ export class MemoryService {
     maxChars: number,
   ): ContextBlock {
     if (memories.length === 0) {
+      const context = '(no memories)';
       return {
-        context: '(no memories)',
+        context,
         memoryCount: 0,
         truncated: false,
-        charCount: 0,
+        charCount: context.length,
       };
     }
     const lines: string[] = ['## Memory Context', ''];
@@ -776,20 +781,16 @@ export class MemoryService {
     if (!this.importanceService) {
       return memories;
     }
-    return [...memories].sort((a, b) => {
-      const scoreA = this.importanceService!.score({
-        content: a.content,
-        metadata: a.metadata,
-        tags: a.tags,
-        createdAt: a.createdAt,
-      }).score;
-      const scoreB = this.importanceService!.score({
-        content: b.content,
-        metadata: b.metadata,
-        tags: b.tags,
-        createdAt: b.createdAt,
-      }).score;
-      return scoreB - scoreA;
-    });
+    const scored = memories.map((m) => ({
+      memory: m,
+      score: this.importanceService!.score({
+        content: m.content,
+        metadata: m.metadata,
+        tags: m.tags,
+        createdAt: m.createdAt,
+      }).score,
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.memory);
   }
 }

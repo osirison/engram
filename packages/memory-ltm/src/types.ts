@@ -27,6 +27,7 @@ export interface CreateLtmMemoryData {
   content: string;
   metadata?: Record<string, unknown>;
   tags?: string[];
+  skipDuplicateCheck?: boolean;
 }
 
 // LTM update input

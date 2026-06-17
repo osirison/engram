@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/marketing-site
-        run: npm install
+        run: npm ci
 
       - name: Build
         working-directory: apps/marketing-site

@@ -91,7 +91,7 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
 
     it('routes auto → short-term for temporal content', async () => {
       const stmMem = {
-        ...makeMemory({ id: MEM_ID, type: 'short-term' }),
+        ...makeMemory({ id: MEM_ID }),
         ttl: 3600,
       };
       mockStmService.create.mockResolvedValue(stmMem);
@@ -142,7 +142,7 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
     });
 
     it('routes to short-term when ttl is provided in auto mode', async () => {
-      const stmMem = { ...makeMemory({ type: 'short-term' }), ttl: 3600 };
+      const stmMem = { ...makeMemory(), ttl: 3600 };
       mockStmService.create.mockResolvedValue(stmMem);
 
       const result = await service.remember({
