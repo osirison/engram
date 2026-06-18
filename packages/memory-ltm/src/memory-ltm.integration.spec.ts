@@ -19,6 +19,7 @@ describe('MemoryLtmModule integration', () => {
     prisma = {
       memory: {
         count: vi.fn().mockResolvedValue(0),
+        findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockImplementation(({ data }) =>
           Promise.resolve({
             id: 'ltm-memory-1',

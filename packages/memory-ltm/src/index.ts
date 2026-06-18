@@ -4,6 +4,13 @@ export { MemoryLtmModule } from './memory-ltm.module';
 export { ImportanceScoringService } from './importance.service';
 export { DuplicateDetectionService } from './duplicate-detection.service';
 
+// Stream B0 — Typed Ingest Pipeline
+export { IngestPipelineService } from './ingest/ingest-pipeline.service';
+export { PrivacyFilterStep } from './ingest/privacy-filter.step';
+export { TopicDetectorStep } from './ingest/topic-detector.step';
+export type { PipelineStep, IngestContext } from './ingest/types';
+export { buildIngestContext } from './ingest/types';
+
 // Export types and interfaces
 export type {
   LtmMemory,

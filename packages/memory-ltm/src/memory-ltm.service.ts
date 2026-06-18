@@ -7,6 +7,8 @@ import { VECTOR_STORE_TOKEN, type VectorStore, type VectorPayload } from '@engra
 import { rankResults, DEFAULT_RANKING_WEIGHTS, type RankingWeights } from './rank';
 import { ImportanceScoringService } from './importance.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
+import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
+import { buildIngestContext } from './ingest/types.js';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -58,7 +60,8 @@ export class MemoryLtmService {
     @Inject(VECTOR_STORE_TOKEN)
     private readonly vectorStore?: VectorStore,
     @Optional() private readonly importanceService?: ImportanceScoringService,
-    @Optional() private readonly duplicateDetectionService?: DuplicateDetectionService
+    @Optional() private readonly duplicateDetectionService?: DuplicateDetectionService,
+    @Optional() private readonly ingestPipeline?: IngestPipelineService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -67,7 +70,11 @@ export class MemoryLtmService {
   }
 
   /**
-   * Create a new long-term memory
+   * Create a new long-term memory.
+   *
+   * Runs the B0 ingest pipeline (steps 1–6) before write, then handles
+   * steps 7 (PostgresWrite), 11 (EmbeddingGenerate), and 12 (SearchIndexUpdate)
+   * inline.  Steps 8–10 and 13 fire asynchronously after a successful write.
    */
   async create(input: CreateLtmMemoryData): Promise<LtmMemory> {
     this.logger.debug(`Creating LTM memory for user: ${input.userId}`);
@@ -79,16 +86,52 @@ export class MemoryLtmService {
       // Check if user has exceeded quota
       await this.checkQuota(validatedInput.userId);
 
-      // Generate embedding (non-fatal — memory creation succeeds even if this
-      // fails or the API key is absent).
+      // ── Steps 1–6: pre-write pipeline ────────────────────────────────────
+      // Runs PrivacyFilter (1), ContentHashDedup (2), TopicDetector (4).
+      // Steps 3, 5, 6 are applied inline / as no-ops here.
+      let ingestCtx = buildIngestContext({
+        userId: validatedInput.userId,
+        organizationId: validatedInput.organizationId,
+        content: validatedInput.content,
+        tags: validatedInput.tags,
+        metadata: validatedInput.metadata,
+      });
+
+      if (this.ingestPipeline) {
+        ingestCtx = await this.ingestPipeline.runSyncSteps(ingestCtx);
+      }
+
+      const processedContent = ingestCtx.content;
+      const processedTags = ingestCtx.tags;
+      const processedMetadata = ingestCtx.metadata;
+
+      // Step 2 (exact): return the existing memory when the privacy-filtered
+      // content matches exactly — avoids the embedding cost and vector dedup path.
+      const exactDupWhere: Record<string, unknown> = {
+        userId: validatedInput.userId,
+        content: processedContent,
+        type: MemoryType.LONG_TERM,
+      };
+      if (validatedInput.organizationId !== undefined) {
+        exactDupWhere.organizationId = validatedInput.organizationId;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const exactDup = await (this.prisma as any).memory.findFirst({ where: exactDupWhere });
+      if (exactDup) {
+        this.logger.debug(`Exact content duplicate; returning existing memory ${exactDup.id}`);
+        return this.mapToLtmMemory(exactDup);
+      }
+
+      // ── Step 11: EmbeddingGenerate (non-fatal) ─────────────────────────
       let embedding: number[] = [];
       if (this.embeddingsService) {
         const result = await this.embeddingsService
-          .generate({ text: validatedInput.content })
+          .generate({ text: processedContent })
           .catch(() => null);
         embedding = result?.embedding ?? [];
       }
 
+      // ── Step 2 (vector): semantic duplicate detection ──────────────────
       const duplicate =
         !input.skipDuplicateCheck &&
         (await this.findDuplicate(validatedInput.userId, validatedInput.organizationId, embedding));
@@ -98,27 +141,28 @@ export class MemoryLtmService {
           validatedInput.userId,
           validatedInput.organizationId,
           duplicate.score,
-          validatedInput.content
+          processedContent
         );
       }
 
-      const metadata = this.annotateImportance(validatedInput.metadata, {
-        content: validatedInput.content,
-        metadata: validatedInput.metadata,
-        tags: validatedInput.tags,
+      // ── Step 5: ImportanceScorer (inline annotation) ───────────────────
+      const metadata = this.annotateImportance(processedMetadata, {
+        content: processedContent,
+        metadata: processedMetadata,
+        tags: processedTags,
         accessCount: 0,
       });
 
-      // Create memory in database
+      // ── Step 7: PostgresWrite ──────────────────────────────────────────
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const memory = await (this.prisma as any).memory.create({
         data: {
           userId: validatedInput.userId,
           organizationId: validatedInput.organizationId ?? null,
-          content: validatedInput.content,
+          content: processedContent,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           metadata: metadata as any,
-          tags: validatedInput.tags || [],
+          tags: processedTags,
           type: MemoryType.LONG_TERM,
           expiresAt: null,
           embedding,
@@ -128,9 +172,13 @@ export class MemoryLtmService {
       this.logger.debug(`LTM memory created: ${memory.id}`);
       const ltmMemory = this.mapToLtmMemory(memory);
 
-      // Mirror the embedding into the vector store for semantic recall
-      // (non-fatal — Postgres remains the source of truth).
+      // ── Step 12: SearchIndexUpdate (non-fatal) ─────────────────────────
       await this.indexVector(ltmMemory, embedding);
+
+      // ── Steps 8–10, 13: async hooks (fire-and-forget) ─────────────────
+      if (this.ingestPipeline) {
+        this.ingestPipeline.runAsyncHooks(ingestCtx, ltmMemory.id);
+      }
 
       return ltmMemory;
     } catch (error) {
