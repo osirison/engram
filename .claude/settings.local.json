@@ -33,7 +33,9 @@
       "Bash(gh api *)",
       "Bash(npx *)",
       "Bash(git *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 *)"
     ],
     "deny": [],
     "ask": []
