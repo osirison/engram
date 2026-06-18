@@ -1066,14 +1066,14 @@ describe('MemoryLtmService', () => {
         prismaService.memory.findFirst
           .mockResolvedValueOnce(null)
           // findRawMemory for annotateContradictor
+          .mockResolvedValueOnce(oldMemory)
+          // findRawMemory inside markSuperseded
           .mockResolvedValueOnce(oldMemory);
         // candidate content fetch
         prismaService.memory.findMany.mockResolvedValue([
           { id: oldMemoryId, content: oldMemory.content },
         ]);
         prismaService.memory.create.mockResolvedValue(newMemory);
-        // markSuperseded: findUnique + update
-        prismaService.memory.findUnique = vi.fn().mockResolvedValue(oldMemory);
         prismaService.memory.update.mockResolvedValue(oldMemory);
 
         return new MemoryLtmService(
@@ -1119,7 +1119,7 @@ describe('MemoryLtmService', () => {
 
         expect(prismaService.memory.update).toHaveBeenCalledWith(
           expect.objectContaining({
-            where: { id: oldMemoryId },
+            where: expect.objectContaining({ id: oldMemoryId }),
             data: expect.objectContaining({
               metadata: expect.objectContaining({
                 status: 'superseded',
@@ -1152,7 +1152,6 @@ describe('MemoryLtmService', () => {
           { id: oldMemoryId, content: 'I use Python daily' },
         ]);
         prismaService.memory.create.mockResolvedValue(newMemory);
-        prismaService.memory.findUnique = vi.fn();
 
         const svc = new MemoryLtmService(
           prismaService as never,
@@ -1169,12 +1168,12 @@ describe('MemoryLtmService', () => {
 
         const createCall = prismaService.memory.create.mock.calls[0][0];
         expect(createCall.data.metadata).not.toHaveProperty('contradictionMatches');
-        expect(prismaService.memory.findUnique).not.toHaveBeenCalled();
+        expect(prismaService.memory.update).not.toHaveBeenCalled();
       });
 
       it('creates memory successfully when markSuperseded fails (non-fatal)', async () => {
         const svc = buildContradictionService();
-        prismaService.memory.findUnique = vi.fn().mockRejectedValue(new Error('DB error'));
+        prismaService.memory.update.mockRejectedValueOnce(new Error('DB error'));
 
         await expect(
           svc.create({ userId: mockUserId, content: "I don't like Python" })
@@ -1198,9 +1197,8 @@ describe('MemoryLtmService', () => {
         prismaService.memory.count.mockResolvedValue(0);
         prismaService.memory.findFirst.mockResolvedValueOnce(null);
         prismaService.memory.create.mockResolvedValue(newMemory);
-        // no contradiction service → findMany and findUnique should not be called
+        // no contradiction service → findMany and markSuperseded (update) should not be called
         prismaService.memory.findMany.mockResolvedValue([]);
-        prismaService.memory.findUnique = vi.fn();
 
         const svc = new MemoryLtmService(
           prismaService as never,
@@ -1215,7 +1213,7 @@ describe('MemoryLtmService', () => {
         await svc.create({ userId: mockUserId, content: "I don't like Python" });
 
         expect(prismaService.memory.findMany).not.toHaveBeenCalled();
-        expect(prismaService.memory.findUnique).not.toHaveBeenCalled();
+        expect(prismaService.memory.update).not.toHaveBeenCalled();
       });
     });
   });

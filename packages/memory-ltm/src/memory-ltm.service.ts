@@ -202,11 +202,16 @@ export class MemoryLtmService {
 
       // ── Step B1 (post-write): mark superseded memory (non-fatal) ───────
       if (contradiction) {
-        await this.markSuperseded(contradiction.memoryId, ltmMemory.id, contradiction.reason).catch(
-          (err: unknown) =>
-            this.logger.warn(
-              `Failed to mark memory ${contradiction.memoryId} as superseded: ${err instanceof Error ? err.message : String(err)}`
-            )
+        await this.markSuperseded(
+          contradiction.memoryId,
+          ltmMemory.id,
+          contradiction.reason,
+          validatedInput.userId,
+          validatedInput.organizationId
+        ).catch((err: unknown) =>
+          this.logger.warn(
+            `Failed to mark memory ${contradiction.memoryId} as superseded: ${err instanceof Error ? err.message : String(err)}`
+          )
         );
       }
 
@@ -1203,11 +1208,20 @@ export class MemoryLtmService {
     );
     if (hits.length === 0) return null;
 
-    // Fetch content for all hit candidates in one query.
+    // Fetch content for all hit candidates in one query, scoped to the same
+    // tenant so a vector-store misconfiguration cannot surface foreign rows.
     const hitIds = hits.map((h) => h.id);
+    const contentWhere: Record<string, unknown> = {
+      id: { in: hitIds },
+      userId,
+      type: MemoryType.LONG_TERM,
+    };
+    if (organizationId !== undefined) {
+      contentWhere.organizationId = organizationId;
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: { id: string; content: string }[] = await (this.prisma as any).memory.findMany({
-      where: { id: { in: hitIds } },
+      where: contentWhere,
       select: { id: true, content: true },
     });
     const contentMap = new Map(rows.map((r) => [r.id, r.content]));
@@ -1222,22 +1236,28 @@ export class MemoryLtmService {
   private async markSuperseded(
     memoryId: string,
     supersededById: string,
-    reason: string
+    reason: string,
+    userId: string,
+    organizationId: string | undefined
   ): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const existing = await (this.prisma as any).memory.findUnique({
-      where: { id: memoryId },
-      select: { metadata: true },
-    });
+    const existing = await this.findRawMemory(userId, memoryId, organizationId);
     if (!existing) return;
     const updatedMeta = this.contradictionDetectionService!.annotateSuperseded(
       existing.metadata as Record<string, unknown> | null,
       supersededById,
       reason
     );
+    const updateWhere: Record<string, unknown> = {
+      id: memoryId,
+      userId,
+      type: MemoryType.LONG_TERM,
+    };
+    if (organizationId !== undefined) {
+      updateWhere.organizationId = organizationId;
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (this.prisma as any).memory.update({
-      where: { id: memoryId },
+      where: updateWhere,
       data: { metadata: updatedMeta },
     });
     this.logger.debug(`Memory ${memoryId} marked superseded by ${supersededById}`);
