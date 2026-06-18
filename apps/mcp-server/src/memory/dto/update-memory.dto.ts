@@ -11,7 +11,7 @@ export const updateMemoryToolSchema = z.object({
     .optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   tags: z.array(z.string().min(1).max(100)).max(50).optional(),
-  ttl: z.number().int().min(60).max(604800).optional(),
+  ttl: z.coerce.number().int().min(60).max(604800).optional(),
 });
 
 export type UpdateMemoryToolInput = z.infer<typeof updateMemoryToolSchema>;

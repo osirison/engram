@@ -17,15 +17,21 @@ export const compressContextToolSchema = z
       .min(1, 'Query cannot be empty')
       .max(2048, 'Query cannot exceed 2048 characters'),
     /** Maximum memories to retrieve (default 10, max 30) */
-    limit: z.number().int().min(1).max(30).optional().default(10),
+    limit: z.coerce.number().int().min(1).max(30).optional().default(10),
     /**
      * Approximate character budget for the entire context block.
      * Individual memory snippets will be truncated to fit.
      * Default 4000 chars (~1000 tokens at 4 chars/token).
      */
-    maxChars: z.number().int().min(100).max(32000).optional().default(4000),
+    maxChars: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(32000)
+      .optional()
+      .default(4000),
     /** Minimum similarity score [0–1] */
-    minScore: z.number().min(0).max(1).optional().default(0.5),
+    minScore: z.coerce.number().min(0).max(1).optional().default(0.5),
     /** Optional scope filter */
     scope: z.string().max(256).optional(),
   })
@@ -49,11 +55,23 @@ export const loadContextToolSchema = z
      * Approximate character budget for the entire context block.
      * Default 6000 chars (~1500 tokens).
      */
-    maxChars: z.number().int().min(100).max(32000).optional().default(6000),
+    maxChars: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(32000)
+      .optional()
+      .default(6000),
     /** Maximum recent memories to include (default 5, max 20) */
-    recentLimit: z.number().int().min(0).max(20).optional().default(5),
+    recentLimit: z.coerce.number().int().min(0).max(20).optional().default(5),
     /** Maximum high-importance memories to include (default 10, max 30) */
-    importantLimit: z.number().int().min(0).max(30).optional().default(10),
+    importantLimit: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(30)
+      .optional()
+      .default(10),
     /** Optional scope filter */
     scope: z.string().max(256).optional(),
     /** Optional tag filter */

@@ -28,7 +28,7 @@ export const rememberToolSchema = z
     metadata: z.record(z.string(), z.unknown()).optional(),
     tags: z.array(z.string().min(1).max(100)).max(50).optional().default([]),
     /** TTL in seconds; only used when type is 'short-term' or 'auto' routes to STM */
-    ttl: z.number().int().min(60).max(604800).optional(),
+    ttl: z.coerce.number().int().min(60).max(604800).optional(),
     /** Skip duplicate check when true (default false) */
     skipDuplicateCheck: z.boolean().optional().default(false),
   })

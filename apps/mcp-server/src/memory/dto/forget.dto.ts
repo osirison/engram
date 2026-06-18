@@ -20,14 +20,14 @@ export const forgetToolSchema = z
      * Maximum number of candidate memories to return / delete.
      * Capped at 20 to prevent accidental mass deletion.
      */
-    limit: z.number().int().min(1).max(20).optional().default(5),
+    limit: z.coerce.number().int().min(1).max(20).optional().default(5),
     /**
      * When false (default), return the list of matched memories without
      * deleting them so the caller can confirm.  Set to true to delete.
      */
     confirm: z.boolean().optional().default(false),
     /** Minimum similarity score [0–1] for a memory to be considered a match */
-    minScore: z.number().min(0).max(1).optional().default(0.6),
+    minScore: z.coerce.number().min(0).max(1).optional().default(0.6),
   })
   .strict();
 

@@ -17,9 +17,9 @@ export const reflectToolSchema = z
       .min(1, 'Query cannot be empty')
       .max(2048, 'Query cannot exceed 2048 characters'),
     /** Maximum number of source memories to draw from (default 10, max 30) */
-    limit: z.number().int().min(1).max(30).optional().default(10),
+    limit: z.coerce.number().int().min(1).max(30).optional().default(10),
     /** Minimum similarity score for a memory to be included [0–1] */
-    minScore: z.number().min(0).max(1).optional().default(0.5),
+    minScore: z.coerce.number().min(0).max(1).optional().default(0.5),
     /** Optional scope filter (e.g. 'work', 'personal') */
     scope: z.string().max(256).optional(),
     /** Optional tag filter */

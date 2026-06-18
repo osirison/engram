@@ -14,13 +14,13 @@ export const reindexToolSchema = z.object({
   /** Restrict the reindex to a single user. Omit to reindex every user. */
   userId: userIdSchema.optional(),
   /** Memories loaded per page (1-1000). Defaults to 100. */
-  batchSize: z.number().int().min(1).max(1000).optional(),
+  batchSize: z.coerce.number().int().min(1).max(1000).optional(),
   /** When false, regenerate embeddings for every memory. Defaults to true. */
   reuseExistingEmbeddings: z.boolean().optional(),
   /** Resume from a previously returned cursor. */
   cursor: z.string().optional(),
   /** Stop after processing at most this many memories. */
-  maxMemories: z.number().int().min(1).optional(),
+  maxMemories: z.coerce.number().int().min(1).optional(),
 });
 
 export type ReindexToolInput = z.infer<typeof reindexToolSchema>;

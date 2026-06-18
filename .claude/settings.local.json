@@ -35,7 +35,17 @@
       "Bash(git *)",
       "Bash(node *)",
       "Bash(python3 -m json.tool)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(grep -v '^$')",
+      "Skill(update-config)",
+      "Bash(claude mcp *)",
+      "Bash(awk '{print $2}')",
+      "mcp__engram__ping",
+      "mcp__engram__list_memories",
+      "mcp__engram__recall",
+      "Bash(kill -HUP 54229)",
+      "Skill(run)",
+      "Skill(run:*)"
     ],
     "deny": [],
     "ask": []
