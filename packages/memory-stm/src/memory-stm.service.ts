@@ -107,7 +107,7 @@ export class MemoryStmService {
     // are not silently converted to StmMemoryNotFoundError.
     let memory: StmMemory;
     try {
-      memory = JSON.parse(redisValue) as StmMemory;
+      memory = this.deserializeStmMemory(JSON.parse(redisValue));
     } catch {
       this.logger.error(`Failed to parse STM memory ${memoryId}`);
       throw new StmMemoryNotFoundError(memoryId);
@@ -231,7 +231,7 @@ export class MemoryStmService {
           const [error, data] = result;
           if (!error && data) {
             try {
-              const memory = JSON.parse(data as string) as StmMemory;
+              const memory = this.deserializeStmMemory(JSON.parse(data as string));
 
               // Apply tag filtering if tags are provided
               if (tags.length > 0) {
@@ -348,7 +348,7 @@ export class MemoryStmService {
             for (const [error, data] of results) {
               if (!error && data) {
                 try {
-                  const memory = JSON.parse(data as string) as StmMemory;
+                  const memory = this.deserializeStmMemory(JSON.parse(data as string));
                   const hasMatchingTag = tags.some((tag) => memory.tags.includes(tag));
                   if (hasMatchingTag) count++;
                 } catch {
@@ -444,7 +444,7 @@ export class MemoryStmService {
           for (const [error, data] of results) {
             if (!error && data) {
               try {
-                const memory = JSON.parse(data as string) as StmMemory;
+                const memory = this.deserializeStmMemory(JSON.parse(data as string));
                 if ((memory.accessCount ?? 0) >= threshold) {
                   candidates.push(memory);
                 }
@@ -461,6 +461,16 @@ export class MemoryStmService {
 
     this.logger.debug(`Found ${candidates.length} consolidation candidate(s)`);
     return candidates;
+  }
+
+  private deserializeStmMemory(raw: unknown): StmMemory {
+    const m = raw as StmMemory;
+    return {
+      ...m,
+      createdAt: new Date(m.createdAt),
+      updatedAt: new Date(m.updatedAt),
+      expiresAt: new Date(m.expiresAt),
+    };
   }
 
   /**

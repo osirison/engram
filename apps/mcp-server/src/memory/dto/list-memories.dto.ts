@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const listMemoriesToolSchema = z.object({
   userId: userIdSchema,
   type: z.enum(['short-term', 'long-term']).optional(),
-  limit: z.number().int().min(1).max(100).optional().default(20),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
   cursor: cursorIdSchema.optional(),
   tags: z.array(z.string()).optional(),
   search: z.string().max(500).optional(),

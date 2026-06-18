@@ -13,7 +13,7 @@ export const recallToolSchema = z
       .string()
       .min(1, 'Query cannot be empty')
       .max(2048, 'Query cannot exceed 2048 characters'),
-    limit: z.number().int().min(1).max(50).optional().default(10),
+    limit: z.coerce.number().int().min(1).max(50).optional().default(10),
     scope: z.string().max(256).optional(),
     tags: z.array(z.string()).max(50).optional(),
     createdFrom: z.coerce.date().optional(),

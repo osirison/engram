@@ -10,7 +10,7 @@ export const createMemoryToolSchema = z.object({
   type: z.enum(['short-term', 'long-term']),
   metadata: z.record(z.string(), z.unknown()).optional(),
   tags: z.array(z.string().min(1).max(100)).max(50).optional().default([]),
-  ttl: z.number().int().min(60).max(604800).optional(),
+  ttl: z.coerce.number().int().min(60).max(604800).optional(),
 });
 
 export type CreateMemoryToolInput = z.infer<typeof createMemoryToolSchema>;
