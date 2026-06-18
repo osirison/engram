@@ -107,16 +107,11 @@ export class MemoryLtmService {
 
       // Step 2 (exact): return the existing memory when the privacy-filtered
       // content matches exactly — avoids the embedding cost and vector dedup path.
-      const exactDupWhere: Record<string, unknown> = {
-        userId: validatedInput.userId,
-        content: processedContent,
-        type: MemoryType.LONG_TERM,
-      };
-      if (validatedInput.organizationId !== undefined) {
-        exactDupWhere.organizationId = validatedInput.organizationId;
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const exactDup = await (this.prisma as any).memory.findFirst({ where: exactDupWhere });
+      const exactDup = await this.findExactDuplicate(
+        validatedInput.userId,
+        processedContent,
+        validatedInput.organizationId
+      );
       if (exactDup) {
         this.logger.debug(`Exact content duplicate; returning existing memory ${exactDup.id}`);
         return this.mapToLtmMemory(exactDup);
@@ -566,6 +561,30 @@ export class MemoryLtmService {
       // Step 2: Pre-check quota to avoid a needless embeddings API call when over quota.
       await this.checkQuota(userId);
 
+      // Org scope: prefer the explicit param, fall back to what's stored in the STM payload.
+      const resolvedOrgId = organizationId ?? stmMemory.organizationId ?? null;
+
+      // Exact content dedup: if the STM content already exists verbatim in LTM,
+      // skip promotion and return the existing memory without generating an embedding.
+      const exactDup = await this.findExactDuplicate(userId, stmMemory.content, resolvedOrgId);
+      if (exactDup) {
+        this.logger.debug(
+          `Exact content duplicate on promote; returning existing LTM memory ${exactDup.id}`
+        );
+        try {
+          await this.stmService.delete(
+            userId,
+            memoryId,
+            organizationId ?? stmMemory.organizationId
+          );
+        } catch (stmDeleteError) {
+          this.logger.warn(
+            `Failed to delete STM memory ${memoryId} after exact duplicate on promote: ${stmDeleteError}`
+          );
+        }
+        return this.mapToLtmMemory(exactDup);
+      }
+
       // Step 3: Generate embedding before the transaction (I/O outside DB tx).
       let embedding: number[] = [];
       if (this.embeddingsService) {
@@ -574,9 +593,6 @@ export class MemoryLtmService {
           .catch(() => null);
         embedding = result?.embedding ?? [];
       }
-
-      // Org scope: prefer the explicit param, fall back to what's stored in the STM payload.
-      const resolvedOrgId = organizationId ?? stmMemory.organizationId ?? null;
 
       const duplicate = await this.findDuplicate(userId, resolvedOrgId ?? undefined, embedding);
       if (duplicate) {
@@ -1131,6 +1147,23 @@ export class MemoryLtmService {
 
   private ageDays(date: Date): number {
     return Math.max(0, (Date.now() - date.getTime()) / 86_400_000);
+  }
+
+  private async findExactDuplicate(
+    userId: string,
+    content: string,
+    organizationId: string | null | undefined
+  ): Promise<PrismaMemory | null> {
+    const where: Record<string, unknown> = {
+      userId,
+      content,
+      type: MemoryType.LONG_TERM,
+    };
+    if (organizationId !== undefined) {
+      where.organizationId = organizationId;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
   }
 
   private async findDuplicate(
