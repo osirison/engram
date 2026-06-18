@@ -7,6 +7,7 @@ import { VECTOR_STORE_TOKEN, type VectorStore, type VectorPayload } from '@engra
 import { rankResults, DEFAULT_RANKING_WEIGHTS, type RankingWeights } from './rank';
 import { ImportanceScoringService } from './importance.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
+import { ContradictionDetectionService } from './contradiction-detection.service';
 import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
 import { buildIngestContext } from './ingest/types.js';
 import {
@@ -27,6 +28,8 @@ import {
   DecayPolicyOptions,
   DecayPolicyResult,
   DuplicateDetectionMatch,
+  ContradictionMatch,
+  ContradictionCandidate,
   validateCreateLtmMemory,
   validateUpdateLtmMemory,
   validateLtmQueryOptions,
@@ -61,7 +64,8 @@ export class MemoryLtmService {
     private readonly vectorStore?: VectorStore,
     @Optional() private readonly importanceService?: ImportanceScoringService,
     @Optional() private readonly duplicateDetectionService?: DuplicateDetectionService,
-    @Optional() private readonly ingestPipeline?: IngestPipelineService
+    @Optional() private readonly ingestPipeline?: IngestPipelineService,
+    @Optional() private readonly contradictionDetectionService?: ContradictionDetectionService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -145,10 +149,34 @@ export class MemoryLtmService {
         );
       }
 
+      // ── Step B1: contradiction detection ──────────────────────────────
+      const contradiction = await this.findContradictionCandidate(
+        validatedInput.userId,
+        validatedInput.organizationId,
+        processedContent,
+        embedding
+      );
+
       // ── Step 5: ImportanceScorer (inline annotation) ───────────────────
-      const metadata = this.annotateImportance(processedMetadata, {
+      let contradictionAnnotatedMeta = processedMetadata;
+      if (contradiction) {
+        const existingRow = await this.findRawMemory(
+          validatedInput.userId,
+          contradiction.memoryId,
+          validatedInput.organizationId
+        );
+        if (existingRow) {
+          contradictionAnnotatedMeta = this.contradictionDetectionService!.annotateContradictor(
+            processedMetadata,
+            contradiction,
+            existingRow.content.slice(0, 120)
+          );
+        }
+      }
+
+      const metadata = this.annotateImportance(contradictionAnnotatedMeta, {
         content: processedContent,
-        metadata: processedMetadata,
+        metadata: contradictionAnnotatedMeta,
         tags: processedTags,
         accessCount: 0,
       });
@@ -171,6 +199,16 @@ export class MemoryLtmService {
 
       this.logger.debug(`LTM memory created: ${memory.id}`);
       const ltmMemory = this.mapToLtmMemory(memory);
+
+      // ── Step B1 (post-write): mark superseded memory (non-fatal) ───────
+      if (contradiction) {
+        await this.markSuperseded(contradiction.memoryId, ltmMemory.id, contradiction.reason).catch(
+          (err: unknown) =>
+            this.logger.warn(
+              `Failed to mark memory ${contradiction.memoryId} as superseded: ${err instanceof Error ? err.message : String(err)}`
+            )
+        );
+      }
 
       // ── Step 12: SearchIndexUpdate (non-fatal) ─────────────────────────
       await this.indexVector(ltmMemory, embedding);
@@ -1147,6 +1185,62 @@ export class MemoryLtmService {
       3
     );
     return this.duplicateDetectionService.findMatch(hits);
+  }
+
+  private async findContradictionCandidate(
+    userId: string,
+    organizationId: string | undefined,
+    content: string,
+    embedding: number[]
+  ): Promise<ContradictionMatch | null> {
+    if (!this.vectorStore || !this.contradictionDetectionService || embedding.length === 0) {
+      return null;
+    }
+    const hits = await this.vectorStore.search(
+      embedding,
+      { userId, organizationId, type: MemoryType.LONG_TERM },
+      5
+    );
+    if (hits.length === 0) return null;
+
+    // Fetch content for all hit candidates in one query.
+    const hitIds = hits.map((h) => h.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows: { id: string; content: string }[] = await (this.prisma as any).memory.findMany({
+      where: { id: { in: hitIds } },
+      select: { id: true, content: true },
+    });
+    const contentMap = new Map(rows.map((r) => [r.id, r.content]));
+
+    const candidates: ContradictionCandidate[] = hits
+      .filter((h) => contentMap.has(h.id))
+      .map((h) => ({ id: h.id, score: h.score, content: contentMap.get(h.id)! }));
+
+    return this.contradictionDetectionService.detect(content, candidates);
+  }
+
+  private async markSuperseded(
+    memoryId: string,
+    supersededById: string,
+    reason: string
+  ): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = await (this.prisma as any).memory.findUnique({
+      where: { id: memoryId },
+      select: { metadata: true },
+    });
+    if (!existing) return;
+    const updatedMeta = this.contradictionDetectionService!.annotateSuperseded(
+      existing.metadata as Record<string, unknown> | null,
+      supersededById,
+      reason
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (this.prisma as any).memory.update({
+      where: { id: memoryId },
+      data: { metadata: updatedMeta },
+    });
+    this.logger.debug(`Memory ${memoryId} marked superseded by ${supersededById}`);
   }
 
   private async linkDuplicateAndReturn(

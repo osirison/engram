@@ -5,6 +5,7 @@ import { VectorStoreModule } from '@engram/vector-store';
 import { MemoryLtmService } from './memory-ltm.service.js';
 import { ImportanceScoringService } from './importance.service.js';
 import { DuplicateDetectionService } from './duplicate-detection.service.js';
+import { ContradictionDetectionService } from './contradiction-detection.service.js';
 import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
 import { PrivacyFilterStep } from './ingest/privacy-filter.step.js';
 import { TopicDetectorStep } from './ingest/topic-detector.step.js';
@@ -15,6 +16,7 @@ import { TopicDetectorStep } from './ingest/topic-detector.step.js';
     MemoryLtmService,
     ImportanceScoringService,
     DuplicateDetectionService,
+    ContradictionDetectionService,
     IngestPipelineService,
     PrivacyFilterStep,
     TopicDetectorStep,
@@ -23,6 +25,7 @@ import { TopicDetectorStep } from './ingest/topic-detector.step.js';
     MemoryLtmService,
     ImportanceScoringService,
     DuplicateDetectionService,
+    ContradictionDetectionService,
     IngestPipelineService,
   ],
 })
