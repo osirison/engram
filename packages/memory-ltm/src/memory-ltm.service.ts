@@ -854,6 +854,27 @@ export class MemoryLtmService {
     }
   }
 
+  /**
+   * Return LTM memories that carry a given topic tag, are not yet attributed
+   * to an insight (no `insightId` in metadata), and are not insight memories
+   * themselves (not tagged `insight`).  Used by the insight extraction job.
+   */
+  async findInsightCandidates(topic: string, limit: number, userId?: string): Promise<LtmMemory[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows: PrismaMemory[] = await (this.prisma as any).memory.findMany({
+      where: {
+        type: MemoryType.LONG_TERM,
+        tags: { hasSome: [topic] },
+        NOT: { tags: { has: 'insight' } },
+        ...(userId ? { userId } : {}),
+      },
+      take: limit,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return rows.map((row) => this.mapToLtmMemory(row)).filter((m) => !m.metadata?.['insightId']);
+  }
+
   async applyDecayPolicy(options: DecayPolicyOptions = {}): Promise<DecayPolicyResult> {
     const batchSize = this.normalizeBatchSize(options.batchSize);
     const staleScoreThreshold = this.normalizeThreshold(options.staleScoreThreshold, 0.3);
