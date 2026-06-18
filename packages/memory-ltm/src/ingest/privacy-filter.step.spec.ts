@@ -47,6 +47,14 @@ describe('PrivacyFilterStep', () => {
     expect(result.redactions).toContain('bearer-token');
   });
 
+  it('redacts lowercase bearer tokens', async () => {
+    const result = await step.execute(
+      ctx('authorization: bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9')
+    );
+    expect(result.content).not.toContain('eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9');
+    expect(result.redactions).toContain('bearer-token');
+  });
+
   it('redacts password assignments', async () => {
     const result = await step.execute(ctx('config: password = s3cr3tP@ss'));
     expect(result.content).not.toContain('s3cr3tP@ss');

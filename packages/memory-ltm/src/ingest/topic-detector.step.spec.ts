@@ -61,4 +61,9 @@ describe('TopicDetectorStep', () => {
     expect(result.tags).toContain('q3');
     expect(result.tags).toContain('engineering');
   });
+
+  it('does not tag engineering when "ci" appears only inside longer words', async () => {
+    const result = await step.execute(ctx('we decided on a decision about pricing'));
+    expect(result.tags).not.toContain('engineering');
+  });
 });
