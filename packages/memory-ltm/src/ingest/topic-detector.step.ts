@@ -25,7 +25,6 @@ const TOPIC_BUCKETS: Record<string, string[]> = {
     'database',
     'docker',
     'kubernetes',
-    'ci',
     'pipeline',
   ],
   decision: [
