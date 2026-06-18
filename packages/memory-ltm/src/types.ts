@@ -154,6 +154,21 @@ export interface DuplicateDetectionMatch {
   score: number;
 }
 
+export type ContradictionAction = 'superseded' | 'flagged';
+
+export interface ContradictionMatch {
+  memoryId: string;
+  score: number;
+  action: ContradictionAction;
+  reason: string;
+}
+
+export interface ContradictionCandidate {
+  id: string;
+  score: number;
+  content: string;
+}
+
 export interface DecayPolicyOptions {
   userId?: string;
   batchSize?: number;

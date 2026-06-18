@@ -10,6 +10,7 @@ import {
 import { MemoryType } from '@engram/database';
 import { ImportanceScoringService } from './importance.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
+import { ContradictionDetectionService } from './contradiction-detection.service';
 import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
 import { PrivacyFilterStep } from './ingest/privacy-filter.step.js';
 import { TopicDetectorStep } from './ingest/topic-detector.step.js';
@@ -1032,6 +1033,188 @@ describe('MemoryLtmService', () => {
       await serviceWithDuplicate.promote(mockUserId, mockMemoryId);
 
       expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
+    });
+
+    describe('contradiction detection in create()', () => {
+      const oldMemoryId = 'cldx4k8xp000308l84b5c9x4s';
+      const oldMemory = {
+        ...mockMemory,
+        id: oldMemoryId,
+        content: 'I like Python',
+        metadata: { importance: 0.5 },
+      };
+      const newMemory = { ...mockMemory, content: "I don't like Python" };
+
+      function buildContradictionService(): MemoryLtmService {
+        const importanceService = new ImportanceScoringService();
+        const duplicateService = new DuplicateDetectionService();
+        const contradictionService = new ContradictionDetectionService();
+        const vectorStore = {
+          backend: 'qdrant' as const,
+          upsert: vi.fn(),
+          delete: vi.fn(),
+          ensureReady: vi.fn(),
+          // First call: duplicate check (score 0.85 < 0.97 → no duplicate)
+          // Second call: contradiction check (same hit, 0.85 is in band)
+          search: vi.fn().mockResolvedValue([{ id: oldMemoryId, score: 0.85 }]),
+        };
+        const embeddingsService = {
+          generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+        };
+        prismaService.memory.count.mockResolvedValue(0);
+        // exact-dup check → miss
+        prismaService.memory.findFirst
+          .mockResolvedValueOnce(null)
+          // findRawMemory for annotateContradictor
+          .mockResolvedValueOnce(oldMemory)
+          // findRawMemory inside markSuperseded
+          .mockResolvedValueOnce(oldMemory);
+        // candidate content fetch
+        prismaService.memory.findMany.mockResolvedValue([
+          { id: oldMemoryId, content: oldMemory.content },
+        ]);
+        prismaService.memory.create.mockResolvedValue(newMemory);
+        prismaService.memory.update.mockResolvedValue(oldMemory);
+
+        return new MemoryLtmService(
+          prismaService as never,
+          stmService as never,
+          embeddingsService as never,
+          vectorStore as never,
+          importanceService as never,
+          duplicateService as never,
+          undefined,
+          contradictionService as never
+        );
+      }
+
+      it('annotates new memory with contradictionMatches when contradiction is detected', async () => {
+        const svc = buildContradictionService();
+        const result = await svc.create({
+          userId: mockUserId,
+          content: "I don't like Python",
+        });
+
+        expect(prismaService.memory.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              metadata: expect.objectContaining({
+                contradictionMatches: expect.arrayContaining([
+                  expect.objectContaining({
+                    memoryId: oldMemoryId,
+                    action: 'superseded',
+                    reason: 'negation asymmetry',
+                  }),
+                ]),
+              }),
+            }),
+          })
+        );
+        expect(result.id).toBe(newMemory.id);
+      });
+
+      it('marks the older memory as superseded after the new memory is written', async () => {
+        const svc = buildContradictionService();
+        await svc.create({ userId: mockUserId, content: "I don't like Python" });
+
+        expect(prismaService.memory.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ id: oldMemoryId }),
+            data: expect.objectContaining({
+              metadata: expect.objectContaining({
+                status: 'superseded',
+                supersededBy: newMemory.id,
+                supersededReason: 'negation asymmetry',
+              }),
+            }),
+          })
+        );
+      });
+
+      it('creates memory normally when no contradiction is found', async () => {
+        const importanceService = new ImportanceScoringService();
+        const duplicateService = new DuplicateDetectionService();
+        const contradictionService = new ContradictionDetectionService();
+        const vectorStore = {
+          backend: 'qdrant' as const,
+          upsert: vi.fn(),
+          delete: vi.fn(),
+          ensureReady: vi.fn(),
+          search: vi.fn().mockResolvedValue([{ id: oldMemoryId, score: 0.85 }]),
+        };
+        const embeddingsService = {
+          generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+        };
+        prismaService.memory.count.mockResolvedValue(0);
+        prismaService.memory.findFirst.mockResolvedValueOnce(null);
+        // No heuristic match: old content also has no negation
+        prismaService.memory.findMany.mockResolvedValue([
+          { id: oldMemoryId, content: 'I use Python daily' },
+        ]);
+        prismaService.memory.create.mockResolvedValue(newMemory);
+
+        const svc = new MemoryLtmService(
+          prismaService as never,
+          stmService as never,
+          embeddingsService as never,
+          vectorStore as never,
+          importanceService as never,
+          duplicateService as never,
+          undefined,
+          contradictionService as never
+        );
+
+        await svc.create({ userId: mockUserId, content: 'I enjoy Python for scripting' });
+
+        const createCall = prismaService.memory.create.mock.calls[0][0];
+        expect(createCall.data.metadata).not.toHaveProperty('contradictionMatches');
+        expect(prismaService.memory.update).not.toHaveBeenCalled();
+      });
+
+      it('creates memory successfully when markSuperseded fails (non-fatal)', async () => {
+        const svc = buildContradictionService();
+        prismaService.memory.update.mockRejectedValueOnce(new Error('DB error'));
+
+        await expect(
+          svc.create({ userId: mockUserId, content: "I don't like Python" })
+        ).resolves.not.toThrow();
+        expect(prismaService.memory.create).toHaveBeenCalled();
+      });
+
+      it('skips contradiction detection when service is not injected', async () => {
+        const importanceService = new ImportanceScoringService();
+        const duplicateService = new DuplicateDetectionService();
+        const vectorStore = {
+          backend: 'qdrant' as const,
+          upsert: vi.fn(),
+          delete: vi.fn(),
+          ensureReady: vi.fn(),
+          search: vi.fn().mockResolvedValue([{ id: oldMemoryId, score: 0.85 }]),
+        };
+        const embeddingsService = {
+          generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+        };
+        prismaService.memory.count.mockResolvedValue(0);
+        prismaService.memory.findFirst.mockResolvedValueOnce(null);
+        prismaService.memory.create.mockResolvedValue(newMemory);
+        // no contradiction service → findMany and markSuperseded (update) should not be called
+        prismaService.memory.findMany.mockResolvedValue([]);
+
+        const svc = new MemoryLtmService(
+          prismaService as never,
+          stmService as never,
+          embeddingsService as never,
+          vectorStore as never,
+          importanceService as never,
+          duplicateService as never
+          // contradictionDetectionService omitted
+        );
+
+        await svc.create({ userId: mockUserId, content: "I don't like Python" });
+
+        expect(prismaService.memory.findMany).not.toHaveBeenCalled();
+        expect(prismaService.memory.update).not.toHaveBeenCalled();
+      });
     });
   });
 });

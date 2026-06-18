@@ -3,6 +3,7 @@ export { MemoryLtmService } from './memory-ltm.service';
 export { MemoryLtmModule } from './memory-ltm.module';
 export { ImportanceScoringService } from './importance.service';
 export { DuplicateDetectionService } from './duplicate-detection.service';
+export { ContradictionDetectionService } from './contradiction-detection.service';
 
 // Stream B0 — Typed Ingest Pipeline
 export { IngestPipelineService } from './ingest/ingest-pipeline.service';
@@ -26,6 +27,9 @@ export type {
   ImportanceSignals,
   ImportanceScoreResult,
   DuplicateDetectionMatch,
+  ContradictionMatch,
+  ContradictionCandidate,
+  ContradictionAction,
   DecayPolicyOptions,
   DecayPolicyResult,
   CreateLtmMemoryValidated,
