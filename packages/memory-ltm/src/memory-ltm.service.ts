@@ -292,9 +292,6 @@ export class MemoryLtmService {
       if (validatedInput.content !== undefined) {
         updateData.content = validatedInput.content;
       }
-      if (validatedInput.metadata !== undefined) {
-        updateData.metadata = validatedInput.metadata || null;
-      }
       if (validatedInput.tags !== undefined) {
         updateData.tags = validatedInput.tags || [];
       }
@@ -312,10 +309,14 @@ export class MemoryLtmService {
         }
       }
 
-      const nextMetadata =
+      // Resolve final metadata: full-replace wins over patch; patch merges into existing.
+      const nextMetadata: Record<string, unknown> | null =
         validatedInput.metadata !== undefined
           ? (validatedInput.metadata ?? null)
-          : existing.metadata;
+          : validatedInput.metadataMerge !== undefined
+            ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
+            : (existing.metadata ?? null);
+
       const nextContent = validatedInput.content ?? existing.content;
       const nextTags = validatedInput.tags ?? existing.tags;
       updateData.metadata = this.annotateImportance(nextMetadata, {
@@ -353,13 +354,17 @@ export class MemoryLtmService {
       this.logger.debug(`LTM memory updated: ${memoryId}`);
       const ltmMemory = this.mapToLtmMemory(memory);
 
-      // Re-index whenever the embedding, tags, or scope-bearing metadata change.
+      // Re-index on new embedding, tag changes, or metadata changes that alter the
+      // scope field (the only metadata value persisted in the vector payload).
+      const oldScope = this.extractScope(existing.metadata);
+      const newScope = this.extractScope(nextMetadata);
+      const metadataAffectsPayload =
+        (validatedInput.metadata !== undefined || validatedInput.metadataMerge !== undefined) &&
+        oldScope !== newScope;
       const embeddingToIndex = newEmbedding ?? ltmMemory.embedding;
       if (
         embeddingToIndex.length > 0 &&
-        (newEmbedding !== undefined ||
-          validatedInput.tags !== undefined ||
-          validatedInput.metadata !== undefined)
+        (newEmbedding !== undefined || validatedInput.tags !== undefined || metadataAffectsPayload)
       ) {
         await this.indexVector(ltmMemory, embeddingToIndex);
       }
@@ -865,14 +870,14 @@ export class MemoryLtmService {
       where: {
         type: MemoryType.LONG_TERM,
         tags: { hasSome: [topic] },
-        NOT: { tags: { has: 'insight' } },
+        NOT: { tags: { hasSome: ['insight', 'clustered'] } },
         ...(userId ? { userId } : {}),
       },
       take: limit,
       orderBy: { createdAt: 'asc' },
     });
 
-    return rows.map((row) => this.mapToLtmMemory(row)).filter((m) => !m.metadata?.['insightId']);
+    return rows.map((row) => this.mapToLtmMemory(row));
   }
 
   async applyDecayPolicy(options: DecayPolicyOptions = {}): Promise<DecayPolicyResult> {

@@ -119,7 +119,7 @@ describe('InsightExtractionService', () => {
       expect(result.skippedTopics).toBeGreaterThan(0);
     });
 
-    it('creates an insight and annotates source memories when cluster meets min size', async () => {
+    it('creates an insight and annotates source memories with clustered tag', async () => {
       process.env['MEMORY_INSIGHT_MIN_CLUSTER_SIZE'] = '3';
       const candidates = [
         makeMemory({ id: 'mem-1', tags: ['decision'] }),
@@ -156,13 +156,14 @@ describe('InsightExtractionService', () => {
         }),
       );
 
-      // Source memories annotated with insightId
+      // Source memories annotated with insightId via metadataMerge and 'clustered' tag
       expect(ltm.update).toHaveBeenCalledTimes(3);
       expect(ltm.update).toHaveBeenCalledWith(
         'user-1',
         'mem-1',
         expect.objectContaining({
-          metadata: expect.objectContaining({ insightId: 'insight-abc' }),
+          metadataMerge: expect.objectContaining({ insightId: 'insight-abc' }),
+          tags: expect.arrayContaining(['clustered']),
         }),
         undefined,
       );
@@ -326,6 +327,87 @@ describe('InsightExtractionService', () => {
       const result = await service.run();
 
       expect(result.insightsCreated).toBe(1);
+    });
+
+    it('throws from annotateSourceMemories when all annotations fail, preventing insightsCreated increment', async () => {
+      process.env['MEMORY_INSIGHT_MIN_CLUSTER_SIZE'] = '2';
+      const ltm = makeLtmMock();
+      ltm.findInsightCandidates.mockImplementation((topic: string) =>
+        Promise.resolve(
+          topic === 'engineering'
+            ? [
+                makeMemory({ id: 'mem-1', tags: ['engineering'] }),
+                makeMemory({ id: 'mem-2', tags: ['engineering'] }),
+              ]
+            : [],
+        ),
+      );
+      ltm.create.mockResolvedValue({ id: 'insight-x' });
+      ltm.update.mockRejectedValue(new Error('DB down'));
+      const service = await buildModule(ltm);
+      jest
+        .spyOn(
+          service as unknown as { summarizeCluster: () => Promise<string> },
+          'summarizeCluster',
+        )
+        .mockResolvedValue('summary');
+
+      const result = await service.run();
+
+      // Insight was created but annotation fully failed → counted as error, not success
+      expect(result.insightsCreated).toBe(0);
+    });
+
+    it('enforces minClusterSize >= 1: MEMORY_INSIGHT_MIN_CLUSTER_SIZE=0 uses fallback of 3', async () => {
+      process.env['MEMORY_INSIGHT_MIN_CLUSTER_SIZE'] = '0';
+      const ltm = makeLtmMock();
+      ltm.findInsightCandidates.mockImplementation((topic: string) =>
+        Promise.resolve(
+          topic === 'decision'
+            ? [makeMemory({ id: 'mem-1', tags: ['decision'] })]
+            : [],
+        ),
+      );
+      const service = await buildModule(ltm);
+      jest
+        .spyOn(
+          service as unknown as { summarizeCluster: () => Promise<string> },
+          'summarizeCluster',
+        )
+        .mockResolvedValue('summary');
+
+      const result = await service.run();
+
+      // Single-memory bucket doesn't meet the fallback minClusterSize of 3
+      expect(ltm.create).not.toHaveBeenCalled();
+      expect(result.skippedTopics).toBeGreaterThan(0);
+    });
+
+    it('enforces maxClusterSize >= 1: MEMORY_INSIGHT_MAX_CLUSTER_SIZE=0 uses fallback of 10', async () => {
+      process.env['MEMORY_INSIGHT_MAX_CLUSTER_SIZE'] = '0';
+      const ltm = makeLtmMock();
+      ltm.findInsightCandidates.mockImplementation((topic: string) =>
+        Promise.resolve(
+          topic === 'decision'
+            ? Array.from({ length: 5 }, (_, i) =>
+                makeMemory({ id: `mem-${i}`, tags: ['decision'] }),
+              )
+            : [],
+        ),
+      );
+      const service = await buildModule(ltm);
+      jest
+        .spyOn(
+          service as unknown as { summarizeCluster: () => Promise<string> },
+          'summarizeCluster',
+        )
+        .mockResolvedValue('summary');
+
+      const result = await service.run();
+
+      // fallback=10, 5 candidates meet minClusterSize=3 → insight created
+      expect(ltm.create).toHaveBeenCalled();
+      expect(result.insightsCreated).toBeGreaterThan(0);
     });
   });
 

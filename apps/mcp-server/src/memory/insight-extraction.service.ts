@@ -45,14 +45,17 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
     this.intervalMs = InsightExtractionService.readEnvInt(
       'MEMORY_INSIGHT_INTERVAL_MS',
       3_600_000,
+      0,
     );
     this.minClusterSize = InsightExtractionService.readEnvInt(
       'MEMORY_INSIGHT_MIN_CLUSTER_SIZE',
       3,
+      1,
     );
     this.maxClusterSize = InsightExtractionService.readEnvInt(
       'MEMORY_INSIGHT_MAX_CLUSTER_SIZE',
       10,
+      1,
     );
   }
 
@@ -125,11 +128,12 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
 
     let insightsCreated = 0;
     let memoriesClustered = 0;
-    let skippedTopics = 0;
+    let skippedTooSmall = 0;
+    let skippedNoSummary = 0;
 
     for (const memories of byUserKey.values()) {
       if (memories.length < this.minClusterSize) {
-        skippedTopics++;
+        skippedTooSmall++;
         continue;
       }
 
@@ -140,7 +144,10 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
 
       const summary = await this.summarizeCluster(topic, cluster);
       if (!summary) {
-        skippedTopics++;
+        skippedNoSummary++;
+        this.logger.warn(
+          `Skipping insight for user ${userId} topic=${topic}: LLM summarization unavailable`,
+        );
         continue;
       }
 
@@ -173,7 +180,22 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    return { insightsCreated, memoriesClustered, skippedTopics };
+    if (skippedTooSmall > 0) {
+      this.logger.debug(
+        `topic=${topic}: skipped ${skippedTooSmall} user-buckets (cluster too small)`,
+      );
+    }
+    if (skippedNoSummary > 0) {
+      this.logger.error(
+        `topic=${topic}: skipped ${skippedNoSummary} user-buckets (LLM summarization failed)`,
+      );
+    }
+
+    return {
+      insightsCreated,
+      memoriesClustered,
+      skippedTopics: skippedTooSmall + skippedNoSummary,
+    };
   }
 
   private async annotateSourceMemories(
@@ -181,26 +203,31 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
     insightId: string,
   ): Promise<void> {
     const clusteredAt = new Date().toISOString();
-    await Promise.all(
+    const results = await Promise.allSettled(
       memories.map((mem) =>
         this.ltmService!.update(
           mem.userId,
           mem.id,
           {
-            metadata: {
-              ...(mem.metadata ?? {}),
-              insightId,
-              clusteredAt,
-            },
+            metadataMerge: { insightId, clusteredAt },
+            tags: [...new Set([...mem.tags, 'clustered'])],
           },
           mem.organizationId ?? undefined,
-        ).catch((err: unknown) =>
-          this.logger.warn(
-            `Failed to annotate source memory ${mem.id}: ${String(err)}`,
-          ),
         ),
       ),
     );
+
+    const failures = results.filter((r) => r.status === 'rejected');
+    if (failures.length > 0) {
+      this.logger.warn(
+        `Annotated ${results.length - failures.length}/${results.length} source memories for insight ${insightId}; ${failures.length} failed`,
+      );
+    }
+    if (failures.length === results.length) {
+      throw new Error(
+        `All ${results.length} source-memory annotations failed for insight ${insightId} — memories may be re-clustered on next run`,
+      );
+    }
   }
 
   protected async summarizeCluster(
@@ -241,9 +268,17 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private static readEnvInt(name: string, fallback: number): number {
+  /**
+   * Parse an env var as a non-negative integer >= minValue.
+   * Falls back to `fallback` when the var is absent, non-numeric, or below minValue.
+   */
+  private static readEnvInt(
+    name: string,
+    fallback: number,
+    minValue: number,
+  ): number {
     const raw = process.env[name];
     const parsed = raw !== undefined ? parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    return Number.isFinite(parsed) && parsed >= minValue ? parsed : fallback;
   }
 }
