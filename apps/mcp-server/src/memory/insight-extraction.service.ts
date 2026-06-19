@@ -35,6 +35,7 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
   private readonly intervalMs: number;
   private readonly minClusterSize: number;
   private readonly maxClusterSize: number;
+  private isRunning = false;
 
   constructor(
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -90,23 +91,40 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
       );
       return { insightsCreated: 0, memoriesClustered: 0, skippedTopics: 0 };
     }
-
-    this.logger.log('Starting insight extraction pass');
-    let insightsCreated = 0;
-    let memoriesClustered = 0;
-    let skippedTopics = 0;
-
-    for (const topic of TOPIC_TAGS) {
-      const result = await this.processTopicCluster(topic);
-      insightsCreated += result.insightsCreated;
-      memoriesClustered += result.memoriesClustered;
-      skippedTopics += result.skippedTopics;
+    if (!this.openaiClient) {
+      this.logger.debug(
+        'InsightExtractionService: no OpenAI client, skipping run',
+      );
+      return { insightsCreated: 0, memoriesClustered: 0, skippedTopics: 0 };
+    }
+    if (this.isRunning) {
+      this.logger.warn(
+        'InsightExtractionService: previous run still in progress, skipping overlapping tick',
+      );
+      return { insightsCreated: 0, memoriesClustered: 0, skippedTopics: 0 };
     }
 
-    this.logger.log(
-      `Insight extraction pass complete: insightsCreated=${insightsCreated} memoriesClustered=${memoriesClustered} skippedTopics=${skippedTopics}`,
-    );
-    return { insightsCreated, memoriesClustered, skippedTopics };
+    this.isRunning = true;
+    try {
+      this.logger.log('Starting insight extraction pass');
+      let insightsCreated = 0;
+      let memoriesClustered = 0;
+      let skippedTopics = 0;
+
+      for (const topic of TOPIC_TAGS) {
+        const result = await this.processTopicCluster(topic);
+        insightsCreated += result.insightsCreated;
+        memoriesClustered += result.memoriesClustered;
+        skippedTopics += result.skippedTopics;
+      }
+
+      this.logger.log(
+        `Insight extraction pass complete: insightsCreated=${insightsCreated} memoriesClustered=${memoriesClustered} skippedTopics=${skippedTopics}`,
+      );
+      return { insightsCreated, memoriesClustered, skippedTopics };
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   private async processTopicCluster(
@@ -152,6 +170,7 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
       }
 
       try {
+        const extractedAt = new Date().toISOString();
         const insightMemory = await this.ltmService!.create({
           userId,
           organizationId: organizationId ?? undefined,
@@ -162,12 +181,16 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
             topic,
             sourceMemoryIds: cluster.map((m) => m.id),
             clusterSize: cluster.length,
-            extractedAt: new Date().toISOString(),
+            extractedAt,
           },
           skipDuplicateCheck: true,
         });
 
-        await this.annotateSourceMemories(cluster, insightMemory.id);
+        await this.annotateSourceMemories(
+          cluster,
+          insightMemory.id,
+          extractedAt,
+        );
         insightsCreated++;
         memoriesClustered += cluster.length;
         this.logger.debug(
@@ -201,8 +224,8 @@ export class InsightExtractionService implements OnModuleInit, OnModuleDestroy {
   private async annotateSourceMemories(
     memories: LtmMemory[],
     insightId: string,
+    clusteredAt: string,
   ): Promise<void> {
-    const clusteredAt = new Date().toISOString();
     const results = await Promise.allSettled(
       memories.map((mem) =>
         this.ltmService!.update(

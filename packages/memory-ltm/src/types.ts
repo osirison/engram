@@ -33,6 +33,10 @@ export interface CreateLtmMemoryData {
 // LTM update input
 export interface UpdateLtmMemoryData {
   content?: string;
+  /**
+   * Full metadata replacement. When provided, takes precedence over `metadataMerge`;
+   * do not pass both in the same call.
+   */
   metadata?: Record<string, unknown>;
   /** Shallow-merge these fields into existing metadata instead of replacing it. */
   metadataMerge?: Record<string, unknown>;

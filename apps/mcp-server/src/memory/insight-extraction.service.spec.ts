@@ -73,12 +73,14 @@ describe('InsightExtractionService', () => {
     delete process.env['MEMORY_INSIGHT_INTERVAL_MS'];
     delete process.env['MEMORY_INSIGHT_MIN_CLUSTER_SIZE'];
     delete process.env['MEMORY_INSIGHT_MAX_CLUSTER_SIZE'];
+    process.env['OPENAI_API_KEY'] = 'test-key';
   });
 
   afterEach(() => {
     delete process.env['MEMORY_INSIGHT_INTERVAL_MS'];
     delete process.env['MEMORY_INSIGHT_MIN_CLUSTER_SIZE'];
     delete process.env['MEMORY_INSIGHT_MAX_CLUSTER_SIZE'];
+    delete process.env['OPENAI_API_KEY'];
   });
 
   describe('run()', () => {
@@ -408,6 +410,59 @@ describe('InsightExtractionService', () => {
       // fallback=10, 5 candidates meet minClusterSize=3 → insight created
       expect(ltm.create).toHaveBeenCalled();
       expect(result.insightsCreated).toBeGreaterThan(0);
+    });
+
+    it('returns zeros without scanning DB when OPENAI_API_KEY is absent', async () => {
+      delete process.env['OPENAI_API_KEY'];
+      const ltm = makeLtmMock();
+      const service = await buildModule(ltm);
+
+      const result = await service.run();
+
+      expect(ltm.findInsightCandidates).not.toHaveBeenCalled();
+      expect(result).toEqual<InsightExtractionResult>({
+        insightsCreated: 0,
+        memoriesClustered: 0,
+        skippedTopics: 0,
+      });
+    });
+
+    it('skips overlapping execution and returns zeros for the second call', async () => {
+      process.env['MEMORY_INSIGHT_MIN_CLUSTER_SIZE'] = '1';
+      const ltm = makeLtmMock();
+      ltm.findInsightCandidates.mockImplementation((topic: string) =>
+        Promise.resolve(
+          topic === 'engineering'
+            ? [makeMemory({ id: 'mem-1', tags: ['engineering'] })]
+            : [],
+        ),
+      );
+      const service = await buildModule(ltm);
+
+      let resolveFirst!: (value: string) => void;
+      const blockingPromise = new Promise<string>(
+        (resolve) => (resolveFirst = resolve),
+      );
+      jest
+        .spyOn(
+          service as unknown as { summarizeCluster: () => Promise<string> },
+          'summarizeCluster',
+        )
+        .mockReturnValue(blockingPromise);
+
+      // First run starts and suspends inside summarizeCluster; isRunning=true is set
+      // synchronously before the first await, so the second call sees it immediately.
+      const firstRun = service.run();
+      const secondResult = await service.run();
+
+      resolveFirst('insight text');
+      await firstRun;
+
+      expect(secondResult).toEqual<InsightExtractionResult>({
+        insightsCreated: 0,
+        memoriesClustered: 0,
+        skippedTopics: 0,
+      });
     });
   });
 

@@ -328,9 +328,6 @@ export class MemoryLtmService {
         createdAt: existing.createdAt,
         lastAccessedAt: this.readLastAccessedAt(nextMetadata),
       });
-      if (validatedInput.tags !== undefined) {
-        updateData.tags = validatedInput.tags || [];
-      }
 
       // Build the where clause; Prisma requires a unique filter for update.
       // We enforce org scope via the prior get() call and pass it here too so
@@ -860,9 +857,11 @@ export class MemoryLtmService {
   }
 
   /**
-   * Return LTM memories that carry a given topic tag, are not yet attributed
-   * to an insight (no `insightId` in metadata), and are not insight memories
-   * themselves (not tagged `insight`).  Used by the insight extraction job.
+   * Return LTM memories that carry a given topic tag and have not yet been
+   * clustered (i.e. not tagged `insight` or `clustered`). Used by the insight
+   * extraction job. The `clustered` tag is written atomically with the
+   * `insightId` metadata field in the same update call, so filtering by tag
+   * is sufficient to exclude already-processed memories.
    */
   async findInsightCandidates(topic: string, limit: number, userId?: string): Promise<LtmMemory[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
