@@ -9,6 +9,7 @@ import { RedisModule } from '@engram/redis';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
+import { InsightExtractionService } from './insight-extraction.service';
 
 @Module({
   imports: [
@@ -24,7 +25,13 @@ import { DecayService } from './decay.service';
     ReindexQueueService,
     ConsolidationService,
     DecayService,
+    InsightExtractionService,
   ],
-  exports: [MemoryService, ConsolidationService, DecayService],
+  exports: [
+    MemoryService,
+    ConsolidationService,
+    DecayService,
+    InsightExtractionService,
+  ],
 })
 export class MemoryModule {}

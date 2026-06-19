@@ -33,7 +33,13 @@ export interface CreateLtmMemoryData {
 // LTM update input
 export interface UpdateLtmMemoryData {
   content?: string;
+  /**
+   * Full metadata replacement. When provided, takes precedence over `metadataMerge`;
+   * do not pass both in the same call.
+   */
   metadata?: Record<string, unknown>;
+  /** Shallow-merge these fields into existing metadata instead of replacing it. */
+  metadataMerge?: Record<string, unknown>;
   tags?: string[];
 }
 
@@ -206,6 +212,7 @@ export const updateLtmMemorySchema = z.object({
     .max(10240, 'Content cannot exceed 10KB')
     .optional(),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
+  metadataMerge: z.record(z.string(), z.unknown()).optional(),
   tags: z.array(z.string()).optional(),
 });
 
