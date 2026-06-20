@@ -200,6 +200,17 @@ export interface ContextBlock {
   charCount: number;
 }
 
+export interface IngestConversationResult {
+  /** Number of chunks successfully stored as new memories */
+  ingested: number;
+  /** Number of chunks skipped due to exact-content deduplication */
+  skipped: number;
+  /** Number of chunks that failed (errors are non-fatal; ingest continues) */
+  failed: number;
+  /** Ordered memory IDs for chunks that were stored or matched an exact duplicate */
+  memoryIds: string[];
+}
+
 @Injectable()
 export class MemoryService {
   private readonly logger = new Logger(MemoryService.name);
@@ -651,6 +662,63 @@ export class MemoryService {
     return MemoryService.buildContextBlock(merged, input.maxChars);
   }
 
+  /**
+   * Ingest a conversation as a sequence of per-turn memories.
+   *
+   * Each turn is formatted as "<role>: <content>" and stored via `remember()`.
+   * Turns longer than 10 KB are split into multiple chunks at paragraph/newline
+   * boundaries so every stored memory stays within the single-memory size cap.
+   *
+   * `concurrency` bounds how many `remember` calls run at once — this limits
+   * embedding API back-pressure without serialising the whole batch.
+   *
+   * Idempotent: re-submitting the same conversation produces the same memory IDs
+   * because LTM exact-content dedup (content hash) is always active.
+   */
+  async ingestConversation(input: {
+    userId: string;
+    turns: Array<{ role: string; content: string }>;
+    concurrency: number;
+    tags: string[];
+    metadata?: Record<string, unknown>;
+  }): Promise<IngestConversationResult> {
+    const chunks = MemoryService.splitTurnsToChunks(input.turns);
+
+    const result: IngestConversationResult = {
+      ingested: 0,
+      skipped: 0,
+      failed: 0,
+      memoryIds: [],
+    };
+
+    await MemoryService.runConcurrent(
+      chunks.map((chunk) => async (): Promise<void> => {
+        try {
+          const { memory, wasDeduped } = await this.remember({
+            userId: input.userId,
+            content: chunk,
+            type: 'long-term',
+            tags: input.tags,
+            metadata: input.metadata,
+            skipDuplicateCheck: false,
+          });
+          result.memoryIds.push(memory.id);
+          if (wasDeduped) {
+            result.skipped++;
+          } else {
+            result.ingested++;
+          }
+        } catch {
+          result.failed++;
+          result.memoryIds.push('');
+        }
+      }),
+      input.concurrency,
+    );
+
+    return result;
+  }
+
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   /**
@@ -774,6 +842,69 @@ export class MemoryService {
       truncated,
       charCount: context.length,
     };
+  }
+
+  /**
+   * Format conversation turns into storable chunks ≤ 10 KB each.
+   * Each turn becomes "<role>: <content>". Turns exceeding the limit are split
+   * at double-newline boundaries (paragraphs), falling back to hard char cuts.
+   */
+  static splitTurnsToChunks(
+    turns: Array<{ role: string; content: string }>,
+    charLimit = 10240,
+  ): string[] {
+    const chunks: string[] = [];
+    for (const { role, content } of turns) {
+      const formatted = `${role}: ${content}`;
+      if (formatted.length <= charLimit) {
+        chunks.push(formatted);
+        continue;
+      }
+      // Split oversized turns at paragraph breaks, then hard-cut if needed
+      const paragraphs = content.split(/\n\n+/);
+      let current = `${role}: `;
+      for (const para of paragraphs) {
+        const addition = (current === `${role}: ` ? '' : '\n\n') + para;
+        if (current.length + addition.length <= charLimit) {
+          current += addition;
+        } else {
+          if (current !== `${role}: `) {
+            chunks.push(current);
+          }
+          // Hard-cut paragraphs that still exceed the limit
+          const segment = `${role}: ${para}`;
+          for (let i = 0; i < segment.length; i += charLimit) {
+            chunks.push(segment.slice(i, i + charLimit));
+          }
+          current = `${role}: `;
+        }
+      }
+      if (current !== `${role}: `) {
+        chunks.push(current);
+      }
+    }
+    return chunks;
+  }
+
+  /**
+   * Run async tasks with bounded concurrency (N at a time).
+   * Results are settled in original order; errors are captured, not thrown.
+   */
+  private static async runConcurrent(
+    tasks: Array<() => Promise<void>>,
+    concurrency: number,
+  ): Promise<void> {
+    const queue = [...tasks];
+    const workers = Array.from(
+      { length: Math.min(concurrency, queue.length) },
+      async () => {
+        while (queue.length > 0) {
+          const task = queue.shift();
+          if (task) await task();
+        }
+      },
+    );
+    await Promise.all(workers);
   }
 
   /** Sort memories by importance score (descending), computed from metadata signals. */

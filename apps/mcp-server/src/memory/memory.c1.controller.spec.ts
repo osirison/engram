@@ -36,6 +36,7 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
     reflect: jest.fn(),
     compressContext: jest.fn(),
     loadContext: jest.fn(),
+    ingestConversation: jest.fn(),
   };
 
   const mockReindexQueueService = {
@@ -61,8 +62,8 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
     controller = module.get<MemoryController>(MemoryController);
   });
 
-  it('should expose 18 MCP tools', () => {
-    expect(controller.getMcpTools()).toHaveLength(18);
+  it('should expose 19 MCP tools', () => {
+    expect(controller.getMcpTools()).toHaveLength(19);
   });
 
   // ─── remember ───────────────────────────────────────────────────────────────
@@ -275,6 +276,86 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
     it('throws on invalid input', async () => {
       await expect(
         controller.loadContext({ userId: 'invalid-not-cuid' }),
+      ).rejects.toThrow();
+    });
+  });
+
+  // ─── ingest_conversation ────────────────────────────────────────────────────
+
+  describe('ingest_conversation tool', () => {
+    const baseTurns = [
+      { role: 'user', content: 'What is TypeScript?' },
+      {
+        role: 'assistant',
+        content: 'TypeScript is a typed superset of JavaScript.',
+      },
+    ];
+
+    it('returns ingested/skipped/failed counts and memoryIds on success', async () => {
+      mockMemoryService.ingestConversation.mockResolvedValue({
+        ingested: 2,
+        skipped: 0,
+        failed: 0,
+        memoryIds: [MEM_ID, 'clm2222222222222222222222'],
+      });
+
+      const response = await controller.ingestConversation({
+        userId: USER_ID,
+        turns: baseTurns,
+      });
+      const payload = parseFirstJson<{
+        ingested: number;
+        skipped: number;
+        failed: number;
+        total: number;
+        memoryIds: string[];
+      }>(response);
+
+      expect(payload.ingested).toBe(2);
+      expect(payload.skipped).toBe(0);
+      expect(payload.failed).toBe(0);
+      expect(payload.total).toBe(2);
+      expect(payload.memoryIds).toHaveLength(2);
+    });
+
+    it('surfaces skipped count when duplicates are detected', async () => {
+      mockMemoryService.ingestConversation.mockResolvedValue({
+        ingested: 0,
+        skipped: 2,
+        failed: 0,
+        memoryIds: [MEM_ID, MEM_ID],
+      });
+
+      const response = await controller.ingestConversation({
+        userId: USER_ID,
+        turns: baseTurns,
+      });
+      const payload = parseFirstJson<{ skipped: number; total: number }>(
+        response,
+      );
+
+      expect(payload.skipped).toBe(2);
+      expect(payload.total).toBe(2);
+    });
+
+    it('throws on invalid input (missing turns)', async () => {
+      await expect(
+        controller.ingestConversation({ userId: USER_ID }),
+      ).rejects.toThrow();
+    });
+
+    it('throws on invalid input (turns array is empty)', async () => {
+      await expect(
+        controller.ingestConversation({ userId: USER_ID, turns: [] }),
+      ).rejects.toThrow();
+    });
+
+    it('throws on invalid userId', async () => {
+      await expect(
+        controller.ingestConversation({
+          userId: 'not-a-cuid',
+          turns: baseTurns,
+        }),
       ).rejects.toThrow();
     });
   });
