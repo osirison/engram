@@ -8,6 +8,7 @@ import { RedisModule } from '@engram/redis';
 import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { ApiKeysModule } from './api-keys/api-keys.module';
 import { HealthModule } from './health/health.module';
 import { MemoryModule } from './memory/memory.module';
 
@@ -33,6 +34,7 @@ const envFileCandidates = [
     PrismaModule,
     RedisModule,
     QdrantModule,
+    ApiKeysModule,
     HealthModule,
     MemoryModule,
   ],

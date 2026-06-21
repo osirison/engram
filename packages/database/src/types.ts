@@ -44,6 +44,35 @@ export interface Membership {
   updatedAt: Date;
 }
 
+// API key scopes
+export const ApiKeyScope = {
+  MEMORIES_READ: 'memories:read',
+  MEMORIES_WRITE: 'memories:write',
+  MEMORIES_DELETE: 'memories:delete',
+  ADMIN: 'admin',
+} as const;
+
+export type ApiKeyScopeValues = (typeof ApiKeyScope)[keyof typeof ApiKeyScope];
+
+// Core ApiKey interface (matches Prisma generated types)
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  hash: string;
+  userId: string;
+  organizationId?: string | null;
+  scopes: string[];
+  lastUsedAt?: Date | null;
+  expiresAt?: Date | null;
+  revokedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Safe ApiKey (excludes hash, for external responses)
+export type SafeApiKey = Omit<ApiKey, 'hash'>;
+
 // Core Memory interface (matches Prisma generated types)
 export interface Memory {
   id: string;
@@ -98,6 +127,17 @@ export const memoryTagsSchema = z
   .max(50, 'Cannot have more than 50 tags')
   .optional()
   .default([]);
+
+// API key ID validation
+export const apiKeyIdSchema = createCompatibleIdSchema('Invalid API key ID format');
+
+// API key scope validation
+export const apiKeyScopeSchema = z.enum([
+  'memories:read',
+  'memories:write',
+  'memories:delete',
+  'admin',
+]);
 
 // User ID validation
 export const userIdSchema = createCompatibleIdSchema('Invalid user ID format');

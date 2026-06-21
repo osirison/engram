@@ -8,6 +8,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
 import type { McpServerConfig } from '@engram/core';
+import { ApiKeysController } from './api-keys/api-keys.controller';
 import { MemoryController } from './memory/memory.controller';
 
 type McpHandlerContract = {
@@ -19,6 +20,10 @@ type McpHandlerContract = {
     connect: (t: StreamableHTTPServerTransport) => Promise<void>;
     close: () => Promise<void>;
   };
+};
+
+type ApiKeysControllerContract = {
+  getMcpTools: () => ReturnType<ApiKeysController['getMcpTools']>;
 };
 
 async function bootstrap(): Promise<void> {
@@ -36,11 +41,14 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(Logger);
   const mcpHandler = app.get<McpHandlerContract>(McpHandler);
   const memoryController = app.get<MemoryController>(MemoryController);
+  const apiKeysController =
+    app.get<ApiKeysControllerContract>(ApiKeysController);
   const mcpTransport = process.env.MCP_TRANSPORT ?? 'stdio';
 
   try {
     const memoryTools = memoryController.getMcpTools();
-    mcpHandler.registerAdditionalTools(memoryTools);
+    const apiKeyTools = apiKeysController.getMcpTools();
+    mcpHandler.registerAdditionalTools([...memoryTools, ...apiKeyTools]);
 
     const serverConfig: McpServerConfig = {
       name: 'engram',

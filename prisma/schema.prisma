@@ -21,6 +21,7 @@ model Organization {
   // Relationships
   memberships Membership[]
   memories    Memory[]
+  apiKeys     ApiKey[]
 
   @@map("organizations")
 }
@@ -51,8 +52,31 @@ model User {
   // Relationships
   memberships Membership[]
   memories    Memory[]
+  apiKeys     ApiKey[]
 
   @@map("users")
+}
+
+model ApiKey {
+  id             String    @id @default(cuid(2))
+  name           String    @db.VarChar(100)
+  prefix         String    @db.VarChar(16)
+  hash           String
+  userId         String
+  organizationId String?
+  scopes         String[]
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([prefix])
+  @@map("api_keys")
 }
 
 model Memory {
