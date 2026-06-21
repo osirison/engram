@@ -423,3 +423,238 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
     });
   });
 });
+
+// ─── C2: Bulk Ingestion ──────────────────────────────────────────────────────
+
+describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
+  let service: MemoryService;
+
+  const mockStmService = {
+    create: jest.fn(),
+    findById: jest.fn().mockRejectedValue(new Error('not found')),
+    update: jest.fn(),
+    delete: jest.fn(),
+    list: jest.fn().mockResolvedValue({ items: [], totalCount: 0 }),
+  };
+
+  const mockLtmService = {
+    create: jest.fn(),
+    get: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    list: jest.fn(),
+    promote: jest.fn(),
+    semanticSearch: jest.fn(),
+    reindex: jest.fn(),
+  };
+
+  const mockImportanceService = {
+    score: jest.fn().mockReturnValue({
+      score: 0.5,
+      status: 'active',
+      factors: {},
+      reasons: [],
+    }),
+  };
+
+  const USER_ID = 'clm0000000000000000000000';
+  const MEM_ID = 'clm1111111111111111111111';
+
+  const makeMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
+    id: MEM_ID,
+    userId: USER_ID,
+    content: 'Test memory content',
+    metadata: {},
+    tags: [],
+    embedding: [],
+    type: 'long-term',
+    createdAt: new Date('2025-01-01'),
+    updatedAt: new Date('2025-01-01'),
+    expiresAt: null,
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module = await Test.createTestingModule({
+      providers: [
+        MemoryService,
+        { provide: MemoryStmService, useValue: mockStmService },
+        { provide: MemoryLtmService, useValue: mockLtmService },
+        { provide: ImportanceScoringService, useValue: mockImportanceService },
+      ],
+    }).compile();
+
+    service = module.get<MemoryService>(MemoryService);
+  });
+
+  describe('ingestConversation', () => {
+    it('ingests each turn as a separate long-term memory', async () => {
+      const mem = makeMemory();
+      mockLtmService.create.mockResolvedValue(mem);
+
+      const result = await service.ingestConversation({
+        userId: USER_ID,
+        turns: [
+          { role: 'user', content: 'Hello, what is TypeScript?' },
+          {
+            role: 'assistant',
+            content: 'TypeScript is a typed superset of JavaScript.',
+          },
+        ],
+        concurrency: 2,
+        tags: ['ts'],
+      });
+
+      expect(result.ingested).toBe(2);
+      expect(result.skipped).toBe(0);
+      expect(result.failed).toBe(0);
+      expect(result.total).toBe(2);
+      expect(result.memoryIds).toHaveLength(2);
+      expect(mockLtmService.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('counts skipped when LTM returns a deduplicated memory', async () => {
+      const dupMem = makeMemory({
+        metadata: { duplicateMatches: [{ memoryId: MEM_ID, score: 0.99 }] },
+      });
+      mockLtmService.create.mockResolvedValue(dupMem);
+
+      const result = await service.ingestConversation({
+        userId: USER_ID,
+        turns: [
+          {
+            role: 'user',
+            content: 'TypeScript is a typed superset of JavaScript.',
+          },
+        ],
+        concurrency: 1,
+        tags: [],
+      });
+
+      expect(result.skipped).toBe(1);
+      expect(result.ingested).toBe(0);
+      expect(result.memoryIds).toHaveLength(1);
+    });
+
+    it('counts failed without throwing when a turn errors', async () => {
+      mockLtmService.create
+        .mockResolvedValueOnce(makeMemory({ id: 'clm2222222222222222222222' }))
+        .mockRejectedValueOnce(new Error('embedding timeout'));
+
+      const result = await service.ingestConversation({
+        userId: USER_ID,
+        turns: [
+          { role: 'user', content: 'First turn' },
+          { role: 'assistant', content: 'Second turn' },
+        ],
+        concurrency: 1,
+        tags: [],
+      });
+
+      expect(result.ingested).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.memoryIds).toHaveLength(2);
+      expect(result.memoryIds[1]).toBe('');
+    });
+
+    it('is idempotent: re-ingesting the same conversation returns same count', async () => {
+      const mem = makeMemory();
+      mockLtmService.create.mockResolvedValue(mem);
+
+      const turns = [{ role: 'user', content: 'What is Postgres?' }];
+      const first = await service.ingestConversation({
+        userId: USER_ID,
+        turns,
+        concurrency: 1,
+        tags: [],
+      });
+
+      // Second call - LTM returns dedup annotation
+      const dupMem = makeMemory({
+        metadata: { duplicateMatches: [{ memoryId: MEM_ID, score: 1.0 }] },
+      });
+      mockLtmService.create.mockResolvedValue(dupMem);
+      const second = await service.ingestConversation({
+        userId: USER_ID,
+        turns,
+        concurrency: 1,
+        tags: [],
+      });
+
+      expect(first.ingested + first.skipped).toBe(1);
+      expect(second.ingested + second.skipped).toBe(1);
+    });
+
+    it('handles large payloads (100 turns) without error', async () => {
+      const mem = makeMemory();
+      mockLtmService.create.mockResolvedValue(mem);
+
+      const turns = Array.from({ length: 100 }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `Message number ${i + 1} in a long conversation.`,
+      }));
+
+      const result = await service.ingestConversation({
+        userId: USER_ID,
+        turns,
+        concurrency: 5,
+        tags: [],
+      });
+
+      expect(result.total).toBe(100);
+      expect(result.ingested + result.skipped + result.failed).toBe(100);
+      expect(result.memoryIds).toHaveLength(100);
+    });
+  });
+
+  // ─── splitTurnsToChunks (static helper) ─────────────────────────────────────
+
+  describe('splitTurnsToChunks', () => {
+    it('returns one chunk per short turn', () => {
+      const chunks = MemoryService.splitTurnsToChunks([
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there' },
+      ]);
+      expect(chunks).toEqual(['user: Hello', 'assistant: Hi there']);
+    });
+
+    it('splits a turn that exceeds the char limit', () => {
+      const longContent = 'A'.repeat(6000) + '\n\n' + 'B'.repeat(6000);
+      const chunks = MemoryService.splitTurnsToChunks(
+        [{ role: 'user', content: longContent }],
+        10240,
+      );
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const c of chunks) {
+        expect(c.length).toBeLessThanOrEqual(10240);
+      }
+    });
+
+    it('hard-cuts a single paragraph longer than the limit', () => {
+      const veryLong = 'X'.repeat(25000);
+      const chunks = MemoryService.splitTurnsToChunks(
+        [{ role: 'user', content: veryLong }],
+        10240,
+      );
+      expect(chunks.length).toBeGreaterThanOrEqual(3);
+      for (const c of chunks) {
+        expect(c.length).toBeLessThanOrEqual(10240);
+        expect(c.startsWith('user: ')).toBe(true);
+      }
+    });
+
+    it('preserves all content across chunks (no data loss)', () => {
+      const content = ['Para1', 'Para2', 'Para3'].join('\n\n');
+      const chunks = MemoryService.splitTurnsToChunks(
+        [{ role: 'user', content }],
+        10240,
+      );
+      const combined = chunks.map((c) => c.replace(/^user: /, '')).join('\n\n');
+      expect(combined).toContain('Para1');
+      expect(combined).toContain('Para2');
+      expect(combined).toContain('Para3');
+    });
+  });
+});

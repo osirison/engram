@@ -43,13 +43,17 @@ import {
   loadContextToolSchema,
   LoadContextToolInput,
 } from './dto/context.dto';
+import {
+  ingestConversationToolSchema,
+  IngestConversationToolInput,
+} from './dto/ingest-conversation.dto';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 
 /**
  * MCP Memory Tools Controller
  *
- * Implements 18 MCP tools for memory management:
+ * Implements 19 MCP tools for memory management:
  * 1.  create_memory          - Create short-term or long-term memory
  * 2.  get_memory             - Retrieve memory by ID
  * 3.  list_memories          - List memories with pagination
@@ -68,6 +72,7 @@ import { ConsolidationService } from './consolidation.service';
  * 16. reflect                - Synthesise structured insights across memories
  * 17. compress_context       - Retrieve + format memories as an injectable context block
  * 18. load_context           - Load recent + important memories for session priming
+ * 19. ingest_conversation    - Bulk-ingest a conversation as chunked per-turn memories
  */
 @Controller('memory')
 @Injectable()
@@ -904,6 +909,53 @@ export class MemoryController {
   }
 
   /**
+   * MCP Tool: ingest_conversation
+   * Bulk-ingest a conversation as chunked per-turn long-term memories.
+   * Idempotent: re-submitting the same conversation returns the same memory IDs.
+   */
+  async ingestConversation(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('ingest_conversation tool called');
+      const validated: IngestConversationToolInput =
+        ingestConversationToolSchema.parse(input);
+
+      const result = await this.memoryService.ingestConversation({
+        userId: validated.userId,
+        turns: validated.turns,
+        concurrency: validated.concurrency,
+        tags: validated.tags,
+        metadata: validated.metadata,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ingested: result.ingested,
+                skipped: result.skipped,
+                failed: result.failed,
+                total: result.total,
+                memoryIds: result.memoryIds,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in ingest_conversation tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to ingest conversation: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Get MCP tools in the format required by the MCP handler
    * This method creates Tool objects that bind controller methods as handlers
    */
@@ -1059,6 +1111,16 @@ export class MemoryController {
           'Load a session-priming context block by blending the most recent memories with the highest-importance memories. Ideal for injecting into a session-opening prompt.',
         inputSchema: loadContextToolSchema,
         handler: this.loadContext.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      // ── C2: Bulk / Streaming Ingestion ───────────────────────────────────────
+      {
+        name: 'ingest_conversation',
+        description:
+          'Bulk-ingest a conversation as per-turn long-term memories. Handles chunking for large turns, controls embedding back-pressure via concurrency, and is idempotent: re-submitting the same conversation returns the existing memory IDs.',
+        inputSchema: ingestConversationToolSchema,
+        handler: this.ingestConversation.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
       },
