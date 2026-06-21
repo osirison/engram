@@ -296,6 +296,7 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
         ingested: 2,
         skipped: 0,
         failed: 0,
+        total: 2,
         memoryIds: [MEM_ID, 'clm2222222222222222222222'],
       });
 
@@ -323,6 +324,7 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
         ingested: 0,
         skipped: 2,
         failed: 0,
+        total: 2,
         memoryIds: [MEM_ID, MEM_ID],
       });
 

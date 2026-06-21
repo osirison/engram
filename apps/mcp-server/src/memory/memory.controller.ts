@@ -938,7 +938,7 @@ export class MemoryController {
                 ingested: result.ingested,
                 skipped: result.skipped,
                 failed: result.failed,
-                total: result.ingested + result.skipped + result.failed,
+                total: result.total,
                 memoryIds: result.memoryIds,
               },
               null,

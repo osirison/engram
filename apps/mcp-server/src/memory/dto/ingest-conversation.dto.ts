@@ -16,7 +16,7 @@ export const ingestConversationToolSchema = z
         z
           .object({
             role: z.string().min(1).max(100),
-            content: z.string().min(1),
+            content: z.string().min(1).max(1_048_576),
           })
           .strict(),
       )

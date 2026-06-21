@@ -207,7 +207,12 @@ export interface IngestConversationResult {
   skipped: number;
   /** Number of chunks that failed (errors are non-fatal; ingest continues) */
   failed: number;
-  /** Ordered memory IDs for chunks that were stored or matched an exact duplicate */
+  /** Total chunks processed: ingested + skipped + failed */
+  total: number;
+  /**
+   * Memory IDs in chunk order. An empty string (`''`) at index `i` indicates
+   * that chunk `i` failed to store; the failure is also reflected in `failed`.
+   */
   memoryIds: string[];
 }
 
@@ -684,15 +689,15 @@ export class MemoryService {
   }): Promise<IngestConversationResult> {
     const chunks = MemoryService.splitTurnsToChunks(input.turns);
 
-    const result: IngestConversationResult = {
+    const accum = {
       ingested: 0,
       skipped: 0,
       failed: 0,
-      memoryIds: [],
+      memoryIds: new Array<string>(chunks.length).fill(''),
     };
 
     await MemoryService.runConcurrent(
-      chunks.map((chunk) => async (): Promise<void> => {
+      chunks.map((chunk, i) => async (): Promise<void> => {
         try {
           const { memory, wasDeduped } = await this.remember({
             userId: input.userId,
@@ -702,21 +707,24 @@ export class MemoryService {
             metadata: input.metadata,
             skipDuplicateCheck: false,
           });
-          result.memoryIds.push(memory.id);
+          accum.memoryIds[i] = memory.id;
           if (wasDeduped) {
-            result.skipped++;
+            accum.skipped++;
           } else {
-            result.ingested++;
+            accum.ingested++;
           }
         } catch {
-          result.failed++;
-          result.memoryIds.push('');
+          accum.failed++;
+          // accum.memoryIds[i] remains '' to mark the failure
         }
       }),
       input.concurrency,
     );
 
-    return result;
+    return {
+      ...accum,
+      total: accum.ingested + accum.skipped + accum.failed,
+    };
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
@@ -861,25 +869,33 @@ export class MemoryService {
         continue;
       }
       // Split oversized turns at paragraph breaks, then hard-cut if needed
-      const paragraphs = content.split(/\n\n+/);
-      let current = `${role}: `;
+      const prefix = `${role}: `;
+      const paragraphs = content.split(/\n\n+/).filter((p) => p.trim() !== '');
+      if (paragraphs.length === 0) {
+        // All-whitespace oversized content: hard-cut as-is to avoid silent drop
+        for (let i = 0; i < formatted.length; i += charLimit) {
+          chunks.push(formatted.slice(i, i + charLimit));
+        }
+        continue;
+      }
+      let current = prefix;
       for (const para of paragraphs) {
-        const addition = (current === `${role}: ` ? '' : '\n\n') + para;
+        const addition = (current === prefix ? '' : '\n\n') + para;
         if (current.length + addition.length <= charLimit) {
           current += addition;
         } else {
-          if (current !== `${role}: `) {
+          if (current !== prefix) {
             chunks.push(current);
           }
-          // Hard-cut paragraphs that still exceed the limit
-          const segment = `${role}: ${para}`;
-          for (let i = 0; i < segment.length; i += charLimit) {
-            chunks.push(segment.slice(i, i + charLimit));
+          // Hard-cut: prefix every slice so each chunk is self-contained
+          const chunkContent = charLimit - prefix.length;
+          for (let i = 0; i < para.length; i += chunkContent) {
+            chunks.push(`${prefix}${para.slice(i, i + chunkContent)}`);
           }
-          current = `${role}: `;
+          current = prefix;
         }
       }
-      if (current !== `${role}: `) {
+      if (current !== prefix) {
         chunks.push(current);
       }
     }

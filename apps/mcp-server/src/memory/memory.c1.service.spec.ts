@@ -510,6 +510,7 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
       expect(result.ingested).toBe(2);
       expect(result.skipped).toBe(0);
       expect(result.failed).toBe(0);
+      expect(result.total).toBe(2);
       expect(result.memoryIds).toHaveLength(2);
       expect(mockLtmService.create).toHaveBeenCalledTimes(2);
     });
@@ -602,6 +603,7 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
         tags: [],
       });
 
+      expect(result.total).toBe(100);
       expect(result.ingested + result.skipped + result.failed).toBe(100);
       expect(result.memoryIds).toHaveLength(100);
     });
@@ -639,6 +641,7 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
       expect(chunks.length).toBeGreaterThanOrEqual(3);
       for (const c of chunks) {
         expect(c.length).toBeLessThanOrEqual(10240);
+        expect(c.startsWith('user: ')).toBe(true);
       }
     });
 
