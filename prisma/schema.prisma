@@ -64,7 +64,7 @@ model ApiKey {
   hash           String
   userId         String
   organizationId String?
-  scopes         String[]
+  scopes         String[]  @default([])
   lastUsedAt     DateTime?
   expiresAt      DateTime?
   revokedAt      DateTime?
