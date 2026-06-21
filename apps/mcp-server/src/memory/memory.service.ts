@@ -904,7 +904,8 @@ export class MemoryService {
 
   /**
    * Run async tasks with bounded concurrency (N at a time).
-   * Results are settled in original order; errors are captured, not thrown.
+   * Each task is responsible for its own error handling; this helper does not
+   * catch errors or preserve any result ordering.
    */
   private static async runConcurrent(
     tasks: Array<() => Promise<void>>,

@@ -9,7 +9,8 @@ export const ingestConversationToolSchema = z
     /**
      * Ordered list of conversation turns to ingest.
      * Each turn is chunked by content; turns longer than 10 KB are split at
-     * sentence/paragraph boundaries so no individual memory exceeds the limit.
+     * double-newline (paragraph) boundaries, with a hard character-cut fallback,
+     * so no individual stored memory exceeds the 10 KB limit.
      */
     turns: z
       .array(
