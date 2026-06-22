@@ -74,8 +74,10 @@ model ApiKey {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
+  @@unique([hash])
   @@index([userId])
   @@index([prefix])
+  @@index([prefix, hash])
   @@map("api_keys")
 }
 
@@ -109,3 +111,4 @@ model Memory {
   @@index([expiresAt])
   @@map("memories")
 }
+

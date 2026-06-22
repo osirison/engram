@@ -36,9 +36,10 @@ export class ApiKeysService {
   async createApiKey(input: CreateApiKeyInput): Promise<CreateApiKeyResult> {
     const { rawKey, prefix, hash } = generateRawKey();
 
-    const expiresAt = input.expiresInDays
-      ? new Date(Date.now() + input.expiresInDays * 86_400_000)
-      : null;
+    const expiresAt =
+      input.expiresInDays != null
+        ? new Date(Date.now() + input.expiresInDays * 86_400_000)
+        : null;
 
     const record = await this.prisma.apiKey.create({
       data: {
@@ -73,7 +74,11 @@ export class ApiKeysService {
 
   async listApiKeys(userId: string): Promise<SafeApiKey[]> {
     return this.prisma.apiKey.findMany({
-      where: { userId, revokedAt: null },
+      where: {
+        userId,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
       select: {
         id: true,
         name: true,
@@ -95,17 +100,19 @@ export class ApiKeysService {
     userId: string,
     keyId: string,
   ): Promise<SafeApiKey | null> {
-    const existing = await this.prisma.apiKey.findFirst({
+    // Atomic: guards against TOCTOU race where two concurrent requests both
+    // find the key un-revoked and then double-write revokedAt.
+    const { count } = await this.prisma.apiKey.updateMany({
       where: { id: keyId, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
 
-    if (!existing) {
+    if (count === 0) {
       return null;
     }
 
-    const revoked = await this.prisma.apiKey.update({
+    const revoked = await this.prisma.apiKey.findFirst({
       where: { id: keyId },
-      data: { revokedAt: new Date() },
       select: {
         id: true,
         name: true,
@@ -121,9 +128,11 @@ export class ApiKeysService {
       },
     });
 
-    this.logger.log(
-      `Revoked API key ${keyId} (prefix=${existing.prefix}) for user ${userId}`,
-    );
+    if (revoked) {
+      this.logger.log(
+        `Revoked API key ${keyId} (prefix=${revoked.prefix}) for user ${userId}`,
+      );
+    }
 
     return revoked;
   }
@@ -162,15 +171,16 @@ export class ApiKeysService {
       return null;
     }
 
-    // Fire-and-forget: update lastUsedAt without blocking the caller
-    void this.prisma.apiKey
-      .update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })
-      .catch((err: unknown) => {
+    // Fire-and-forget: bypass @updatedAt by using raw SQL so only lastUsedAt changes
+    void this.prisma
+      .$executeRaw`UPDATE "api_keys" SET "lastUsedAt" = NOW() WHERE "id" = ${record.id}`.catch(
+      (err: unknown) => {
         this.logger.warn(
           `Failed to update lastUsedAt for key ${record.id}`,
           err,
         );
-      });
+      },
+    );
 
     return record;
   }

@@ -30,6 +30,8 @@ describe('ApiKeysController', () => {
   };
 
   beforeEach(async () => {
+    process.env.MCP_ADMIN_TOKEN = 'test-admin-token';
+
     const mockService = {
       createApiKey: jest.fn(),
       listApiKeys: jest.fn(),
@@ -48,7 +50,10 @@ describe('ApiKeysController', () => {
     ) as jest.Mocked<ApiKeysService>;
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    delete process.env.MCP_ADMIN_TOKEN;
+    jest.clearAllMocks();
+  });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
@@ -82,6 +87,7 @@ describe('ApiKeysController', () => {
 
       const response = await controller.createApiKey({
         userId,
+        adminToken: 'test-admin-token',
         name: 'My Key',
         scopes: ['memories:read', 'memories:write'],
       });
@@ -101,10 +107,28 @@ describe('ApiKeysController', () => {
       await expect(
         controller.createApiKey({
           userId,
+          adminToken: 'test-admin-token',
           name: '',
           scopes: ['memories:read'],
         }),
       ).rejects.toThrow(/Failed to create API key/);
+    });
+
+    it('throws when admin token is wrong', async () => {
+      service.createApiKey.mockResolvedValue({
+        key: mockKey,
+        rawKey: 'eng_AAAABBBBCCCCDDDDEEEEFFFFGGHH1234',
+      });
+
+      await expect(
+        controller.createApiKey({
+          userId,
+          adminToken: 'wrong-token',
+          name: 'Key',
+          scopes: ['memories:read'],
+        }),
+      ).rejects.toThrow(/Failed to create API key/);
+      expect(service.createApiKey).not.toHaveBeenCalled();
     });
 
     it('throws when service throws', async () => {
@@ -113,6 +137,7 @@ describe('ApiKeysController', () => {
       await expect(
         controller.createApiKey({
           userId,
+          adminToken: 'test-admin-token',
           name: 'Key',
           scopes: ['memories:read'],
         }),
@@ -167,6 +192,12 @@ describe('ApiKeysController', () => {
 
       const body = parse<{ revoked: boolean }>(response);
       expect(body.revoked).toBe(false);
+    });
+
+    it('throws on invalid input (bad keyId format)', async () => {
+      await expect(
+        controller.revokeApiKey({ userId, keyId: 'not-a-cuid' }),
+      ).rejects.toThrow(/Failed to revoke API key/);
     });
 
     it('throws when service throws', async () => {

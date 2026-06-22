@@ -131,13 +131,10 @@ export const memoryTagsSchema = z
 // API key ID validation
 export const apiKeyIdSchema = createCompatibleIdSchema('Invalid API key ID format');
 
-// API key scope validation
-export const apiKeyScopeSchema = z.enum([
-  'memories:read',
-  'memories:write',
-  'memories:delete',
-  'admin',
-]);
+// API key scope validation — derived from ApiKeyScope to keep a single source of truth
+export const apiKeyScopeSchema = z.enum(
+  Object.values(ApiKeyScope) as [ApiKeyScopeValues, ...ApiKeyScopeValues[]]
+);
 
 // User ID validation
 export const userIdSchema = createCompatibleIdSchema('Invalid user ID format');

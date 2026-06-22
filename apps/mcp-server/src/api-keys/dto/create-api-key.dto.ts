@@ -4,8 +4,10 @@ import { z } from 'zod';
 export const createApiKeyToolSchema = z
   .object({
     userId: userIdSchema,
+    adminToken: z.string().min(1, 'Admin token is required'),
     name: z
       .string()
+      .trim()
       .min(1, 'Name cannot be empty')
       .max(100, 'Name cannot exceed 100 characters'),
     scopes: z

@@ -9,8 +9,9 @@ describe('ApiKeysService', () => {
     create: jest.Mock;
     findMany: jest.Mock;
     findFirst: jest.Mock;
-    update: jest.Mock;
+    updateMany: jest.Mock;
   };
+  let mockExecuteRaw: jest.Mock;
 
   const userId = 'cm123456789012345678901234';
 
@@ -65,15 +66,16 @@ describe('ApiKeysService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
-      update: jest.fn(),
+      updateMany: jest.fn(),
     };
+    mockExecuteRaw = jest.fn().mockResolvedValue(1);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ApiKeysService,
         {
           provide: PrismaService,
-          useValue: { apiKey: mockApiKey },
+          useValue: { apiKey: mockApiKey, $executeRaw: mockExecuteRaw },
         },
       ],
     }).compile();
@@ -160,31 +162,37 @@ describe('ApiKeysService', () => {
 
       expect(result).toEqual(keys);
       expect(mockApiKey.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { userId, revokedAt: null } }),
+        expect.objectContaining({
+          where: expect.objectContaining({ userId, revokedAt: null }),
+        }),
       );
     });
   });
 
   describe('revokeApiKey', () => {
     it('revokes an existing key and returns it', async () => {
-      const existing = buildKey({ id: 'key-1' });
       const revoked = buildKey({ id: 'key-1', revokedAt: new Date() });
-      mockApiKey.findFirst.mockResolvedValue(existing);
-      mockApiKey.update.mockResolvedValue(revoked);
+      mockApiKey.updateMany.mockResolvedValue({ count: 1 });
+      mockApiKey.findFirst.mockResolvedValue(revoked);
 
       const result = await service.revokeApiKey(userId, 'key-1');
 
       expect(result).toEqual(revoked);
       expect(result!.revokedAt).toBeInstanceOf(Date);
+      expect(mockApiKey.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'key-1', userId, revokedAt: null },
+        }),
+      );
     });
 
     it('returns null when key is not found or already revoked', async () => {
-      mockApiKey.findFirst.mockResolvedValue(null);
+      mockApiKey.updateMany.mockResolvedValue({ count: 0 });
 
       const result = await service.revokeApiKey(userId, 'nonexistent');
 
       expect(result).toBeNull();
-      expect(mockApiKey.update).not.toHaveBeenCalled();
+      expect(mockApiKey.findFirst).not.toHaveBeenCalled();
     });
   });
 
@@ -212,21 +220,19 @@ describe('ApiKeysService', () => {
         'eng_AAAABBBBCCCCDDDDEEEEFFFFGGHH',
       );
       expect(result).toBeNull();
+      expect(mockExecuteRaw).not.toHaveBeenCalled();
     });
 
     it('returns the key record for a valid key and fires lastUsedAt update', async () => {
       const rawKey = 'eng_AAAABBBBCCCCDDDDEEEEFFFFGGHH1234';
       const validKey = buildKey({ expiresAt: null });
       mockApiKey.findFirst.mockResolvedValue(validKey);
-      mockApiKey.update.mockResolvedValue(validKey);
 
       const result = await service.verifyApiKey(rawKey);
       expect(result).toEqual(validKey);
 
       await Promise.resolve();
-      expect(mockApiKey.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: validKey.id } }),
-      );
+      expect(mockExecuteRaw).toHaveBeenCalled();
     });
   });
 });
