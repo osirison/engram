@@ -83,7 +83,7 @@ export class ApiKeysController {
     }
   }
 
-  /** MCP Tool: list_api_keys — list active (non-revoked) keys for a user. */
+  /** MCP Tool: list_api_keys — list active (non-revoked, non-expired) keys for a user. */
   async listApiKeys(input: unknown): Promise<McpTextResponse> {
     try {
       const validated: ListApiKeysToolInput =
@@ -183,7 +183,7 @@ export class ApiKeysController {
       {
         name: 'list_api_keys',
         description:
-          'List all active (non-revoked) API keys for a user. Returns key metadata only — the raw key is never shown again after creation.',
+          'List all active (non-revoked, non-expired) API keys for a user. Returns key metadata only — the raw key is never shown again after creation.',
         inputSchema: listApiKeysToolSchema,
         handler: this.listApiKeys.bind(this) as (
           input: unknown,
