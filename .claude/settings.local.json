@@ -45,7 +45,10 @@
       "mcp__engram__recall",
       "Bash(kill -HUP 54229)",
       "Skill(run)",
-      "Skill(run:*)"
+      "Skill(run:*)",
+      "Read(//home/qp/.claude/**)",
+      "Bash(node --env-file=.env apps/mcp-server/dist/main.js)",
+      "Bash(echo \"PID: $!\")"
     ],
     "deny": [],
     "ask": []
