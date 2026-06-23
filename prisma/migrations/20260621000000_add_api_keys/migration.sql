@@ -22,9 +22,6 @@ CREATE INDEX "api_keys_userId_idx" ON "api_keys"("userId");
 -- CreateIndex
 CREATE INDEX "api_keys_prefix_idx" ON "api_keys"("prefix");
 
--- CreateIndex
-CREATE INDEX "api_keys_prefix_hash_idx" ON "api_keys"("prefix", "hash");
-
 -- AddForeignKey
 ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
