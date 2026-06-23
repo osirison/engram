@@ -3,6 +3,7 @@ import { MemoryService } from './memory.service';
 import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
 import { MemoryLtmService, ImportanceScoringService } from '@engram/memory-ltm';
 import type { LtmMemory } from '@engram/memory-ltm';
+import type { Memory } from '@engram/database';
 
 const USER_ID = 'clm0000000000000000000000';
 const MEM_ID = 'clm1111111111111111111111';
@@ -422,6 +423,130 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
       expect(result.context).toBe('(no memories)');
     });
   });
+
+  // ─── assemblePromptContext ───────────────────────────────────────────────────
+
+  describe('assemblePromptContext', () => {
+    it('returns formatted context block within token budget', async () => {
+      ltmService.semanticSearch.mockResolvedValue([
+        {
+          memory: makeMemory({
+            id: MEM_ID,
+            content: 'Use Redis for caching',
+            tags: ['infra'],
+          }),
+          score: 0.85,
+        },
+      ]);
+
+      const result = await service.assemblePromptContext({
+        userId: USER_ID,
+        query: 'caching strategy',
+        tokenBudget: 2000,
+        limit: 20,
+        minScore: 0.5,
+      });
+
+      expect(result.memoryCount).toBe(1);
+      expect(result.context).toContain('Use Redis for caching');
+      expect(result.estimatedTokens).toBeGreaterThan(0);
+      expect(result.estimatedTokens).toBeLessThanOrEqual(result.tokenBudget);
+      expect(result.tokenBudget).toBe(2000);
+      expect(result.truncated).toBe(false);
+    });
+
+    it('returns empty context block when no memories pass minScore', async () => {
+      ltmService.semanticSearch.mockResolvedValue([
+        { memory: makeMemory({ id: MEM_ID }), score: 0.3 },
+      ]);
+
+      const result = await service.assemblePromptContext({
+        userId: USER_ID,
+        query: 'obscure topic',
+        tokenBudget: 2000,
+        limit: 20,
+        minScore: 0.5,
+      });
+
+      expect(result.memoryCount).toBe(0);
+      expect(result.context).toBe('(no memories)');
+      expect(result.truncated).toBe(false);
+    });
+
+    it('truncates when memories exceed the token budget', async () => {
+      const longContent = 'x'.repeat(400); // ~100 tokens per entry
+      ltmService.semanticSearch.mockResolvedValue(
+        Array.from({ length: 10 }, (_, i) => ({
+          memory: makeMemory({ id: MEM_ID, content: longContent + String(i) }),
+          score: 0.9,
+        })),
+      );
+
+      const result = await service.assemblePromptContext({
+        userId: USER_ID,
+        query: 'anything',
+        tokenBudget: 200,
+        limit: 10,
+        minScore: 0.5,
+      });
+
+      expect(result.truncated).toBe(true);
+      expect(result.estimatedTokens).toBeLessThanOrEqual(result.tokenBudget);
+      expect(result.memoryCount).toBeGreaterThan(0);
+    });
+
+    it('enforces budget even for a single oversized memory', async () => {
+      const hugContent = 'y'.repeat(20000); // ~5000 tokens
+      ltmService.semanticSearch.mockResolvedValue([
+        { memory: makeMemory({ id: MEM_ID, content: hugContent }), score: 0.9 },
+      ]);
+
+      const result = await service.assemblePromptContext({
+        userId: USER_ID,
+        query: 'big memory',
+        tokenBudget: 300,
+        limit: 5,
+        minScore: 0.5,
+      });
+
+      expect(result.estimatedTokens).toBeLessThanOrEqual(result.tokenBudget);
+      expect(result.truncated).toBe(true);
+      expect(result.memoryCount).toBe(1);
+    });
+
+    it('passes scope through to semanticSearch', async () => {
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      await service.assemblePromptContext({
+        userId: USER_ID,
+        query: 'scoped query',
+        tokenBudget: 500,
+        limit: 10,
+        minScore: 0.5,
+        scope: 'project-x',
+      });
+
+      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+        USER_ID,
+        'scoped query',
+        expect.objectContaining({ scope: 'project-x' }),
+      );
+    });
+
+    it('echoes tokenBudget in result', async () => {
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      const result = await service.assemblePromptContext({
+        userId: USER_ID,
+        query: 'test',
+        tokenBudget: 750,
+        limit: 5,
+        minScore: 0.5,
+      });
+
+      expect(result.tokenBudget).toBe(750);
+    });
+  });
 });
 
 // ─── C2: Bulk Ingestion ──────────────────────────────────────────────────────
@@ -656,5 +781,103 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
       expect(combined).toContain('Para2');
       expect(combined).toContain('Para3');
     });
+  });
+});
+
+// ─── Static Token Helpers ─────────────────────────────────────────────────────
+
+const makeRawMemory = (overrides: Partial<Memory> = {}): Memory => ({
+  id: 'clm1111111111111111111111',
+  userId: 'clm0000000000000000000000',
+  content: 'Test memory content',
+  metadata: {},
+  tags: [],
+  embedding: [],
+  type: 'long-term',
+  createdAt: new Date('2025-01-01'),
+  updatedAt: new Date('2025-01-01'),
+  expiresAt: null,
+  ...overrides,
+});
+
+describe('MemoryService.estimateTokens (static)', () => {
+  it('returns ceil(chars / 4) for a simple string', () => {
+    expect(MemoryService.estimateTokens('abcd')).toBe(1); // 4/4 = 1
+    expect(MemoryService.estimateTokens('abcde')).toBe(2); // ceil(5/4) = 2
+    expect(MemoryService.estimateTokens('')).toBe(0);
+    expect(MemoryService.estimateTokens('a'.repeat(100))).toBe(25);
+  });
+
+  it('always over-counts (conservative)', () => {
+    // every string of length n → ceil(n/4) ≥ n/4
+    for (const len of [1, 3, 5, 7, 99]) {
+      const result = MemoryService.estimateTokens('a'.repeat(len));
+      expect(result).toBeGreaterThanOrEqual(len / 4);
+    }
+  });
+});
+
+describe('MemoryService.buildTokenBudgetedBlock (static)', () => {
+  it('returns (no memories) for empty input', () => {
+    const result = MemoryService.buildTokenBudgetedBlock([], 1000);
+    expect(result.context).toBe('(no memories)');
+    expect(result.memoryCount).toBe(0);
+    expect(result.truncated).toBe(false);
+    expect(result.tokenBudget).toBe(1000);
+  });
+
+  it('includes all memories when they fit in the budget', () => {
+    const memories = [
+      makeRawMemory({ content: 'short content A' }),
+      makeRawMemory({ content: 'short content B' }),
+    ];
+    const result = MemoryService.buildTokenBudgetedBlock(memories, 2000);
+    expect(result.memoryCount).toBe(2);
+    expect(result.truncated).toBe(false);
+    expect(result.estimatedTokens).toBeLessThanOrEqual(2000);
+  });
+
+  it('respects token budget: estimatedTokens ≤ tokenBudget', () => {
+    const bigContent = 'w'.repeat(10000);
+    const memories = Array.from({ length: 5 }, () =>
+      makeRawMemory({ content: bigContent }),
+    );
+    const budget = 300;
+    const result = MemoryService.buildTokenBudgetedBlock(memories, budget);
+    expect(result.estimatedTokens).toBeLessThanOrEqual(budget);
+  });
+
+  it('truncates a single memory larger than the budget', () => {
+    const hugContent = 'z'.repeat(50000); // ~12500 tokens
+    const result = MemoryService.buildTokenBudgetedBlock(
+      [makeRawMemory({ content: hugContent })],
+      200,
+    );
+    expect(result.estimatedTokens).toBeLessThanOrEqual(200);
+    expect(result.truncated).toBe(true);
+    expect(result.memoryCount).toBe(1);
+  });
+
+  it('marks truncated=true when not all memories fit', () => {
+    const memories = Array.from({ length: 20 }, (_, i) =>
+      makeRawMemory({ content: `Memory content number ${i} `.repeat(50) }),
+    );
+    const result = MemoryService.buildTokenBudgetedBlock(memories, 500);
+    expect(result.truncated).toBe(true);
+    expect(result.memoryCount).toBeLessThan(20);
+    expect(result.estimatedTokens).toBeLessThanOrEqual(500);
+  });
+
+  it('includes tags in the formatted header', () => {
+    const result = MemoryService.buildTokenBudgetedBlock(
+      [makeRawMemory({ content: 'tagged content', tags: ['foo', 'bar'] })],
+      2000,
+    );
+    expect(result.context).toContain('[foo, bar]');
+  });
+
+  it('echoes tokenBudget in result', () => {
+    const result = MemoryService.buildTokenBudgetedBlock([], 777);
+    expect(result.tokenBudget).toBe(777);
   });
 });
