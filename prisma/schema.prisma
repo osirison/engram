@@ -85,6 +85,7 @@ model Memory {
   id             String   @id @default(cuid(2))
   userId         String
   organizationId String?
+  scope          String?  // Optional namespace: 'agent:<id>', 'session:<id>', 'project:<id>', etc.
   content        String   @db.Text // Support up to 10KB content
   metadata       Json?
   tags           String[]
@@ -106,6 +107,7 @@ model Memory {
   // Indexes for performance
   @@index([userId])
   @@index([userId, type])
+  @@index([userId, scope])
   @@index([organizationId])
   @@index([organizationId, type])
   @@index([expiresAt])

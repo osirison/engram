@@ -40,6 +40,7 @@ type PrismaMemory = {
   id: string;
   userId: string;
   organizationId: string | null;
+  scope: string | null;
   content: string;
   metadata: unknown; // Using unknown for type safety; must be type-checked before use
   tags: string[];
@@ -114,7 +115,8 @@ export class MemoryLtmService {
       const exactDup = await this.findExactDuplicate(
         validatedInput.userId,
         processedContent,
-        validatedInput.organizationId
+        validatedInput.organizationId,
+        validatedInput.scope
       );
       if (exactDup) {
         this.logger.debug(`Exact content duplicate; returning existing memory ${exactDup.id}`);
@@ -182,6 +184,7 @@ export class MemoryLtmService {
         data: {
           userId: validatedInput.userId,
           organizationId: validatedInput.organizationId ?? null,
+          scope: validatedInput.scope ?? null,
           content: processedContent,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           metadata: metadata as any,
@@ -236,7 +239,12 @@ export class MemoryLtmService {
    * callers (e.g. reindex) but must NOT be used in user-facing paths — the auth
    * layer (#128, #130) must always supply the caller's org context.
    */
-  async get(userId: string, memoryId: string, organizationId?: string): Promise<LtmMemory | null> {
+  async get(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<LtmMemory | null> {
     this.logger.debug(`Getting LTM memory: ${memoryId} for user: ${userId}`);
 
     try {
@@ -247,6 +255,9 @@ export class MemoryLtmService {
       };
       if (organizationId !== undefined) {
         where.organizationId = organizationId;
+      }
+      if (scope !== undefined) {
+        where.scope = scope;
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const memory = await (this.prisma as any).memory.findFirst({ where });
@@ -351,17 +362,12 @@ export class MemoryLtmService {
       this.logger.debug(`LTM memory updated: ${memoryId}`);
       const ltmMemory = this.mapToLtmMemory(memory);
 
-      // Re-index on new embedding, tag changes, or metadata changes that alter the
-      // scope field (the only metadata value persisted in the vector payload).
-      const oldScope = this.extractScope(existing.metadata);
-      const newScope = this.extractScope(nextMetadata);
-      const metadataAffectsPayload =
-        (validatedInput.metadata !== undefined || validatedInput.metadataMerge !== undefined) &&
-        oldScope !== newScope;
+      // Re-index when the embedding or tags change (both affect the stored vector payload).
+      // Scope is immutable via update(), so it never triggers a re-index here.
       const embeddingToIndex = newEmbedding ?? ltmMemory.embedding;
       if (
         embeddingToIndex.length > 0 &&
-        (newEmbedding !== undefined || validatedInput.tags !== undefined || metadataAffectsPayload)
+        (newEmbedding !== undefined || validatedInput.tags !== undefined)
       ) {
         await this.indexVector(ltmMemory, embeddingToIndex);
       }
@@ -431,6 +437,9 @@ export class MemoryLtmService {
 
       if (validatedOptions.organizationId) {
         whereClause.organizationId = validatedOptions.organizationId;
+      }
+      if (validatedOptions.scope) {
+        whereClause.scope = validatedOptions.scope;
       }
 
       // Add filters
@@ -526,6 +535,9 @@ export class MemoryLtmService {
       if (filters?.organizationId) {
         whereClause.organizationId = filters.organizationId;
       }
+      if (filters?.scope) {
+        whereClause.scope = filters.scope;
+      }
 
       // Add filters if provided
       if (filters?.tags && filters.tags.length > 0) {
@@ -587,9 +599,14 @@ export class MemoryLtmService {
 
   /**
    * Promote a memory from short-term to long-term storage.
-   * Pass `organizationId` to preserve the org scope through the STM→LTM transfer.
+   * Pass `organizationId` and `scope` to preserve both namespaces through the STM→LTM transfer.
    */
-  async promote(userId: string, memoryId: string, organizationId?: string): Promise<LtmMemory> {
+  async promote(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<LtmMemory> {
     this.logger.debug(`Promoting memory ${memoryId} to LTM for user: ${userId}`);
 
     if (!this.stmService) {
@@ -608,10 +625,17 @@ export class MemoryLtmService {
 
       // Org scope: prefer the explicit param, fall back to what's stored in the STM payload.
       const resolvedOrgId = organizationId ?? stmMemory.organizationId ?? null;
+      // Namespace scope: prefer the explicit param, fall back to the STM payload scope.
+      const resolvedScope = scope ?? stmMemory.scope ?? null;
 
       // Exact content dedup: if the STM content already exists verbatim in LTM,
       // skip promotion and return the existing memory without generating an embedding.
-      const exactDup = await this.findExactDuplicate(userId, stmMemory.content, resolvedOrgId);
+      const exactDup = await this.findExactDuplicate(
+        userId,
+        stmMemory.content,
+        resolvedOrgId,
+        resolvedScope ?? undefined
+      );
       if (exactDup) {
         this.logger.debug(
           `Exact content duplicate on promote; returning existing LTM memory ${exactDup.id}`
@@ -683,6 +707,7 @@ export class MemoryLtmService {
             id: stmMemory.id,
             userId: stmMemory.userId,
             organizationId: resolvedOrgId,
+            scope: resolvedScope,
             content: stmMemory.content,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             metadata: metadata as any,
@@ -1220,7 +1245,8 @@ export class MemoryLtmService {
   private async findExactDuplicate(
     userId: string,
     content: string,
-    organizationId: string | null | undefined
+    organizationId: string | null | undefined,
+    scope?: string
   ): Promise<PrismaMemory | null> {
     const where: Record<string, unknown> = {
       userId,
@@ -1229,6 +1255,9 @@ export class MemoryLtmService {
     };
     if (organizationId !== undefined) {
       where.organizationId = organizationId;
+    }
+    if (scope !== undefined) {
+      where.scope = scope;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
@@ -1401,19 +1430,10 @@ export class MemoryLtmService {
     if (memory.organizationId) {
       payload.organizationId = memory.organizationId;
     }
-    const scope = this.extractScope(memory.metadata);
-    if (scope) {
-      payload.scope = scope;
+    if (memory.scope) {
+      payload.scope = memory.scope;
     }
     return payload;
-  }
-
-  /**
-   * Derive an optional `scope` namespace from a memory's metadata.
-   */
-  private extractScope(metadata: Record<string, unknown> | null | undefined): string | undefined {
-    const scope = metadata?.scope;
-    return typeof scope === 'string' && scope.length > 0 ? scope : undefined;
   }
 
   /**
@@ -1423,6 +1443,7 @@ export class MemoryLtmService {
     return {
       ...memory,
       organizationId: memory.organizationId ?? undefined,
+      scope: memory.scope ?? undefined,
       type: 'long-term' as const,
       expiresAt: null,
       metadata: memory.metadata as Record<string, unknown> | null,

@@ -25,6 +25,7 @@ type StmServiceContract = {
   create: (input: {
     userId: string;
     content: string;
+    scope?: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
     ttl?: number;
@@ -51,6 +52,7 @@ type LtmServiceContract = {
   create: (input: {
     userId: string;
     content: string;
+    scope?: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
     skipDuplicateCheck?: boolean;
@@ -71,6 +73,7 @@ type LtmServiceContract = {
     options: {
       limit: number;
       cursor?: string;
+      scope?: string;
       tags?: string[];
       search?: string;
       sortBy?: 'createdAt' | 'updatedAt';
@@ -118,6 +121,7 @@ export interface CreateMemoryDto {
   userId: string;
   content: string;
   type: 'short-term' | 'long-term';
+  scope?: string;
   metadata?: Record<string, unknown>;
   tags?: string[];
   ttl?: number;
@@ -134,6 +138,7 @@ export interface UpdateMemoryDto {
 export interface ListMemoryOptions {
   limit?: number;
   cursor?: string;
+  scope?: string;
   tags?: string[];
   search?: string;
 }
@@ -242,6 +247,7 @@ export class MemoryService {
       return await this.stm.create({
         userId: dto.userId,
         content: dto.content,
+        scope: dto.scope,
         metadata: dto.metadata,
         tags: dto.tags,
         ttl: dto.ttl,
@@ -251,6 +257,7 @@ export class MemoryService {
       return await this.ltm.create({
         userId: dto.userId,
         content: dto.content,
+        scope: dto.scope,
         metadata: dto.metadata,
         tags: dto.tags,
         skipDuplicateCheck: dto.skipDuplicateCheck,
@@ -310,6 +317,7 @@ export class MemoryService {
       this.ltm.list(userId, {
         limit,
         cursor: options.cursor,
+        scope: options.scope,
         tags: options.tags,
         search: options.search,
       }),
@@ -479,6 +487,7 @@ export class MemoryService {
     userId: string;
     content: string;
     type: 'auto' | 'short-term' | 'long-term';
+    scope?: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
     ttl?: number;
@@ -493,6 +502,7 @@ export class MemoryService {
       userId: input.userId,
       content: input.content,
       type: resolvedType,
+      scope: input.scope,
       metadata: input.metadata,
       tags: input.tags,
       ttl: input.ttl,
@@ -635,6 +645,7 @@ export class MemoryService {
             limit: input.recentLimit,
             sortBy: 'createdAt',
             sortOrder: 'desc',
+            scope: input.scope,
             tags: input.tags,
           })
         : Promise.resolve({ items: [] as Memory[] }),
@@ -643,6 +654,7 @@ export class MemoryService {
             limit: input.importantLimit * 3, // fetch extra, sort by importance, take top N
             sortBy: 'updatedAt',
             sortOrder: 'desc',
+            scope: input.scope,
             tags: input.tags,
           })
         : Promise.resolve({ items: [] as Memory[] }),

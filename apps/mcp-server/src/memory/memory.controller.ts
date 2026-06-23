@@ -114,6 +114,7 @@ export class MemoryController {
         userId: validatedInput.userId,
         content: validatedInput.content,
         type: validatedInput.type,
+        scope: validatedInput.scope,
         metadata: validatedInput.metadata,
         tags: validatedInput.tags,
         ttl: validatedInput.ttl,
@@ -205,6 +206,7 @@ export class MemoryController {
         {
           limit: validatedInput.limit,
           cursor: validatedInput.cursor,
+          scope: validatedInput.scope,
           tags: validatedInput.tags,
           search: validatedInput.search,
         },
@@ -697,6 +699,7 @@ export class MemoryController {
         userId: validated.userId,
         content: validated.content,
         type: validated.type,
+        scope: validated.scope,
         metadata: validated.metadata,
         tags: validated.tags,
         ttl: validated.ttl,

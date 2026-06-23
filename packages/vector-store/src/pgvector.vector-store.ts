@@ -227,7 +227,7 @@ export class PgVectorStore implements VectorStore {
     }
     if (filter.scope) {
       params.push(filter.scope);
-      clauses.push(`"metadata"->>'scope' = $${params.length}`);
+      clauses.push(`"scope" = $${params.length}`);
     }
     if (filter.tags && filter.tags.length > 0) {
       params.push(filter.tags);
@@ -243,7 +243,7 @@ export class PgVectorStore implements VectorStore {
     }
 
     const sql =
-      `SELECT "id", "userId", "organizationId", "type", "tags", "metadata"->>'scope' AS scope, "createdAt", ` +
+      `SELECT "id", "userId", "organizationId", "type", "tags", "scope", "createdAt", ` +
       `1 - ("${this.column}" <=> $1::vector) AS score ` +
       `FROM "${this.table}" WHERE ${clauses.join(' AND ')} ` +
       `ORDER BY "${this.column}" <=> $1::vector LIMIT ${safeLimit}`;

@@ -25,6 +25,8 @@ export const rememberToolSchema = z
       .enum(['auto', 'short-term', 'long-term'])
       .optional()
       .default('auto'),
+    /** Optional namespace for agent/session/project isolation */
+    scope: z.string().min(1).max(256).optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
     tags: z.array(z.string().min(1).max(100)).max(50).optional().default([]),
     /** TTL in seconds; only used when type is 'short-term' or 'auto' routes to STM */
