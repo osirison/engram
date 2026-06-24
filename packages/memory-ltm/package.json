@@ -33,8 +33,10 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
+    "@engram/config": "workspace:*",
     "@engram/database": "workspace:*",
     "@engram/embeddings": "workspace:*",
+    "@engram/eval": "workspace:*",
     "@engram/memory-stm": "workspace:*",
     "@engram/vector-store": "workspace:*",
     "@nestjs/common": "^11.1.24",

@@ -65,22 +65,22 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
 
 <!-- parallelizable: true -->
 
-- [ ] Step 1.1: Add profile resolver and conditional env validation
+- [x] Step 1.1: Add profile resolver and conditional env validation
   - Update packages/config/src/env.schema.ts to add DEPLOYMENT_PROFILE enum and make DATABASE_URL/REDIS_URL/QDRANT_URL conditional by profile
   - Add new config file packages/config/src/profile.ts with ProfileConfig interface and capability resolver
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md (Lines TBD)
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/runtime-dependencies-research.md (packages/config/src/env.schema.ts:10-12)
-- [ ] Step 1.2: Refactor AppModule to profile-aware startup
+- [x] Step 1.2: Refactor AppModule to profile-aware startup
   - Update apps/mcp-server/src/app.module.ts to use DynamicModule pattern with conditional imports
   - Skip PrismaModule, RedisModule, QdrantModule when profile is memory or lite
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/runtime-dependencies-research.md (apps/mcp-server/src/app.module.ts:27-31)
-- [ ] Step 1.3: Add profile-aware health checks
+- [x] Step 1.3: Add profile-aware health checks
   - Update apps/mcp-server/src/health/health.module.ts and health.controller.ts to build indicator list conditionally
   - Profile-memory reports process health only, profile-lite adds local store health, profile-enterprise includes all dependencies
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/runtime-dependencies-research.md (apps/mcp-server/src/health/health.controller.ts:26-54)
-- [ ] Step 1.4: Validate phase changes
+- [x] Step 1.4: Validate phase changes
   - Run: npm exec --yes pnpm@11.4.0 -- build
   - Run: npm exec --yes pnpm@11.4.0 -- lint
   - Run: npm exec --yes pnpm@11.4.0 -- typecheck
@@ -90,7 +90,7 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
 
 <!-- parallelizable: true -->
 
-- [ ] Step 2.1: Implement in-process STM adapter for profile-memory
+- [x] Step 2.1: Implement in-process STM adapter for profile-memory
   - Create packages/memory-stm/src/adapters/inmemory-stm.adapter.ts
   - Implement MemoryStmService interface with in-process Map storage and TTL eviction
   - Wire via dependency token MEMORY_STM_PROVIDER in profile-memory
@@ -108,17 +108,17 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
   - Wire into memory.service.ts recall path by profile
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/intelligent-retrieval-research.md (packages/eval/src/retrievers/fusion-retriever.ts:31-108)
-- [ ] Step 2.4: Make Prisma and Redis startup lazy/optional
+- [x] Step 2.4: Make Prisma and Redis startup lazy/optional
   - Update packages/database/src/prisma.service.ts to use lazyConnect pattern when profile is memory/lite
   - Update packages/redis/src/redis.module.ts to lazy-connect when profile is memory or lite
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/runtime-dependencies-research.md (packages/database/src/prisma.service.ts:28-29, packages/redis/src/redis.module.ts:18)
-- [ ] Step 2.5: Profile-aware MCP tool exposure
+- [x] Step 2.5: Profile-aware MCP tool exposure
   - Update apps/mcp-server/src/memory/memory.controller.ts to conditionally register tools by profile
   - Hide reindex, queue_reindex, cancel_reindex from profile-memory; keep full set in profile-enterprise
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/lightweight-hooks-research.md (apps/mcp-server/src/main.ts:41-42)
-- [ ] Step 2.6: Validate phase changes
+- [x] Step 2.6: Validate phase changes
   - Run: npm exec --yes pnpm@11.4.0 -- build
   - Run: npm exec --yes pnpm@11.4.0 -- lint
   - Run: npm exec --yes pnpm@11.4.0 -- typecheck
@@ -128,33 +128,33 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
 
 <!-- parallelizable: false -->
 
-- [ ] Step 3.1: Add local persistence layer
+- [x] Step 3.1: Add local persistence layer (file-backed JSON; SQLite swapped per DD-01)
   - Create packages/memory-lite or extend packages/memory-ltm/src/adapters with local store
   - Support SQLite-backed storage (via Prisma SQLite adapter) or file-backed JSON store (TBD by architecture review)
   - Implement idempotent CRUD with durability guarantees
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/local-persistence-threat-model-research.md
-- [ ] Step 3.2: Implement secure-by-default controls for profile-lite
+- [x] Step 3.2: Implement secure-by-default controls for profile-lite
   - Add owner-only file permissions (0700 dir, 0600 files) with startup validation
   - Implement encrypted-at-rest storage using AES-256-GCM with key versioning
   - Add explicit LOCAL_ENCRYPTION_MODE=required default with LOCAL_INSECURE_MODE break-glass
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/local-persistence-threat-model-research.md
-- [ ] Step 3.3: Add logging redaction and auth hardening
+- [x] Step 3.3: Add logging redaction and auth hardening
   - Extend packages/core/src/logging/logging.module.ts with pino redaction rules for secrets
   - Replace direct admin token equality check with constant-time comparison in memory.controller.ts
   - Add maintenance operation audit logging
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 3.4: Implement migration state service for dual-write tracking
+- [x] Step 3.4: Implement migration state service for dual-write tracking
   - Create apps/mcp-server/src/migration/migration-state.service.ts to track profile promotion state
   - Add MigrationCheckpoint Prisma model or profile-lite equivalent for resumable promotion
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/migration-slo-research.md
-- [ ] Step 3.5: Add unit and security tests for profile-lite
+- [x] Step 3.5: Add unit and security tests for profile-lite
   - Unit tests: permission enforcement, encryption key handling, tenant isolation
   - Security tests: secret redaction, unauthorized tenant spoof rejection, break-glass warning
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 3.6: Validate phase changes
+- [x] Step 3.6: Validate phase changes
   - Run: npm exec --yes pnpm@11.4.0 -- build
   - Run: npm exec --yes pnpm@11.4.0 -- lint
   - Run: npm exec --yes pnpm@11.4.0 -- test (focused on security/persistence tests)
@@ -163,7 +163,10 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
 
 <!-- parallelizable: false -->
 
-- [ ] Step 4.1: Implement dual-write abstraction
+- [x] Step 4.1: Implement dual-write abstraction
+- [x] Step 4.2: Implement staged backfill using existing queue/reindex primitives
+- [x] Step 4.3: Add migration verification and gates
+- [x] Step 4.4: Add Postgres `MigrationCheckpoint` backend wired into `MigrationStateService` via `selectCheckpointBackend(capabilities, opts)`
   - Create migration abstraction in memory.service.ts to write to both profile-lite and profile-enterprise simultaneously
   - Add idempotent deduplication logic using migration state tracking
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
@@ -177,7 +180,7 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
   - Implement per-user and global integrity checks (count match, hash comparison, metadata diff <= 0.001%)
   - Add hard-stop threshold for cutover approval
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 4.4: Add migration and rollback tests
+- [x] Step 4.5: Add migration and rollback tests
   - Integration tests: full happy path with concurrent reads during migration
   - Chaos tests: kill process during batch copy, verify resume without duplicates
   - Rollback tests: migration failure triggers rollback, source remains shadow-available
@@ -192,34 +195,34 @@ Build ENGRAM as a three-profile AI agentic memory system with instant zero-depen
 
 <!-- parallelizable: false -->
 
-- [ ] Step 5.1: Update README.md with profile-first onboarding
+- [x] Step 5.1: Update README.md with profile-first onboarding
   - Add "Choose Your Profile" section with three command paths (memory, lite, enterprise)
   - Add profile matrix comparing features, setup friction, durability, scale
   - Move current Docker-first path under enterprise subsection
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 5.2: Update docs/SETUP.md with profile-specific paths
+- [x] Step 5.2: Update docs/SETUP.md with profile-specific paths
   - Split setup flow by profile with explicit prerequisites per mode
   - Add profile-to-profile migration and promotion runbook
   - Add recovery procedures for each profile
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 5.3: Update apps/mcp-server/README.md with MCP tool availability by profile
+- [x] Step 5.3: Update apps/mcp-server/README.md with MCP tool availability by profile
   - Document which tools are available in each profile and why
   - Document health and readiness semantics per profile
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 5.4: Add profile matrix test suite and CI gates
+- [x] Step 5.4: Add profile matrix test suite and CI gates
   - Unit tests required across all profiles
   - Integration tests required across all profiles
   - Security tests required for profile-lite and enterprise
   - Migration tests required for profile-lite to enterprise
   - Docker E2E required for enterprise, optional for others
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
-- [ ] Step 5.5: Set release quality gates
+- [x] Step 5.5: Set release quality gates
   - SLO gates: startup latency targets per profile, migration downtime limits, data integrity verification
   - Test coverage gates: >= 85% new code coverage for profile/retrieval code paths
   - Reliability gates: zero unreconciled records after promotion, zero data loss tests pass
   - Details: .copilot-tracking/details/2026-06-23/profile-ladder-details.md
   - Evidence: .copilot-tracking/research/subagents/2026-06-02/accessibility-scale-path-research.md, migration-slo-research.md
-- [ ] Step 5.6: Final validation and sign-off
+- [x] Step 5.6: Final validation and sign-off
   - Run full project validation: npm exec --yes pnpm@11.4.0 -- build, lint, typecheck, test
   - Run profile matrix smoke tests: boot each profile without external services, basic CRUD
   - Verify no breaking changes to enterprise profile (backward compatibility check)

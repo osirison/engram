@@ -1,11 +1,37 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from './redis.module.js';
+
+/**
+ * Shape of the active Redis client. The production path is a real
+ * `ioredis.Redis`; the profile-memory path is an in-process Map-backed
+ * stub that exposes the same surface (see {@link RedisModule.forRoot}).
+ */
+type RedisClient =
+  | Redis
+  | {
+      get(key: string): Promise<string | null>;
+      set(key: string, value: string, ...args: unknown[]): Promise<unknown>;
+      setex(key: string, ttl: number, value: string): Promise<unknown>;
+      del(...keys: string[]): Promise<number>;
+      exists(...keys: string[]): Promise<number>;
+      expire(key: string, ttl: number): Promise<number>;
+      ttl(key: string): Promise<number>;
+      incr(key: string): Promise<number>;
+      incrby(key: string, value: number): Promise<number>;
+      ping(): Promise<string>;
+      scan(cursor: string, ...args: unknown[]): Promise<[string, string[]]>;
+      pipeline(): unknown;
+      status: string;
+      connect(): Promise<unknown>;
+      disconnect(): Promise<unknown>;
+    };
 
 @Injectable()
 export class RedisService {
   private readonly logger = new Logger(RedisService.name);
 
-  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: RedisClient) {}
 
   /**
    * Get a value from Redis by key
@@ -234,15 +260,25 @@ export class RedisService {
    * Create a Redis pipeline for batch operations
    * @returns Pipeline object that can be used to queue multiple commands
    */
-  pipeline(): ReturnType<Redis['pipeline']> {
-    return this.redis.pipeline();
+  pipeline(): {
+    get(key: string): unknown;
+    exec(): Promise<Array<[Error | null, unknown]> | null>;
+  } {
+    // Cast through `unknown` so the legacy `ioredis` pipeline surface
+    // is accepted by callers; the in-memory stub also satisfies the
+    // minimal `.get(key)` / `.exec()` contract.
+    return this.redis.pipeline() as {
+      get(key: string): unknown;
+      exec(): Promise<Array<[Error | null, unknown]> | null>;
+    };
   }
 
   /**
    * Get access to the underlying Redis client for advanced operations
-   * @returns The ioredis client instance
+   * @returns The ioredis client instance (or the in-memory stub in
+   * profile=memory).
    */
-  getClient(): Redis {
+  getClient(): RedisClient {
     return this.redis;
   }
 }

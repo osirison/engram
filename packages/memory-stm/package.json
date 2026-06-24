@@ -33,6 +33,7 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
+    "@engram/config": "workspace:*",
     "@engram/database": "workspace:*",
     "@engram/embeddings": "workspace:*",
     "@engram/redis": "workspace:*",

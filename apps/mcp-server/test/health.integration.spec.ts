@@ -4,6 +4,8 @@ import { PrismaHealthIndicator } from '../src/health/prisma.health';
 import { RedisHealthIndicator } from '../src/health/redis.health';
 import { QdrantHealthIndicator } from '../src/health/qdrant.health';
 import { PgVectorHealthIndicator } from '../src/health/pgvector.health';
+import { MemoryStoreHealthIndicator } from '../src/health/memory-store.health';
+import { DeploymentProfile } from '@engram/config';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 
@@ -13,6 +15,7 @@ describe('Health Integration Tests', () => {
   let redisHealthMock: jest.Mock;
   let qdrantHealthMock: jest.Mock;
   let pgVectorHealthMock: jest.Mock;
+  let memoryStoreHealthMock: jest.Mock;
 
   beforeEach(async () => {
     prismaHealthMock = jest.fn().mockResolvedValue({
@@ -27,11 +30,20 @@ describe('Health Integration Tests', () => {
     pgVectorHealthMock = jest.fn().mockResolvedValue({
       pgvector: { status: 'up' },
     });
+    memoryStoreHealthMock = jest.fn().mockReturnValue({
+      process: { status: 'up' },
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       imports: [TerminusModule, HttpModule],
       controllers: [HealthController],
       providers: [
+        {
+          provide: MemoryStoreHealthIndicator,
+          useValue: {
+            isHealthy: memoryStoreHealthMock,
+          },
+        },
         {
           provide: PrismaHealthIndicator,
           useValue: {
@@ -55,6 +67,10 @@ describe('Health Integration Tests', () => {
           useValue: {
             isHealthy: pgVectorHealthMock,
           },
+        },
+        {
+          provide: 'ENGRAM_PROFILE',
+          useValue: DeploymentProfile.ENTERPRISE,
         },
       ],
     }).compile();

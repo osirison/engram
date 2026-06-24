@@ -1,5 +1,6 @@
 import { Controller, Injectable, Logger } from '@nestjs/common';
 import type { Tool } from '@engram/core';
+import { DeploymentProfile, resolveCapabilities } from '@engram/config';
 import {
   MemoryService,
   CreateMemoryDto,
@@ -49,6 +50,32 @@ import {
 } from './dto/ingest-conversation.dto';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
+import { constantTimeStringEqual } from '../security/admin-token.util';
+
+/**
+ * Resolve the active deployment profile from the host process.
+ *
+ * Mirrors the resolution logic in `apps/mcp-server/src/app.module.ts`
+ * so the controller can decide which MCP tools to surface without a
+ * Nest injection cycle.
+ */
+function resolveActiveProfile(): DeploymentProfile {
+  const raw = process.env['DEPLOYMENT_PROFILE'];
+  if (raw === undefined || raw === null || raw === '') {
+    return DeploymentProfile.ENTERPRISE;
+  }
+  const value = String(raw).toLowerCase();
+  switch (value) {
+    case 'memory':
+      return DeploymentProfile.MEMORY;
+    case 'lite':
+      return DeploymentProfile.LITE;
+    case 'enterprise':
+      return DeploymentProfile.ENTERPRISE;
+    default:
+      return DeploymentProfile.ENTERPRISE;
+  }
+}
 
 /**
  * MCP Memory Tools Controller
@@ -78,21 +105,38 @@ import { ConsolidationService } from './consolidation.service';
 @Injectable()
 export class MemoryController {
   private readonly logger = new Logger(MemoryController.name);
+  private readonly activeProfile: DeploymentProfile;
 
   constructor(
     private readonly memoryService: MemoryService,
     private readonly reindexQueue: ReindexQueueService,
     private readonly consolidation: ConsolidationService,
-  ) {}
+  ) {
+    this.activeProfile = resolveActiveProfile();
+  }
 
-  private assertAdminAuthorized(adminToken: string): void {
+  private assertAdminAuthorized(
+    adminToken: string,
+    operation: string,
+    target?: string,
+  ): void {
     const expected = process.env.MCP_ADMIN_TOKEN;
     if (!expected) {
+      // Audit log: refuse with reason so operators can diagnose.
+      this.logger.warn(
+        `admin_auth_denied operation=${operation} reason=missing_mcp_admin_token target=${target ?? 'n/a'}`,
+      );
       throw new Error('MCP_ADMIN_TOKEN is not configured');
     }
-    if (adminToken !== expected) {
+    if (!constantTimeStringEqual(adminToken, expected)) {
+      this.logger.warn(
+        `admin_auth_denied operation=${operation} reason=invalid_token target=${target ?? 'n/a'}`,
+      );
       throw new Error('Unauthorized maintenance operation');
     }
+    this.logger.log(
+      `admin_auth_ok operation=${operation} target=${target ?? 'n/a'}`,
+    );
   }
 
   /**
@@ -423,7 +467,11 @@ export class MemoryController {
       this.logger.debug('reindex_memories tool called');
 
       const validatedInput: ReindexToolInput = reindexToolSchema.parse(input);
-      this.assertAdminAuthorized(validatedInput.adminToken);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'reindex_memories',
+        validatedInput.userId ?? 'all-users',
+      );
 
       const summary = await this.memoryService.reindex({
         userId: validatedInput.userId,
@@ -468,7 +516,11 @@ export class MemoryController {
 
       const validatedInput: ReindexQueueToolInput =
         reindexQueueToolSchema.parse(input);
-      this.assertAdminAuthorized(validatedInput.adminToken);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'queue_reindex_memories',
+        validatedInput.userId ?? 'all-users',
+      );
 
       const job = await this.reindexQueue.enqueue({
         userId: validatedInput.userId,
@@ -514,7 +566,11 @@ export class MemoryController {
 
       const validatedInput: ReindexStatusToolInput =
         reindexStatusToolSchema.parse(input);
-      this.assertAdminAuthorized(validatedInput.adminToken);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'get_reindex_status',
+        validatedInput.jobId,
+      );
 
       const job = await this.reindexQueue.get(validatedInput.jobId);
       if (!job) {
@@ -560,7 +616,11 @@ export class MemoryController {
 
       const validatedInput: ReindexCancelToolInput =
         reindexCancelToolSchema.parse(input);
-      this.assertAdminAuthorized(validatedInput.adminToken);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'cancel_reindex_job',
+        validatedInput.jobId,
+      );
 
       const job = await this.reindexQueue.cancel(validatedInput.jobId);
       if (!job) {
@@ -606,7 +666,11 @@ export class MemoryController {
 
       const validatedInput: ReindexRetryToolInput =
         reindexRetryToolSchema.parse(input);
-      this.assertAdminAuthorized(validatedInput.adminToken);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'retry_reindex_job',
+        validatedInput.jobId,
+      );
 
       const job = await this.reindexQueue.retry(validatedInput.jobId);
       if (!job) {
@@ -651,7 +715,11 @@ export class MemoryController {
       this.logger.debug('consolidate_memories tool called');
       const validatedInput: ConsolidateToolInput =
         consolidateToolSchema.parse(input);
-      this.assertAdminAuthorized(validatedInput.adminToken);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'consolidate_memories',
+        validatedInput.userId ?? 'all-users',
+      );
 
       const result = await this.consolidation.run(validatedInput.userId);
 
@@ -956,11 +1024,17 @@ export class MemoryController {
   }
 
   /**
-   * Get MCP tools in the format required by the MCP handler
-   * This method creates Tool objects that bind controller methods as handlers
+   * Get MCP tools in the format required by the MCP handler.
+   *
+   * This method creates Tool objects that bind controller methods as
+   * handlers. The list is filtered by the active deployment profile so
+   * that profile-memory does not advertise tools that depend on
+   * external services, and profile-lite keeps the synchronous reindex
+   * while hiding the resumable-queue / cancellation tools that rely
+   * on a BullMQ worker.
    */
   getMcpTools(): Tool[] {
-    return [
+    const all: Tool[] = [
       {
         name: 'create_memory',
         description: 'Create a new memory in short-term or long-term storage',
@@ -1125,6 +1199,38 @@ export class MemoryController {
         ) => Promise<unknown>,
       },
     ];
+
+    return this.filterToolsByProfile(all);
+  }
+
+  /**
+   * Filter the full tool list by the active deployment profile.
+   *
+   *   - profile=memory: hide `reindex_memories`, `queue_reindex_memories`,
+   *     `cancel_reindex_job`. Everything else is available (the
+   *     in-process LTM adapter handles reindex as a no-op).
+   *   - profile=lite: hide `queue_reindex_memories` and
+   *     `cancel_reindex_job` (they require a BullMQ worker). Keep
+   *     `reindex_memories` as a synchronous in-process operation.
+   *   - profile=enterprise: expose every tool.
+   */
+  private filterToolsByProfile(all: Tool[]): Tool[] {
+    const capabilities = resolveCapabilities(this.activeProfile);
+    const exclude = new Set<string>();
+
+    if (capabilities.profile === DeploymentProfile.MEMORY) {
+      exclude.add('reindex_memories');
+      exclude.add('queue_reindex_memories');
+      exclude.add('cancel_reindex_job');
+    } else if (capabilities.profile === DeploymentProfile.LITE) {
+      exclude.add('queue_reindex_memories');
+      exclude.add('cancel_reindex_job');
+    }
+
+    if (exclude.size === 0) {
+      return all;
+    }
+    return all.filter((tool) => !exclude.has(tool.name));
   }
 
   /**

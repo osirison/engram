@@ -18,6 +18,7 @@ describe('envSchema', () => {
       expect(result).toEqual({
         NODE_ENV: 'development',
         PORT: 3000,
+        DEPLOYMENT_PROFILE: 'enterprise',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
         QDRANT_URL: 'http://localhost:6333',

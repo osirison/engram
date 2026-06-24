@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RedisService } from './redis.service.js';
+import { REDIS_CLIENT } from './redis.module.js';
 import type Redis from 'ioredis';
 
 // Mock Redis client
@@ -32,7 +33,7 @@ describe('RedisService', () => {
       providers: [
         RedisService,
         {
-          provide: 'REDIS_CLIENT',
+          provide: REDIS_CLIENT,
           useValue: mockRedisClient,
         },
       ],

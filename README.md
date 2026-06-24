@@ -12,17 +12,81 @@ semantic search, and health checks.
 ## Prerequisites
 
 - Node.js 20 or newer with npm
-- Docker and Docker Compose v2
 - Git
 - Optional: pnpm 11.4.0 on your `PATH`
+- Optional: Docker and Docker Compose v2 (only for `profile-enterprise`)
 
 ENGRAM pins `pnpm@11.4.0` in [package.json](package.json). The quick start
 uses npm to run that pinned pnpm version, so it works even when `pnpm` is not
 installed globally.
 
-## Quick Start
+## Choose Your Profile
 
-Run these commands from the repository root.
+ENGRAM ships three deployment profiles. Pick the one that matches the
+durability, scale, and infrastructure you want. The MCP server reads
+`DEPLOYMENT_PROFILE` to decide which modules, health checks, and tools to
+expose.
+
+| Profile              | Setup Friction | Durability                             | Scale          | MCP Tool Set                                |
+| -------------------- | -------------- | -------------------------------------- | -------------- | ------------------------------------------- |
+| `profile-memory`     | Instant        | None (in-process)                      | Single-process | Subset (no reindex or backfill tools)       |
+| `profile-lite`       | Medium         | Encrypted-at-rest (AES-256-GCM)        | Single-host    | Subset + synchronous reindex                |
+| `profile-enterprise` | Heavy          | Replicated (Postgres + Redis + Qdrant) | Cluster        | Full (sync + queued reindex + cancel/retry) |
+
+All three profiles serve the same 19-tool MCP surface for memory CRUD,
+promotion, hybrid recall, and the `remember`/`forget`/`reflect`/`compress_context`
+helpers. Only the reindex / queue / cancel / retry maintenance tools are
+profile-gated.
+
+### profile-memory — zero-dependency quickstart
+
+In-process memory, no Docker, no Postgres, no Redis, no Qdrant. Best for
+demos, CI smoke tests, and exploring the MCP tool surface. Data is lost when
+the process exits.
+
+```bash
+npm exec --yes pnpm@11.4.0 -- install
+DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.4.0 -- build
+DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+```
+
+The MCP server starts on `http://localhost:3000`. Check it with:
+
+```bash
+curl http://localhost:3000/health
+```
+
+### profile-lite — encrypted local durability
+
+AES-256-GCM encrypted file store under `LOCAL_DATA_DIR` (default
+`~/.engram/data`). Postgres is the source of truth; Redis and Qdrant are
+absent. Best for single-host deployments that need at-rest encryption by
+default.
+
+```bash
+npm exec --yes pnpm@11.4.0 -- install
+DEPLOYMENT_PROFILE=lite \
+LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  npm exec --yes pnpm@11.4.0 -- db:migrate
+DEPLOYMENT_PROFILE=lite \
+LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  npm exec --yes pnpm@11.4.0 -- build
+DEPLOYMENT_PROFILE=lite \
+LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+```
+
+Generate a fresh key per host. The server refuses to start in production
+without `LOCAL_ENCRYPTION_KEY`; in development it derives an ephemeral key
+with a loud warning.
+
+### profile-enterprise — full stack
+
+Postgres + Redis + Qdrant with cluster-scale durability, hybrid lexical
+
+- semantic retrieval, and queued reindex / cancel / retry maintenance
+  tools. Best for production deployments that need horizontal scale,
+  background jobs, and zero-downtime backfill.
 
 ```bash
 npm exec --yes pnpm@11.4.0 -- install
@@ -30,8 +94,8 @@ test -f .env || cp .env.example .env
 npm exec --yes pnpm@11.4.0 -- docker:up
 npm exec --yes pnpm@11.4.0 -- db:generate
 npm exec --yes pnpm@11.4.0 -- db:migrate
-npm exec --yes pnpm@11.4.0 -- build
-npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.4.0 -- build
+DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000` by default. Check it with:
@@ -53,7 +117,9 @@ npm exec --yes pnpm@11.4.0 -- docker:clean
 ```
 
 After installing pnpm globally, you can use the shorter `pnpm <command>` form
-shown in the command table below.
+shown in the command table below. Detailed setup, profile selection, and
+profile-to-profile migration runbook live in [docs/SETUP.md](docs/SETUP.md).
+Release SLO and quality gates live in [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md).
 
 ## Common Commands
 
@@ -101,6 +167,7 @@ shown in the command table below.
 | Topic                                     | Link                                                                                 |
 | ----------------------------------------- | ------------------------------------------------------------------------------------ |
 | Detailed local setup and MCP client setup | [docs/SETUP.md](docs/SETUP.md)                                                       |
+| Release SLOs and quality gates            | [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md)                                       |
 | Current roadmap                           | [docs/roadmap.md](docs/roadmap.md)                                                   |
 | MCP server details                        | [apps/mcp-server/README.md](apps/mcp-server/README.md)                               |
 | Web app details                           | [apps/web/README.md](apps/web/README.md)                                             |

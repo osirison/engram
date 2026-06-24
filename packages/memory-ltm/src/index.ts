@@ -1,6 +1,8 @@
 // Main exports for the memory-ltm package
 export { MemoryLtmService } from './memory-ltm.service';
-export { MemoryLtmModule } from './memory-ltm.module';
+export { MemoryLtmModule, LTM_PROVIDER } from './memory-ltm.module';
+export { InMemoryLtmAdapter } from './adapters/inmemory-ltm.adapter';
+export { HybridTransientRetriever } from './retrieval/hybrid-transient-retriever';
 export { ImportanceScoringService } from './importance.service';
 export { DuplicateDetectionService } from './duplicate-detection.service';
 export { ContradictionDetectionService } from './contradiction-detection.service';
