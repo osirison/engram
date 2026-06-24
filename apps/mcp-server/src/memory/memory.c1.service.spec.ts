@@ -236,6 +236,50 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
       expect(result.candidates).toHaveLength(1);
       expect(result.candidates[0]!.memoryId).toBe('clm2222222222222222222222');
     });
+
+    it('confines both the search and the deletions to the provided scope', async () => {
+      const mem1 = makeMemory({
+        id: 'clm2222222222222222222222',
+        content: 'scoped secret',
+        scope: 'agent:alpha',
+      });
+      ltmService.semanticSearch.mockResolvedValue([
+        { memory: mem1, score: 0.95 },
+      ]);
+      mockStmService.delete.mockRejectedValue(
+        new StmMemoryNotFoundError('clm2222222222222222222222'),
+      );
+      mockLtmService.delete.mockResolvedValue(true);
+
+      await service.forget({
+        userId: USER_ID,
+        query: 'secret',
+        limit: 5,
+        confirm: true,
+        minScore: 0.7,
+        scope: 'agent:alpha',
+      });
+
+      // The semantic search is scoped to the caller's namespace…
+      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+        USER_ID,
+        'secret',
+        expect.objectContaining({ scope: 'agent:alpha' }),
+      );
+      // …and the deletion carries that scope through to both stores.
+      expect(mockStmService.delete).toHaveBeenCalledWith(
+        USER_ID,
+        'clm2222222222222222222222',
+        undefined,
+        'agent:alpha',
+      );
+      expect(mockLtmService.delete).toHaveBeenCalledWith(
+        USER_ID,
+        'clm2222222222222222222222',
+        undefined,
+        'agent:alpha',
+      );
+    });
   });
 
   // ─── reflect ────────────────────────────────────────────────────────────────

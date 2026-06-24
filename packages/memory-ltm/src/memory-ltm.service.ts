@@ -3,7 +3,12 @@ import { PrismaService } from '@engram/database';
 import { MemoryType, PaginatedResult } from '@engram/database';
 import { MemoryStmService } from '@engram/memory-stm';
 import { EmbeddingsService } from '@engram/embeddings';
-import { VECTOR_STORE_TOKEN, type VectorStore, type VectorPayload } from '@engram/vector-store';
+import {
+  VECTOR_STORE_TOKEN,
+  type VectorStore,
+  type VectorPayload,
+  type VectorSearchResult,
+} from '@engram/vector-store';
 import { rankResults, DEFAULT_RANKING_WEIGHTS, type RankingWeights } from './rank';
 import { ImportanceScoringService } from './importance.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
@@ -133,9 +138,16 @@ export class MemoryLtmService {
       }
 
       // ── Step 2 (vector): semantic duplicate detection ──────────────────
+      // Scope is passed so dedup stays within the create's namespace — an
+      // unscoped write must never collapse into a scoped memory, or vice-versa.
       const duplicate =
         !input.skipDuplicateCheck &&
-        (await this.findDuplicate(validatedInput.userId, validatedInput.organizationId, embedding));
+        (await this.findDuplicate(
+          validatedInput.userId,
+          validatedInput.organizationId,
+          validatedInput.scope,
+          embedding
+        ));
       if (duplicate) {
         return await this.linkDuplicateAndReturn(
           duplicate.memoryId,
@@ -147,9 +159,11 @@ export class MemoryLtmService {
       }
 
       // ── Step B1: contradiction detection ──────────────────────────────
+      // Scope-bound so a write can only supersede memories in its own namespace.
       const contradiction = await this.findContradictionCandidate(
         validatedInput.userId,
         validatedInput.organizationId,
+        validatedInput.scope,
         processedContent,
         embedding
       );
@@ -283,7 +297,8 @@ export class MemoryLtmService {
     userId: string,
     memoryId: string,
     input: UpdateLtmMemoryData,
-    organizationId?: string
+    organizationId?: string,
+    scope?: string
   ): Promise<LtmMemory> {
     this.logger.debug(`Updating LTM memory: ${memoryId} for user: ${userId}`);
 
@@ -291,7 +306,9 @@ export class MemoryLtmService {
     const validatedInput = validateUpdateLtmMemory(input);
 
     try {
-      const existingRow = await this.findRawMemory(userId, memoryId, organizationId);
+      // Pass scope so a caller bound to a namespace cannot update memories
+      // outside it — a mismatch resolves to not-found.
+      const existingRow = await this.findRawMemory(userId, memoryId, organizationId, scope);
       if (!existingRow) {
         throw new LtmMemoryNotFoundError(memoryId);
       }
@@ -387,7 +404,12 @@ export class MemoryLtmService {
    * Pass `organizationId` in user-facing paths to prevent cross-tenant deletes.
    * See `get()` for the full isolation contract.
    */
-  async delete(userId: string, memoryId: string, organizationId?: string): Promise<boolean> {
+  async delete(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<boolean> {
     this.logger.debug(`Deleting LTM memory: ${memoryId} for user: ${userId}`);
 
     try {
@@ -398,6 +420,10 @@ export class MemoryLtmService {
       };
       if (organizationId !== undefined) {
         deleteWhere.organizationId = organizationId;
+      }
+      // Namespace isolation: a scoped caller can only delete within its scope.
+      if (scope !== undefined) {
+        deleteWhere.scope = scope;
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (this.prisma as any).memory.deleteMany({ where: deleteWhere });
@@ -614,8 +640,9 @@ export class MemoryLtmService {
     }
 
     try {
-      // Step 1: Get memory from STM service (org-scoped so we find the right key)
-      const stmMemory = await this.stmService.findById(userId, memoryId, organizationId);
+      // Step 1: Get memory from STM service (org- and scope-scoped so we find
+      // the right key and refuse to promote a memory from another namespace).
+      const stmMemory = await this.stmService.findById(userId, memoryId, organizationId, scope);
       if (!stmMemory) {
         throw new LtmPromotionError(memoryId, 'Memory not found in short-term storage');
       }
@@ -663,7 +690,12 @@ export class MemoryLtmService {
         embedding = result?.embedding ?? [];
       }
 
-      const duplicate = await this.findDuplicate(userId, resolvedOrgId ?? undefined, embedding);
+      const duplicate = await this.findDuplicate(
+        userId,
+        resolvedOrgId ?? undefined,
+        resolvedScope ?? undefined,
+        embedding
+      );
       if (duplicate) {
         const existing = await this.linkDuplicateAndReturn(
           duplicate.memoryId,
@@ -1173,7 +1205,8 @@ export class MemoryLtmService {
   private async findRawMemory(
     userId: string,
     memoryId: string,
-    organizationId?: string
+    organizationId?: string,
+    scope?: string
   ): Promise<PrismaMemory | null> {
     const where: Record<string, unknown> = {
       id: memoryId,
@@ -1182,6 +1215,9 @@ export class MemoryLtmService {
     };
     if (organizationId !== undefined) {
       where.organizationId = organizationId;
+    }
+    if (scope !== undefined) {
+      where.scope = scope;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
@@ -1256,16 +1292,32 @@ export class MemoryLtmService {
     if (organizationId !== undefined) {
       where.organizationId = organizationId;
     }
-    if (scope !== undefined) {
-      where.scope = scope;
-    }
+    // Always constrain by namespace for dedup. Note that `scope` is treated differently
+    // here than in read/update/delete paths: `undefined` means "unscoped only"
+    // (scope IS NULL), not "no scope filter".
+    where.scope = scope ?? null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
+  }
+
+  /**
+   * Keep only candidates that share the create's namespace. The vector store
+   * filter cannot express "scope IS NULL", so for an unscoped create we drop any
+   * hit that carries a scope in its payload; for a scoped create the store has
+   * already filtered, and this simply re-asserts the invariant.
+   */
+  private hitMatchesScope(hit: VectorSearchResult, scope: string | undefined): boolean {
+    const hitScope =
+      typeof hit.payload?.scope === 'string' && hit.payload.scope.length > 0
+        ? hit.payload.scope
+        : undefined;
+    return hitScope === scope;
   }
 
   private async findDuplicate(
     userId: string,
     organizationId: string | undefined,
+    scope: string | undefined,
     embedding: number[]
   ): Promise<DuplicateDetectionMatch | null> {
     if (!this.vectorStore || !this.duplicateDetectionService || embedding.length === 0) {
@@ -1273,15 +1325,17 @@ export class MemoryLtmService {
     }
     const hits = await this.vectorStore.search(
       embedding,
-      { userId, organizationId, type: MemoryType.LONG_TERM },
+      { userId, organizationId, scope, type: MemoryType.LONG_TERM },
       3
     );
-    return this.duplicateDetectionService.findMatch(hits);
+    const scopedHits = hits.filter((hit) => this.hitMatchesScope(hit, scope));
+    return this.duplicateDetectionService.findMatch(scopedHits);
   }
 
   private async findContradictionCandidate(
     userId: string,
     organizationId: string | undefined,
+    scope: string | undefined,
     content: string,
     embedding: number[]
   ): Promise<ContradictionMatch | null> {
@@ -1290,18 +1344,21 @@ export class MemoryLtmService {
     }
     const hits = await this.vectorStore.search(
       embedding,
-      { userId, organizationId, type: MemoryType.LONG_TERM },
+      { userId, organizationId, scope, type: MemoryType.LONG_TERM },
       5
     );
     if (hits.length === 0) return null;
 
     // Fetch content for all hit candidates in one query, scoped to the same
-    // tenant so a vector-store misconfiguration cannot surface foreign rows.
+    // tenant *and namespace* so neither a vector-store misconfiguration nor an
+    // unscoped search can surface foreign rows. `scope ?? null` confines the
+    // match to the create's own namespace (NULL = unscoped).
     const hitIds = hits.map((h) => h.id);
     const contentWhere: Record<string, unknown> = {
       id: { in: hitIds },
       userId,
       type: MemoryType.LONG_TERM,
+      scope: scope ?? null,
     };
     if (organizationId !== undefined) {
       contentWhere.organizationId = organizationId;

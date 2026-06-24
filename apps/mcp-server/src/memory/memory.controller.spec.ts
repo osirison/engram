@@ -544,6 +544,7 @@ describe('MemoryController', () => {
       expect(mockMemoryService.getMemory).toHaveBeenCalledWith(
         userId,
         memoryId,
+        undefined,
       );
     });
 
@@ -644,6 +645,7 @@ describe('MemoryController', () => {
           tags: undefined,
           ttl: undefined,
         },
+        undefined,
       );
       expect(response.content[0]?.text).toContain(memoryId);
     });
@@ -678,6 +680,7 @@ describe('MemoryController', () => {
       expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith(
         userId,
         memoryId,
+        undefined,
       );
     });
 
@@ -714,6 +717,7 @@ describe('MemoryController', () => {
       expect(mockMemoryService.promoteMemory).toHaveBeenCalledWith(
         userId,
         memoryId,
+        undefined,
       );
       expect(response.content[0]?.text).toContain('Successfully promoted');
       expect(response.content[0]?.text).toContain(memoryId);

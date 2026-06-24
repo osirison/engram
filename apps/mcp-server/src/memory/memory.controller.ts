@@ -160,6 +160,7 @@ export class MemoryController {
       const memory = await this.memoryService.getMemory(
         validatedInput.userId,
         validatedInput.memoryId,
+        validatedInput.scope,
       );
 
       if (!memory) {
@@ -271,6 +272,7 @@ export class MemoryController {
         validatedInput.userId,
         validatedInput.memoryId,
         updateDto,
+        validatedInput.scope,
       );
 
       return {
@@ -307,6 +309,7 @@ export class MemoryController {
       const deleted = await this.memoryService.deleteMemory(
         validatedInput.userId,
         validatedInput.memoryId,
+        validatedInput.scope,
       );
 
       return {
@@ -345,6 +348,7 @@ export class MemoryController {
       const promotedMemory = await this.memoryService.promoteMemory(
         validatedInput.userId,
         validatedInput.memoryId,
+        validatedInput.scope,
       );
 
       return {
@@ -751,6 +755,7 @@ export class MemoryController {
         limit: validated.limit,
         confirm: validated.confirm,
         minScore: validated.minScore,
+        scope: validated.scope,
       });
 
       return {

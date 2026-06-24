@@ -142,7 +142,12 @@ describe('MemoryService Integration', () => {
       const result = await service.getMemory(TEST_USER_ID, STM_ID);
 
       expect(result).toEqual(memory);
-      expect(stmService.findById).toHaveBeenCalledWith(TEST_USER_ID, STM_ID);
+      expect(stmService.findById).toHaveBeenCalledWith(
+        TEST_USER_ID,
+        STM_ID,
+        undefined,
+        undefined,
+      );
       expect(ltmService.get).not.toHaveBeenCalled();
     });
 
@@ -168,7 +173,12 @@ describe('MemoryService Integration', () => {
       const result = await service.deleteMemory(TEST_USER_ID, STM_ID);
 
       expect(result).toBe(true);
-      expect(stmService.delete).toHaveBeenCalledWith(TEST_USER_ID, STM_ID);
+      expect(stmService.delete).toHaveBeenCalledWith(
+        TEST_USER_ID,
+        STM_ID,
+        undefined,
+        undefined,
+      );
     });
   });
 
@@ -205,8 +215,18 @@ describe('MemoryService Integration', () => {
       const result = await service.getMemory(TEST_USER_ID, LTM_ID);
 
       expect(result).toEqual(memory);
-      expect(stmService.findById).toHaveBeenCalledWith(TEST_USER_ID, LTM_ID);
-      expect(ltmService.get).toHaveBeenCalledWith(TEST_USER_ID, LTM_ID);
+      expect(stmService.findById).toHaveBeenCalledWith(
+        TEST_USER_ID,
+        LTM_ID,
+        undefined,
+        undefined,
+      );
+      expect(ltmService.get).toHaveBeenCalledWith(
+        TEST_USER_ID,
+        LTM_ID,
+        undefined,
+        undefined,
+      );
     });
 
     it('should update LTM memory when not found in STM', async () => {
@@ -231,7 +251,12 @@ describe('MemoryService Integration', () => {
       const result = await service.deleteMemory(TEST_USER_ID, LTM_ID);
 
       expect(result).toBe(true);
-      expect(ltmService.delete).toHaveBeenCalledWith(TEST_USER_ID, LTM_ID);
+      expect(ltmService.delete).toHaveBeenCalledWith(
+        TEST_USER_ID,
+        LTM_ID,
+        undefined,
+        undefined,
+      );
     });
   });
 

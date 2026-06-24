@@ -30,7 +30,12 @@ type StmServiceContract = {
     tags?: string[];
     ttl?: number;
   }) => Promise<Memory>;
-  findById: (userId: string, memoryId: string) => Promise<Memory>;
+  findById: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory>;
   update: (
     userId: string,
     memoryId: string,
@@ -40,11 +45,18 @@ type StmServiceContract = {
       tags?: string[];
       ttl?: number;
     },
+    organizationId?: string,
+    scope?: string,
   ) => Promise<Memory>;
-  delete: (userId: string, memoryId: string) => Promise<void>;
+  delete: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<void>;
   list: (
     userId: string,
-    options: { limit: number },
+    options: { limit: number; scope?: string },
   ) => Promise<MemoryListResult>;
 };
 
@@ -57,7 +69,12 @@ type LtmServiceContract = {
     tags?: string[];
     skipDuplicateCheck?: boolean;
   }) => Promise<Memory>;
-  get: (userId: string, memoryId: string) => Promise<Memory | null>;
+  get: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory | null>;
   update: (
     userId: string,
     memoryId: string,
@@ -66,8 +83,15 @@ type LtmServiceContract = {
       metadata?: Record<string, unknown>;
       tags?: string[];
     },
+    organizationId?: string,
+    scope?: string,
   ) => Promise<Memory>;
-  delete: (userId: string, memoryId: string) => Promise<boolean>;
+  delete: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<boolean>;
   list: (
     userId: string,
     options: {
@@ -80,7 +104,12 @@ type LtmServiceContract = {
       sortOrder?: 'asc' | 'desc';
     },
   ) => Promise<MemoryListResult>;
-  promote: (userId: string, memoryId: string) => Promise<Memory>;
+  promote: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory>;
   semanticSearch: (
     userId: string,
     query: string,
@@ -281,19 +310,34 @@ export class MemoryService {
   /**
    * Get a memory - tries STM first, then falls back to LTM
    */
-  async getMemory(userId: string, memoryId: string): Promise<Memory | null> {
+  async getMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<Memory | null> {
     this.logger.debug(`Getting memory ${memoryId} for user: ${userId}`);
 
     try {
-      // Try STM first (faster access)
-      const stmMemory = await this.stm.findById(userId, memoryId);
+      // Try STM first (faster access). Scope is forwarded so a namespaced
+      // caller cannot read another scope's memory by id.
+      const stmMemory = await this.stm.findById(
+        userId,
+        memoryId,
+        undefined,
+        scope,
+      );
       return stmMemory;
     } catch (error) {
       if (error instanceof StmMemoryNotFoundError) {
         // Not in STM, try LTM
         this.logger.debug(`Memory ${memoryId} not found in STM, checking LTM`);
         try {
-          const ltmMemory = await this.ltm.get(userId, memoryId);
+          const ltmMemory = await this.ltm.get(
+            userId,
+            memoryId,
+            undefined,
+            scope,
+          );
           return ltmMemory;
         } catch (ltmError) {
           if (ltmError instanceof LtmMemoryNotFoundError) {
@@ -325,7 +369,7 @@ export class MemoryService {
     // Note: STM list is not fully implemented yet, but we'll call it anyway
     const [stmResult, ltmResult] = await Promise.all([
       this.stm
-        .list(userId, { limit })
+        .list(userId, { limit, scope: options.scope })
         .catch(() => ({ items: [] as Memory[], totalCount: 0 })),
       this.ltm.list(userId, {
         limit,
@@ -371,40 +415,59 @@ export class MemoryService {
     userId: string,
     memoryId: string,
     updates: UpdateMemoryDto,
+    scope?: string,
   ): Promise<Memory> {
     this.logger.debug(
       `Updating memory ${memoryId} for user: ${userId} with updates:`,
       updates,
     );
 
-    // Try to find the memory first to determine which service to use
+    // Try to find the memory first to determine which service to use. Scope is
+    // forwarded so a namespaced caller cannot locate or modify a foreign memory.
     try {
       // Try STM first
-      await this.stm.findById(userId, memoryId);
+      await this.stm.findById(userId, memoryId, undefined, scope);
 
       // Found in STM, update it
-      return await this.stm.update(userId, memoryId, {
-        content: updates.content,
-        metadata: updates.metadata,
-        tags: updates.tags ?? ([] as string[]),
-        ttl: updates.ttl,
-      });
+      return await this.stm.update(
+        userId,
+        memoryId,
+        {
+          content: updates.content,
+          metadata: updates.metadata,
+          tags: updates.tags ?? ([] as string[]),
+          ttl: updates.ttl,
+        },
+        undefined,
+        scope,
+      );
     } catch (error) {
       if (error instanceof StmMemoryNotFoundError) {
         // Not in STM, try LTM
         this.logger.debug(`Memory ${memoryId} not in STM, trying LTM`);
 
-        const ltmMemory = await this.ltm.get(userId, memoryId);
+        const ltmMemory = await this.ltm.get(
+          userId,
+          memoryId,
+          undefined,
+          scope,
+        );
         if (!ltmMemory) {
           throw new NotFoundException(`Memory ${memoryId} not found`);
         }
 
         // Update in LTM (TTL is ignored for LTM)
-        return await this.ltm.update(userId, memoryId, {
-          content: updates.content,
-          metadata: updates.metadata,
-          tags: updates.tags,
-        });
+        return await this.ltm.update(
+          userId,
+          memoryId,
+          {
+            content: updates.content,
+            metadata: updates.metadata,
+            tags: updates.tags,
+          },
+          undefined,
+          scope,
+        );
       }
       throw error;
     }
@@ -413,15 +476,20 @@ export class MemoryService {
   /**
    * Delete a memory - tries both STM and LTM
    */
-  async deleteMemory(userId: string, memoryId: string): Promise<boolean> {
+  async deleteMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<boolean> {
     this.logger.debug(`Deleting memory ${memoryId} for user: ${userId}`);
 
     let deletedFromStm = false;
     let deletedFromLtm = false;
 
-    // Try to delete from STM
+    // Try to delete from STM. Scope is forwarded so a namespaced caller cannot
+    // delete a memory that lives in a different scope.
     try {
-      await this.stm.delete(userId, memoryId);
+      await this.stm.delete(userId, memoryId, undefined, scope);
       deletedFromStm = true;
       this.logger.debug(`Memory ${memoryId} deleted from STM`);
     } catch (error) {
@@ -432,7 +500,12 @@ export class MemoryService {
 
     // Try to delete from LTM
     try {
-      deletedFromLtm = await this.ltm.delete(userId, memoryId);
+      deletedFromLtm = await this.ltm.delete(
+        userId,
+        memoryId,
+        undefined,
+        scope,
+      );
       if (deletedFromLtm) {
         this.logger.debug(`Memory ${memoryId} deleted from LTM`);
       }
@@ -449,13 +522,18 @@ export class MemoryService {
   /**
    * Promote a memory from STM to LTM
    */
-  async promoteMemory(userId: string, memoryId: string): Promise<Memory> {
+  async promoteMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<Memory> {
     this.logger.debug(
       `Promoting memory ${memoryId} from STM to LTM for user: ${userId}`,
     );
 
-    // Use LTM service's promote method which handles the transfer
-    return await this.ltm.promote(userId, memoryId);
+    // Use LTM service's promote method which handles the transfer. Scope is
+    // forwarded so a namespaced caller cannot promote a foreign-scope memory.
+    return await this.ltm.promote(userId, memoryId, undefined, scope);
   }
 
   /**
@@ -536,9 +614,13 @@ export class MemoryService {
     limit: number;
     confirm: boolean;
     minScore: number;
+    scope?: string;
   }): Promise<ForgetResult> {
+    // Confine both the search and the deletion to the caller's namespace so a
+    // scoped `forget` cannot surface or remove memories from another scope.
     const hits = await this.ltm.semanticSearch(input.userId, input.query, {
       limit: input.limit,
+      scope: input.scope,
     });
 
     const candidates: ForgetCandidate[] = hits
@@ -552,7 +634,9 @@ export class MemoryService {
     let deleted = 0;
     if (input.confirm && candidates.length > 0) {
       const results = await Promise.allSettled(
-        candidates.map((c) => this.deleteMemory(input.userId, c.memoryId)),
+        candidates.map((c) =>
+          this.deleteMemory(input.userId, c.memoryId, input.scope),
+        ),
       );
       deleted = results.filter(
         (r) => r.status === 'fulfilled' && r.value,
