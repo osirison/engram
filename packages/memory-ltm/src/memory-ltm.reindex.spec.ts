@@ -10,7 +10,9 @@ function buildMemory(id: string, overrides: Record<string, unknown> = {}) {
     id,
     userId: mockUserId,
     content: `content-${id}`,
-    metadata: { scope: 'session-1' },
+    // Scope is a first-class column; the vector payload is derived from it.
+    scope: 'session-1',
+    metadata: null,
     tags: ['test'],
     type: MemoryType.LONG_TERM,
     createdAt: new Date('2025-01-01T00:00:00Z'),

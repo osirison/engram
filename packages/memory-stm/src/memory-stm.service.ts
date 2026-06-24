@@ -150,15 +150,17 @@ export class MemoryStmService {
     userId: string,
     memoryId: string,
     input: UpdateStmMemoryData,
-    organizationId?: string
+    organizationId?: string,
+    scope?: string
   ): Promise<StmMemory> {
     this.logger.debug(`Updating STM memory: ${memoryId} for user: ${userId}`);
 
     // Validate input
     const validatedInput = updateStmMemorySchema.parse(input);
 
-    // Get existing memory (must use same org scope to find the key)
-    const existing = await this.findById(userId, memoryId, organizationId);
+    // Get existing memory (must use same org scope to find the key). Passing
+    // scope enforces namespace isolation — a mismatch surfaces as not-found.
+    const existing = await this.findById(userId, memoryId, organizationId, scope);
 
     // Validate new TTL if provided
     const newTtl = validatedInput.ttl ?? existing.ttl;
@@ -192,10 +194,36 @@ export class MemoryStmService {
   /**
    * Delete a short-term memory
    */
-  async delete(userId: string, memoryId: string, organizationId?: string): Promise<void> {
+  async delete(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<void> {
     this.logger.debug(`Deleting STM memory: ${memoryId} for user: ${userId}`);
 
     const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
+
+    // Scope isolation: the Redis key does not encode scope, so when a scope is
+    // supplied we must read the record and verify it before deleting. A mismatch
+    // is treated as not-found so a caller bound to one namespace cannot delete
+    // another's memory.
+    if (scope !== undefined) {
+      const raw = await this.redisService.get(redisKey);
+      if (!raw) {
+        throw new StmMemoryNotFoundError(memoryId);
+      }
+      let memory: StmMemory;
+      try {
+        memory = this.deserializeStmMemory(JSON.parse(raw));
+      } catch {
+        throw new StmMemoryNotFoundError(memoryId);
+      }
+      if (memory.scope !== scope) {
+        throw new StmMemoryNotFoundError(memoryId);
+      }
+    }
+
     const deleted = await this.redisService.del(redisKey);
 
     if (deleted === 0) {
