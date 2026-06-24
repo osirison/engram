@@ -64,6 +64,7 @@ export class MemoryStmService {
       id: memoryId,
       userId: validatedInput.userId,
       organizationId: validatedInput.organizationId,
+      scope: validatedInput.scope,
       content: validatedInput.content,
       metadata: validatedInput.metadata || null,
       tags: validatedInput.tags || [],
@@ -93,7 +94,12 @@ export class MemoryStmService {
   /**
    * Retrieve a short-term memory by ID
    */
-  async findById(userId: string, memoryId: string, organizationId?: string): Promise<StmMemory> {
+  async findById(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<StmMemory> {
     this.logger.debug(`Finding STM memory: ${memoryId} for user: ${userId}`);
 
     const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
@@ -119,6 +125,11 @@ export class MemoryStmService {
       throw new StmMemoryExpiredError(memoryId);
     }
 
+    // Enforce scope isolation: treat a scope mismatch as not-found.
+    if (scope !== undefined && memory.scope !== scope) {
+      throw new StmMemoryNotFoundError(memoryId);
+    }
+
     // Increment access counter and persist back to Redis.
     // We read the remaining TTL first so the SET doesn't silently remove
     // the expiry. Under concurrent reads the count may be under-reported by
@@ -139,15 +150,17 @@ export class MemoryStmService {
     userId: string,
     memoryId: string,
     input: UpdateStmMemoryData,
-    organizationId?: string
+    organizationId?: string,
+    scope?: string
   ): Promise<StmMemory> {
     this.logger.debug(`Updating STM memory: ${memoryId} for user: ${userId}`);
 
     // Validate input
     const validatedInput = updateStmMemorySchema.parse(input);
 
-    // Get existing memory (must use same org scope to find the key)
-    const existing = await this.findById(userId, memoryId, organizationId);
+    // Get existing memory (must use same org scope to find the key). Passing
+    // scope enforces namespace isolation — a mismatch surfaces as not-found.
+    const existing = await this.findById(userId, memoryId, organizationId, scope);
 
     // Validate new TTL if provided
     const newTtl = validatedInput.ttl ?? existing.ttl;
@@ -181,10 +194,36 @@ export class MemoryStmService {
   /**
    * Delete a short-term memory
    */
-  async delete(userId: string, memoryId: string, organizationId?: string): Promise<void> {
+  async delete(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<void> {
     this.logger.debug(`Deleting STM memory: ${memoryId} for user: ${userId}`);
 
     const redisKey = this.keyBuilder.buildMemoryKey(userId, memoryId, organizationId);
+
+    // Scope isolation: the Redis key does not encode scope, so when a scope is
+    // supplied we must read the record and verify it before deleting. A mismatch
+    // is treated as not-found so a caller bound to one namespace cannot delete
+    // another's memory.
+    if (scope !== undefined) {
+      const raw = await this.redisService.get(redisKey);
+      if (!raw) {
+        throw new StmMemoryNotFoundError(memoryId);
+      }
+      let memory: StmMemory;
+      try {
+        memory = this.deserializeStmMemory(JSON.parse(raw));
+      } catch {
+        throw new StmMemoryNotFoundError(memoryId);
+      }
+      if (memory.scope !== scope) {
+        throw new StmMemoryNotFoundError(memoryId);
+      }
+    }
+
     const deleted = await this.redisService.del(redisKey);
 
     if (deleted === 0) {
@@ -206,6 +245,7 @@ export class MemoryStmService {
     const limit = options.limit || 20;
     const cursor = options.cursor || '0';
     const tags = options.tags || [];
+    const scope = options.scope;
     const pattern = this.keyBuilder.buildUserPattern(userId, options.organizationId);
 
     // Use Redis SCAN for memory-efficient iteration
@@ -239,6 +279,9 @@ export class MemoryStmService {
                 if (!hasMatchingTag) continue;
               }
 
+              // Apply scope filtering if scope is provided
+              if (scope !== undefined && memory.scope !== scope) continue;
+
               memories.push(memory);
               if (memories.length >= limit) break;
             } catch {
@@ -250,7 +293,11 @@ export class MemoryStmService {
     }
 
     // Get total count for pagination metadata
-    const totalCount = await this.count(userId, { tags, organizationId: options.organizationId });
+    const totalCount = await this.count(userId, {
+      tags,
+      organizationId: options.organizationId,
+      scope,
+    });
 
     return {
       items: memories,
@@ -317,16 +364,18 @@ export class MemoryStmService {
   }
 
   /**
-   * Count total memories for a user with optional tag filtering
+   * Count total memories for a user with optional tag and scope filtering
    */
   async count(
     userId: string,
-    options: { tags?: string[]; organizationId?: string } = {}
+    options: { tags?: string[]; organizationId?: string; scope?: string } = {}
   ): Promise<number> {
     this.logger.debug(`Counting STM memories for user: ${userId}`);
 
     const pattern = this.keyBuilder.buildUserPattern(userId, options.organizationId);
     const tags = options.tags || [];
+    const scope = options.scope;
+    const needsPayloadScan = tags.length > 0 || scope !== undefined;
     let cursor = '0';
     let count = 0;
 
@@ -336,8 +385,8 @@ export class MemoryStmService {
         count: 1000, // Process in batches
       });
 
-      if (tags.length > 0) {
-        // Need to check tag filtering - fetch and count
+      if (needsPayloadScan) {
+        // Need to fetch payloads to apply tag/scope filtering
         const keys = scanResult.keys;
         if (keys.length > 0) {
           const pipeline = this.redisService.pipeline();
@@ -349,8 +398,12 @@ export class MemoryStmService {
               if (!error && data) {
                 try {
                   const memory = this.deserializeStmMemory(JSON.parse(data as string));
-                  const hasMatchingTag = tags.some((tag) => memory.tags.includes(tag));
-                  if (hasMatchingTag) count++;
+                  if (tags.length > 0) {
+                    const hasMatchingTag = tags.some((tag) => memory.tags.includes(tag));
+                    if (!hasMatchingTag) continue;
+                  }
+                  if (scope !== undefined && memory.scope !== scope) continue;
+                  count++;
                 } catch {
                   // Skip invalid entries
                   this.logger.warn(`Failed to parse STM memory during count`);
@@ -360,7 +413,7 @@ export class MemoryStmService {
           }
         }
       } else {
-        // Simple count without tag filtering
+        // Simple count without payload filtering
         count += scanResult.keys.length;
       }
 

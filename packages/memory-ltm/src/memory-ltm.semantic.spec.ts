@@ -11,7 +11,10 @@ function buildMemory(overrides: Record<string, unknown> = {}): Record<string, un
     id: mockMemoryId,
     userId: mockUserId,
     content: 'Test memory content',
-    metadata: { scope: 'session-1' },
+    // Scope is a first-class column (not metadata) — the vector payload reads it
+    // from here, so the mock row must carry it as a top-level field.
+    scope: 'session-1',
+    metadata: null,
     tags: ['test'],
     type: MemoryType.LONG_TERM,
     createdAt: new Date('2025-01-01T00:00:00Z'),
@@ -68,7 +71,7 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       await service.create({
         userId: mockUserId,
         content: 'Test memory content',
-        metadata: { scope: 'session-1' },
+        scope: 'session-1',
         tags: ['test'],
       });
 
