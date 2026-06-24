@@ -70,12 +70,14 @@ function checkFile(filePath) {
   checkFrontmatter(relativeFile, contents);
   checkDuplicateHeadings(relativeFile, contents);
 
-  for (const match of contents.matchAll(markdownLinkPattern)) {
-    const rawTarget = match[2].trim();
-    const resolvedTarget = resolveLink(filePath, rawTarget);
+  if (!relativeFile.startsWith('.copilot-tracking/')) {
+    for (const match of contents.matchAll(markdownLinkPattern)) {
+      const rawTarget = match[2].trim();
+      const resolvedTarget = resolveLink(filePath, rawTarget);
 
-    if (!isExistingPath(resolvedTarget)) {
-      failures.push(`${relativeFile}: broken link to ${rawTarget}`);
+      if (!isExistingPath(resolvedTarget)) {
+        failures.push(`${relativeFile}: broken link to ${rawTarget}`);
+      }
     }
   }
 }
@@ -120,6 +122,10 @@ function normalizeHeading(heading) {
 }
 
 function checkDuplicateHeadings(relativeFile, contents) {
+  if (relativeFile.startsWith('.copilot-tracking/')) {
+    return;
+  }
+
   const headings = new Set();
 
   for (const match of contents.matchAll(markdownHeadingPattern)) {

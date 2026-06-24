@@ -8,6 +8,7 @@ import {
 } from '@nestjs/terminus';
 import {
   resolveCapabilities,
+  coerceDeploymentProfile,
   type ProfileCapabilities,
   DeploymentProfile,
 } from '@engram/config';
@@ -46,31 +47,7 @@ export class HealthController {
   }
 
   private resolveProfileFromEnv(): DeploymentProfile {
-    const raw = process.env.DEPLOYMENT_PROFILE;
-    if (raw === undefined || raw === null || raw === '') {
-      return DeploymentProfile.ENTERPRISE;
-    }
-    const value = String(raw).toLowerCase();
-    return this.coerceProfileString(value);
-  }
-
-  private coerceProfileString(value: string): DeploymentProfile {
-    const enterprise: DeploymentProfile = DeploymentProfile.ENTERPRISE;
-    const memory: DeploymentProfile = DeploymentProfile.MEMORY;
-    const lite: DeploymentProfile = DeploymentProfile.LITE;
-
-    if (value === memory) {
-      return memory;
-    }
-
-    if (value === lite) {
-      return lite;
-    }
-
-    if (value === enterprise) {
-      return enterprise;
-    }
-    return enterprise;
+    return coerceDeploymentProfile(process.env.DEPLOYMENT_PROFILE);
   }
 
   private buildIndicators(): Array<() => Promise<HealthIndicatorResult>> {
