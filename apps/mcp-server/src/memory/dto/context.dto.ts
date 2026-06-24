@@ -85,8 +85,8 @@ export type LoadContextToolInput = z.infer<typeof loadContextToolSchema>;
  * Input schema for the `prompt_context` MCP tool.
  *
  * Assembles a token-budgeted, ranked context block from the most relevant
- * long-term memories for a query. Uses a conservative ~4 chars/token heuristic
- * to ensure the assembled block stays within the requested token budget.
+ * long-term memories for a query. Uses ~4 chars/token heuristic (conservative
+ * for ASCII; may under-count for CJK/emoji content).
  */
 export const promptContextToolSchema = z
   .object({
@@ -98,7 +98,7 @@ export const promptContextToolSchema = z
       .max(2048, 'Query cannot exceed 2048 characters'),
     /**
      * Maximum token budget for the assembled context block.
-     * Conservative estimate: 1 token ≈ 4 characters.
+     * ~4 chars/token (conservative for ASCII; may under-count for CJK/emoji).
      * Default 2000 tokens (~8000 chars). Max 32000 tokens.
      */
     tokenBudget: z.coerce
@@ -116,6 +116,10 @@ export const promptContextToolSchema = z
     scope: z.string().max(256).optional(),
     /** Optional tag filter */
     tags: z.array(z.string()).max(20).optional(),
+    /** Only include memories created on or after this date (ISO 8601) */
+    createdFrom: z.coerce.date().optional(),
+    /** Only include memories created on or before this date (ISO 8601) */
+    createdTo: z.coerce.date().optional(),
   })
   .strict();
 

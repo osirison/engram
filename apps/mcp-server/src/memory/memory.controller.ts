@@ -981,6 +981,8 @@ export class MemoryController {
         minScore: validated.minScore,
         scope: validated.scope,
         tags: validated.tags,
+        createdFrom: validated.createdFrom,
+        createdTo: validated.createdTo,
       });
 
       return {
@@ -997,6 +999,7 @@ export class MemoryController {
                 estimatedTokens: result.estimatedTokens,
                 tokenBudget: result.tokenBudget,
                 truncated: result.truncated,
+                candidatesFound: result.candidatesFound,
               },
               null,
               2,

@@ -133,7 +133,7 @@ describe('MCP Tools Integration', () => {
       list: jest.fn(),
       promote: jest.fn(),
       reindex: jest.fn(),
-      semanticSearch: jest.fn(),
+      semanticSearch: jest.fn().mockResolvedValue([]),
     };
 
     const queueMock: Partial<jest.Mocked<ReindexQueueService>> = {
@@ -910,11 +910,13 @@ describe('MCP Tools Integration', () => {
         estimatedTokens: number;
         tokenBudget: number;
         truncated: boolean;
+        candidatesFound: number;
       };
       expect(meta.memoryCount).toBe(1);
       expect(meta.tokenBudget).toBe(2000);
       expect(meta.estimatedTokens).toBeLessThanOrEqual(2000);
       expect(meta.truncated).toBe(false);
+      expect(meta.candidatesFound).toBe(1);
     });
 
     it('should return (no memories) when no hits pass minScore', async () => {

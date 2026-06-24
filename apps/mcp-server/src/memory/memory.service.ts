@@ -210,10 +210,12 @@ export interface PromptContextBlock {
   context: string;
   memoryCount: number;
   truncated: boolean;
-  /** Conservative token estimate of the assembled block (~4 chars/token) */
+  /** Token estimate of the assembled block (~4 chars/token; may under-count for CJK/emoji) */
   estimatedTokens: number;
   /** The token budget that was requested */
   tokenBudget: number;
+  /** Total candidates returned by semantic search before minScore filtering */
+  candidatesFound: number;
 }
 
 export interface IngestConversationResult {
@@ -651,17 +653,22 @@ export class MemoryService {
     minScore: number;
     scope?: string;
     tags?: string[];
+    createdFrom?: Date;
+    createdTo?: Date;
   }): Promise<PromptContextBlock> {
     const hits = await this.ltm.semanticSearch(input.userId, input.query, {
       limit: input.limit,
       scope: input.scope,
       tags: input.tags,
+      createdFrom: input.createdFrom,
+      createdTo: input.createdTo,
     });
 
     const relevant = hits.filter((h) => h.score >= input.minScore);
     return MemoryService.buildTokenBudgetedBlock(
       relevant.map((h) => h.memory),
       input.tokenBudget,
+      hits.length,
     );
   }
 
@@ -903,7 +910,12 @@ export class MemoryService {
     };
   }
 
-  /** Conservative token estimate: ceil(chars / 4). Over-counts to avoid budget overrun. */
+  /**
+   * Token estimate: ceil(chars / 4). Conservative for ASCII/English text; may
+   * severely under-count for CJK, emoji, or other multi-byte content where BPE
+   * models produce 4–6× more tokens per character. The budget guarantee only
+   * holds for predominantly ASCII input.
+   */
   static estimateTokens(text: string): number {
     return Math.ceil(text.length / 4);
   }
@@ -916,6 +928,7 @@ export class MemoryService {
   static buildTokenBudgetedBlock(
     memories: Memory[],
     tokenBudget: number,
+    candidatesFound = 0,
   ): PromptContextBlock {
     if (memories.length === 0) {
       const ctx = '(no memories)';
@@ -925,6 +938,7 @@ export class MemoryService {
         truncated: false,
         estimatedTokens: MemoryService.estimateTokens(ctx),
         tokenBudget,
+        candidatesFound,
       };
     }
 
@@ -940,7 +954,8 @@ export class MemoryService {
 
       const currentTokens = MemoryService.estimateTokens(assembled);
       const headerTokens = MemoryService.estimateTokens(entryHeader);
-      // Reserve at least 1 token for a trailing newline; use -4 safety margin for ceil rounding.
+      // -4: safety margin so ceil() rounding can't push us over budget.
+      // -3 below (in slice) matches the 3-char '...' suffix — keep both in sync.
       const maxContentChars =
         (tokenBudget - currentTokens - headerTokens) * 4 - 4;
 
@@ -964,16 +979,13 @@ export class MemoryService {
       }
     }
 
-    if (included < memories.length && !truncated) {
-      truncated = true;
-    }
-
     return {
       context: assembled,
       memoryCount: included,
       truncated,
       estimatedTokens: MemoryService.estimateTokens(assembled),
       tokenBudget,
+      candidatesFound,
     };
   }
 
