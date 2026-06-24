@@ -62,8 +62,8 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
     controller = module.get<MemoryController>(MemoryController);
   });
 
-  it('should expose 19 MCP tools', () => {
-    expect(controller.getMcpTools()).toHaveLength(19);
+  it('should expose 20 MCP tools', () => {
+    expect(controller.getMcpTools()).toHaveLength(20);
   });
 
   // ─── remember ───────────────────────────────────────────────────────────────

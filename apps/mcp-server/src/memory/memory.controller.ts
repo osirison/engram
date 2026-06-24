@@ -42,6 +42,8 @@ import {
   CompressContextToolInput,
   loadContextToolSchema,
   LoadContextToolInput,
+  promptContextToolSchema,
+  PromptContextToolInput,
 } from './dto/context.dto';
 import {
   ingestConversationToolSchema,
@@ -53,7 +55,7 @@ import { ConsolidationService } from './consolidation.service';
 /**
  * MCP Memory Tools Controller
  *
- * Implements 19 MCP tools for memory management:
+ * Implements 20 MCP tools for memory management:
  * 1.  create_memory          - Create short-term or long-term memory
  * 2.  get_memory             - Retrieve memory by ID
  * 3.  list_memories          - List memories with pagination
@@ -73,6 +75,7 @@ import { ConsolidationService } from './consolidation.service';
  * 17. compress_context       - Retrieve + format memories as an injectable context block
  * 18. load_context           - Load recent + important memories for session priming
  * 19. ingest_conversation    - Bulk-ingest a conversation as chunked per-turn memories
+ * 20. prompt_context         - Token-budgeted context assembly ranked by query relevance
  */
 @Controller('memory')
 @Injectable()
@@ -959,6 +962,60 @@ export class MemoryController {
   }
 
   /**
+   * MCP Tool: prompt_context
+   * Assemble a token-budgeted, query-ranked context block for prompt injection.
+   */
+  async promptContext(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('prompt_context tool called');
+      const validated: PromptContextToolInput =
+        promptContextToolSchema.parse(input);
+
+      const result = await this.memoryService.assemblePromptContext({
+        userId: validated.userId,
+        query: validated.query,
+        tokenBudget: validated.tokenBudget,
+        limit: validated.limit,
+        minScore: validated.minScore,
+        scope: validated.scope,
+        tags: validated.tags,
+        createdFrom: validated.createdFrom,
+        createdTo: validated.createdTo,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result.context,
+          },
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                memoryCount: result.memoryCount,
+                estimatedTokens: result.estimatedTokens,
+                tokenBudget: result.tokenBudget,
+                truncated: result.truncated,
+                candidatesFound: result.candidatesFound,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in prompt_context tool:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Failed to assemble prompt context: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Get MCP tools in the format required by the MCP handler
    * This method creates Tool objects that bind controller methods as handlers
    */
@@ -1124,6 +1181,16 @@ export class MemoryController {
           'Bulk-ingest a conversation as per-turn long-term memories. Handles chunking for large turns, controls embedding back-pressure via concurrency, and is idempotent: re-submitting the same conversation returns the existing memory IDs.',
         inputSchema: ingestConversationToolSchema,
         handler: this.ingestConversation.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      // ── C3: Token-Budgeted Prompt Assembly ───────────────────────────────────
+      {
+        name: 'prompt_context',
+        description:
+          'Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars). Returns the formatted block plus token accounting metadata.',
+        inputSchema: promptContextToolSchema,
+        handler: this.promptContext.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
       },

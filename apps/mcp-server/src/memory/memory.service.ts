@@ -205,6 +205,19 @@ export interface ContextBlock {
   charCount: number;
 }
 
+export interface PromptContextBlock {
+  /** Formatted text ready for prompt injection, ranked by relevance */
+  context: string;
+  memoryCount: number;
+  truncated: boolean;
+  /** Token estimate of the assembled block (~4 chars/token; may under-count for CJK/emoji) */
+  estimatedTokens: number;
+  /** The token budget that was requested */
+  tokenBudget: number;
+  /** Total candidates returned by semantic search before minScore filtering */
+  candidatesFound: number;
+}
+
 export interface IngestConversationResult {
   /** Number of chunks successfully stored as new memories */
   ingested: number;
@@ -627,6 +640,39 @@ export class MemoryService {
   }
 
   /**
+   * Assemble a token-budgeted context block ranked by query relevance.
+   * Uses a conservative ~4 chars/token estimate so the assembled block stays
+   * within the requested budget. Memories are greedy-packed in relevance order;
+   * content is truncated when a single memory exceeds the remaining budget.
+   */
+  async assemblePromptContext(input: {
+    userId: string;
+    query: string;
+    tokenBudget: number;
+    limit: number;
+    minScore: number;
+    scope?: string;
+    tags?: string[];
+    createdFrom?: Date;
+    createdTo?: Date;
+  }): Promise<PromptContextBlock> {
+    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
+      limit: input.limit,
+      scope: input.scope,
+      tags: input.tags,
+      createdFrom: input.createdFrom,
+      createdTo: input.createdTo,
+    });
+
+    const relevant = hits.filter((h) => h.score >= input.minScore);
+    return MemoryService.buildTokenBudgetedBlock(
+      relevant.map((h) => h.memory),
+      input.tokenBudget,
+      hits.length,
+    );
+  }
+
+  /**
    * Load the most relevant memories for a session opening.
    * Blends recency with importance so the agent is primed with both
    * fresh context and durable knowledge.
@@ -861,6 +907,85 @@ export class MemoryService {
       memoryCount: included,
       truncated,
       charCount: context.length,
+    };
+  }
+
+  /**
+   * Token estimate: ceil(chars / 4). Conservative for ASCII/English text; may
+   * severely under-count for CJK, emoji, or other multi-byte content where BPE
+   * models produce 4–6× more tokens per character. The budget guarantee only
+   * holds for predominantly ASCII input.
+   */
+  static estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Greedy-pack memories into a token-budgeted block, ranked by relevance order.
+   * Content is truncated when a single memory would otherwise overflow the budget.
+   * The assembled block is guaranteed to satisfy estimatedTokens ≤ tokenBudget.
+   */
+  static buildTokenBudgetedBlock(
+    memories: Memory[],
+    tokenBudget: number,
+    candidatesFound = 0,
+  ): PromptContextBlock {
+    if (memories.length === 0) {
+      const ctx = '(no memories)';
+      return {
+        context: ctx,
+        memoryCount: 0,
+        truncated: false,
+        estimatedTokens: MemoryService.estimateTokens(ctx),
+        tokenBudget,
+        candidatesFound,
+      };
+    }
+
+    const preamble = '## Memory Context\n\n';
+    let assembled = preamble;
+    let included = 0;
+    let truncated = false;
+
+    for (const m of memories) {
+      const date = m.createdAt.toISOString().slice(0, 10);
+      const tagPart = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : '';
+      const entryHeader = `### [${date}]${tagPart}\n`;
+
+      const currentTokens = MemoryService.estimateTokens(assembled);
+      const headerTokens = MemoryService.estimateTokens(entryHeader);
+      // -4: safety margin so ceil() rounding can't push us over budget.
+      // -3 below (in slice) matches the 3-char '...' suffix — keep both in sync.
+      const maxContentChars =
+        (tokenBudget - currentTokens - headerTokens) * 4 - 4;
+
+      if (maxContentChars <= 0) {
+        truncated = true;
+        break;
+      }
+
+      const contentTruncated = m.content.length > maxContentChars;
+      const content = contentTruncated
+        ? m.content.slice(0, maxContentChars - 3) + '...'
+        : m.content;
+      if (contentTruncated) truncated = true;
+
+      assembled += `${entryHeader}${content}\n`;
+      included++;
+
+      if (MemoryService.estimateTokens(assembled) >= tokenBudget) {
+        if (included < memories.length) truncated = true;
+        break;
+      }
+    }
+
+    return {
+      context: assembled,
+      memoryCount: included,
+      truncated,
+      estimatedTokens: MemoryService.estimateTokens(assembled),
+      tokenBudget,
+      candidatesFound,
     };
   }
 

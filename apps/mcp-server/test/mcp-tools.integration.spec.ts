@@ -133,6 +133,7 @@ describe('MCP Tools Integration', () => {
       list: jest.fn(),
       promote: jest.fn(),
       reindex: jest.fn(),
+      semanticSearch: jest.fn().mockResolvedValue([]),
     };
 
     const queueMock: Partial<jest.Mocked<ReindexQueueService>> = {
@@ -168,9 +169,9 @@ describe('MCP Tools Integration', () => {
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 19 tools', () => {
+    it('should register exactly 20 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(19);
+      expect(tools).toHaveLength(20);
     });
 
     it('should register all expected tool names', () => {
@@ -196,6 +197,8 @@ describe('MCP Tools Integration', () => {
       expect(names).toContain('load_context');
       // C2 tools
       expect(names).toContain('ingest_conversation');
+      // C3 tools
+      expect(names).toContain('prompt_context');
     });
 
     it('should attach a callable handler to each tool', () => {
@@ -878,6 +881,106 @@ describe('MCP Tools Integration', () => {
       expect(text(createResp)).toContain('Created short-term memory');
       expect(text(getResp)).toContain(MEMORY_ID);
       expect(text(deleteResp)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // prompt_context
+  // -------------------------------------------------------------------------
+  describe('prompt_context tool', () => {
+    it('should return a context block and token metadata', async () => {
+      ltmService.semanticSearch.mockResolvedValue([
+        {
+          memory: makeLtmMemory({ content: 'NestJS uses DI throughout' }),
+          score: 0.9,
+        },
+      ]);
+
+      const response = await controller.promptContext({
+        userId: USER_ID,
+        query: 'dependency injection',
+        tokenBudget: 2000,
+      });
+
+      const contextText = response.content[0]!.text;
+      expect(contextText).toContain('NestJS uses DI throughout');
+
+      const meta = JSON.parse(response.content[1]!.text) as {
+        memoryCount: number;
+        estimatedTokens: number;
+        tokenBudget: number;
+        truncated: boolean;
+        candidatesFound: number;
+      };
+      expect(meta.memoryCount).toBe(1);
+      expect(meta.tokenBudget).toBe(2000);
+      expect(meta.estimatedTokens).toBeLessThanOrEqual(2000);
+      expect(meta.truncated).toBe(false);
+      expect(meta.candidatesFound).toBe(1);
+    });
+
+    it('should return (no memories) when no hits pass minScore', async () => {
+      ltmService.semanticSearch.mockResolvedValue([
+        { memory: makeLtmMemory(), score: 0.2 },
+      ]);
+
+      const response = await controller.promptContext({
+        userId: USER_ID,
+        query: 'very specific niche topic',
+        tokenBudget: 500,
+        minScore: 0.8,
+      });
+
+      expect(response.content[0]!.text).toBe('(no memories)');
+    });
+
+    it('should respect token budget when multiple memories are returned', async () => {
+      const bigContent = 'a'.repeat(4000); // ~1000 tokens each
+      ltmService.semanticSearch.mockResolvedValue(
+        Array.from({ length: 5 }, () => ({
+          memory: makeLtmMemory({ content: bigContent }),
+          score: 0.85,
+        })),
+      );
+
+      const response = await controller.promptContext({
+        userId: USER_ID,
+        query: 'large context',
+        tokenBudget: 500,
+      });
+
+      const meta = JSON.parse(response.content[1]!.text) as {
+        estimatedTokens: number;
+        tokenBudget: number;
+        truncated: boolean;
+      };
+      expect(meta.estimatedTokens).toBeLessThanOrEqual(meta.tokenBudget);
+      expect(meta.truncated).toBe(true);
+    });
+
+    it('should throw wrapped error for invalid userId', async () => {
+      await expect(
+        controller.promptContext({
+          userId: 'bad-user',
+          query: 'some query',
+        }),
+      ).rejects.toThrow('Failed to assemble prompt context');
+    });
+
+    it('handler registered via getMcpTools() should be callable', async () => {
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      const tools = controller.getMcpTools();
+      const tool = tools.find((t) => t.name === 'prompt_context')!;
+      expect(tool).toBeDefined();
+      expect(typeof tool.handler).toBe('function');
+
+      const response = (await tool.handler({
+        userId: USER_ID,
+        query: 'test via handler',
+      })) as { content: Array<{ type: string; text: string }> };
+
+      expect(response.content[0]!.text).toBe('(no memories)');
     });
   });
 });
