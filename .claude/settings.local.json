@@ -48,7 +48,8 @@
       "Skill(run:*)",
       "Read(//home/qp/.claude/**)",
       "Bash(node --env-file=.env apps/mcp-server/dist/main.js)",
-      "Bash(echo \"PID: $!\")"
+      "Bash(echo \"PID: $!\")",
+      "Bash(gh repo *)"
     ],
     "deny": [],
     "ask": []
