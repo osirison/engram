@@ -1292,9 +1292,9 @@ export class MemoryLtmService {
     if (organizationId !== undefined) {
       where.organizationId = organizationId;
     }
-    // Always constrain by namespace. `scope ?? null` means an unscoped create
-    // only matches unscoped rows (scope IS NULL) and a scoped create only
-    // matches the same scope — never across the boundary.
+    // Always constrain by namespace for dedup. Note that `scope` is treated differently
+    // here than in read/update/delete paths: `undefined` means "unscoped only"
+    // (scope IS NULL), not "no scope filter".
     where.scope = scope ?? null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
