@@ -31,7 +31,7 @@ describe('Health Integration Tests', () => {
       pgvector: { status: 'up' },
     });
     memoryStoreHealthMock = jest.fn().mockReturnValue({
-      process: { status: 'up' },
+      'memory-store': { status: 'up' },
     });
 
     const module: TestingModule = await Test.createTestingModule({

@@ -78,7 +78,9 @@ export class MemoryLtmModule {
               useExisting: MemoryLtmService,
             },
           ],
-      exports: [LTM_PROVIDER, MemoryLtmService, InMemoryLtmAdapter, HybridTransientRetriever],
+      exports: useInProcess
+        ? [LTM_PROVIDER, MemoryLtmService, InMemoryLtmAdapter, HybridTransientRetriever]
+        : [LTM_PROVIDER, MemoryLtmService],
     };
   }
 }

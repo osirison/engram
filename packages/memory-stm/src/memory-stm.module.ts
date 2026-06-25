@@ -62,7 +62,9 @@ export class MemoryStmModule {
               useExisting: MemoryStmService,
             },
           ],
-      exports: [STM_PROVIDER, MemoryStmService, InMemoryStmAdapter],
+      exports: useInProcess
+        ? [STM_PROVIDER, MemoryStmService, InMemoryStmAdapter]
+        : [STM_PROVIDER, MemoryStmService],
     };
   }
 }

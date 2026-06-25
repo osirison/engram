@@ -54,7 +54,7 @@ export class HealthController {
     const capabilities = this.activeCapabilities();
     const indicators: Array<() => Promise<HealthIndicatorResult>> = [
       async (): Promise<HealthIndicatorResult> =>
-        Promise.resolve(this.memoryStoreHealth.isHealthy('process')),
+        Promise.resolve(this.memoryStoreHealth.isHealthy('memory-store')),
     ];
 
     if (capabilities.requiresDatabase) {
