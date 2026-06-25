@@ -3,7 +3,7 @@ import { PrismaModule } from '@engram/database';
 import { EmbeddingsModule } from '@engram/embeddings';
 import { VectorStoreModule } from '@engram/vector-store';
 import type { ProfileCapabilities } from '@engram/config';
-import { MemoryStmModule, STM_PROVIDER } from '@engram/memory-stm';
+import { MemoryStmModule } from '@engram/memory-stm';
 import { MemoryLtmService } from './memory-ltm.service.js';
 import { ImportanceScoringService } from './importance.service.js';
 import { DuplicateDetectionService } from './duplicate-detection.service.js';
@@ -46,7 +46,12 @@ export class MemoryLtmModule {
       module: MemoryLtmModule,
       imports: useInProcess
         ? [MemoryStmModule.forRoot(capabilities), EmbeddingsModule, VectorStoreModule]
-        : [PrismaModule, EmbeddingsModule, VectorStoreModule, MemoryStmModule],
+        : [
+            PrismaModule,
+            EmbeddingsModule,
+            VectorStoreModule,
+            MemoryStmModule.forRoot(capabilities),
+          ],
       providers: useInProcess
         ? [
             InMemoryLtmAdapter,
@@ -73,13 +78,7 @@ export class MemoryLtmModule {
               useExisting: MemoryLtmService,
             },
           ],
-      exports: [
-        LTM_PROVIDER,
-        MemoryLtmService,
-        InMemoryLtmAdapter,
-        HybridTransientRetriever,
-        STM_PROVIDER,
-      ],
+      exports: [LTM_PROVIDER, MemoryLtmService, InMemoryLtmAdapter, HybridTransientRetriever],
     };
   }
 }

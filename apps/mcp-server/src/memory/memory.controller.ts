@@ -1,4 +1,10 @@
-import { Controller, Injectable, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import type { Tool } from '@engram/core';
 import { DeploymentProfile, resolveCapabilities } from '@engram/config';
 import {
@@ -109,7 +115,9 @@ export class MemoryController {
 
   constructor(
     private readonly memoryService: MemoryService,
-    private readonly reindexQueue: ReindexQueueService,
+    @Optional()
+    @Inject(ReindexQueueService)
+    private readonly reindexQueue: ReindexQueueService | null,
     private readonly consolidation: ConsolidationService,
   ) {
     this.activeProfile = resolveActiveProfile();
@@ -514,6 +522,11 @@ export class MemoryController {
     try {
       this.logger.debug('queue_reindex_memories tool called');
 
+      if (!this.reindexQueue) {
+        throw new Error(
+          'Reindex queue is not available in this deployment profile',
+        );
+      }
       const validatedInput: ReindexQueueToolInput =
         reindexQueueToolSchema.parse(input);
       this.assertAdminAuthorized(
@@ -563,6 +576,11 @@ export class MemoryController {
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('get_reindex_status tool called');
+      if (!this.reindexQueue) {
+        throw new Error(
+          'Reindex queue is not available in this deployment profile',
+        );
+      }
 
       const validatedInput: ReindexStatusToolInput =
         reindexStatusToolSchema.parse(input);
@@ -613,6 +631,11 @@ export class MemoryController {
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('cancel_reindex_job tool called');
+      if (!this.reindexQueue) {
+        throw new Error(
+          'Reindex queue is not available in this deployment profile',
+        );
+      }
 
       const validatedInput: ReindexCancelToolInput =
         reindexCancelToolSchema.parse(input);
@@ -663,6 +686,11 @@ export class MemoryController {
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('retry_reindex_job tool called');
+      if (!this.reindexQueue) {
+        throw new Error(
+          'Reindex queue is not available in this deployment profile',
+        );
+      }
 
       const validatedInput: ReindexRetryToolInput =
         reindexRetryToolSchema.parse(input);

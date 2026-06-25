@@ -39,7 +39,7 @@ export class HealthModule {
       providers.push(PrismaService, PrismaHealthIndicator);
     }
     if (capabilities.requiresRedis) {
-      imports.push(RedisModule);
+      imports.push(RedisModule.forRoot());
       providers.push(RedisService, RedisHealthIndicator);
     }
     if (capabilities.requiresQdrant) {
@@ -53,6 +53,7 @@ export class HealthModule {
 
     return {
       module: HealthModule,
+      imports,
       controllers: [HealthController],
       providers,
       exports: providers,

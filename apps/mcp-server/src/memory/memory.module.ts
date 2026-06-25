@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  Module,
+  type DynamicModule,
+  type Provider,
+  type Type,
+} from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MemoryStmModule } from '@engram/memory-stm';
 import { MemoryLtmModule } from '@engram/memory-ltm';
@@ -10,28 +15,46 @@ import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
 import { InsightExtractionService } from './insight-extraction.service';
+import type { ProfileCapabilities } from '@engram/config';
 
-@Module({
-  imports: [
-    ScheduleModule.forRoot(),
-    MemoryStmModule,
-    MemoryLtmModule,
-    PrismaModule,
-    RedisModule,
-  ],
-  controllers: [MemoryController],
-  providers: [
-    MemoryService,
-    ReindexQueueService,
-    ConsolidationService,
-    DecayService,
-    InsightExtractionService,
-  ],
-  exports: [
-    MemoryService,
-    ConsolidationService,
-    DecayService,
-    InsightExtractionService,
-  ],
-})
-export class MemoryModule {}
+@Module({})
+export class MemoryModule {
+  static forRoot(capabilities: ProfileCapabilities): DynamicModule {
+    const imports: Array<Type<unknown> | DynamicModule> = [
+      ScheduleModule.forRoot(),
+      MemoryStmModule.forRoot(capabilities),
+      MemoryLtmModule.forRoot(capabilities),
+    ];
+
+    if (capabilities.requiresDatabase) {
+      imports.push(PrismaModule);
+    }
+    if (capabilities.requiresRedis) {
+      imports.push(RedisModule.forRoot());
+    }
+
+    const providers: Provider[] = [
+      MemoryService,
+      ConsolidationService,
+      DecayService,
+      InsightExtractionService,
+    ];
+
+    if (capabilities.requiresRedis) {
+      providers.push(ReindexQueueService);
+    }
+
+    return {
+      module: MemoryModule,
+      imports,
+      controllers: [MemoryController],
+      providers,
+      exports: [
+        MemoryService,
+        ConsolidationService,
+        DecayService,
+        InsightExtractionService,
+      ],
+    };
+  }
+}

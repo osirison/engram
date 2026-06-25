@@ -24,22 +24,20 @@ const logger = new Logger('MemoryStmModule');
  * `MemoryStmModule` (default export) is still usable for tests and
  * non-profile consumers.
  */
-@Module({
-  imports: [RedisModule, EmbeddingsModule],
-  providers: [RedisService, MemoryStmService],
-  exports: [MemoryStmService],
-})
+@Module({})
 export class MemoryStmModule {
   static forRoot(capabilities: ProfileCapabilities): DynamicModule {
-    const useInProcess = capabilities.profile === 'memory';
+    const useInProcess = !capabilities.requiresRedis;
 
     if (useInProcess) {
-      logger.log('Profile=memory: wiring in-process STM adapter (no Redis required)');
+      logger.log(
+        `Profile=${capabilities.profile}: wiring in-process STM adapter (no Redis required)`
+      );
     }
 
     return {
       module: MemoryStmModule,
-      imports: useInProcess ? [EmbeddingsModule] : [RedisModule, EmbeddingsModule],
+      imports: useInProcess ? [EmbeddingsModule] : [RedisModule.forRoot(), EmbeddingsModule],
       providers: useInProcess
         ? [
             InMemoryStmAdapter,

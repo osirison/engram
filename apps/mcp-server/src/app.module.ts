@@ -65,14 +65,14 @@ function buildImportsForProfile(
     McpModule,
     ApiKeysModule,
     HealthModule.forRoot(capabilities),
-    MemoryModule,
+    MemoryModule.forRoot(capabilities),
   ];
 
   if (capabilities.requiresDatabase) {
     imports.push(PrismaModule);
   }
   if (capabilities.requiresRedis) {
-    imports.push(RedisModule);
+    imports.push(RedisModule.forRoot());
   }
   if (capabilities.requiresQdrant) {
     imports.push(QdrantModule);
