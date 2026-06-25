@@ -1,14 +1,10 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
-import { PrismaModule, PrismaService } from '@engram/database';
+import { PrismaModule } from '@engram/database';
 import { EmbeddingsModule } from '@engram/embeddings';
-import { RedisModule, RedisService } from '@engram/redis';
-import {
-  QdrantModule,
-  QdrantService,
-  VectorStoreModule,
-} from '@engram/vector-store';
+import { RedisModule } from '@engram/redis';
+import { QdrantModule, VectorStoreModule } from '@engram/vector-store';
 import type { ProfileCapabilities } from '@engram/config';
 import { HealthController } from './health.controller';
 import { PrismaHealthIndicator } from './prisma.health';
@@ -36,19 +32,15 @@ export class HealthModule {
 
     if (capabilities.requiresDatabase) {
       imports.push(PrismaModule);
-      providers.push(PrismaService, PrismaHealthIndicator);
+      providers.push(PrismaHealthIndicator);
     }
     if (capabilities.requiresRedis) {
       imports.push(RedisModule.forRoot());
-      providers.push(RedisService, RedisHealthIndicator);
+      providers.push(RedisHealthIndicator);
     }
     if (capabilities.requiresQdrant) {
       imports.push(QdrantModule, VectorStoreModule);
-      providers.push(
-        QdrantService,
-        QdrantHealthIndicator,
-        PgVectorHealthIndicator,
-      );
+      providers.push(QdrantHealthIndicator, PgVectorHealthIndicator);
     }
 
     return {

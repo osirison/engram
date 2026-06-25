@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
-import { REDIS_CLIENT } from './redis.module.js';
+import { REDIS_CLIENT } from './redis.tokens.js';
 
 /**
  * Shape of the active Redis client. The production path is a real

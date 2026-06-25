@@ -1,5 +1,5 @@
 import { Module, type DynamicModule, Logger } from '@nestjs/common';
-import { RedisModule, RedisService } from '@engram/redis';
+import { RedisModule } from '@engram/redis';
 import { EmbeddingsModule } from '@engram/embeddings';
 import { MemoryStmService } from './memory-stm.service.js';
 import { InMemoryStmAdapter } from './adapters/inmemory-stm.adapter.js';
@@ -55,7 +55,6 @@ export class MemoryStmModule {
             },
           ]
         : [
-            RedisService,
             MemoryStmService,
             {
               provide: STM_PROVIDER,

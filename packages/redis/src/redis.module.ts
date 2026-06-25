@@ -1,14 +1,9 @@
 import { Module, Logger, type DynamicModule } from '@nestjs/common';
 import Redis from 'ioredis';
 import { RedisService } from './redis.service.js';
+import { REDIS_CLIENT } from './redis.tokens.js';
 
-/**
- * Token under which the active Redis client is published. The default
- * `ioredis` client is used for profile-enterprise / profile-lite; a
- * process-local Map-based stub is used for profile-memory so the
- * dependency graph still wires a stable injection target.
- */
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+export { REDIS_CLIENT };
 
 const logger = new Logger('RedisModule');
 
