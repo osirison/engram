@@ -23,8 +23,6 @@ export class HybridTransientRetriever {
   private postings: Map<string, string[]> = new Map();
   /** memory id -> normalized vector */
   private vectors: Map<string, number[]> = new Map();
-  /** memory id -> magnitude of the original vector, for cosine re-use */
-  private magnitudes: Map<string, number> = new Map();
 
   /**
    * Rebuild the in-memory index from the supplied memories. The retriever
@@ -35,7 +33,6 @@ export class HybridTransientRetriever {
     this.memories = [...memories];
     this.postings.clear();
     this.vectors.clear();
-    this.magnitudes.clear();
 
     for (const memory of this.memories) {
       // Lexical postings: tokenize on non-word boundaries, lowercase,
@@ -54,11 +51,10 @@ export class HybridTransientRetriever {
         }
       }
 
-      // Vector index: only when the memory actually has an embedding.
+      // Vector index: store the unit-normalized vector so dot product == cosine.
       if (memory.embedding && memory.embedding.length > 0) {
-        const norm = this.normalize(memory.embedding);
-        this.vectors.set(memory.id, norm.normalized);
-        this.magnitudes.set(memory.id, norm.magnitude);
+        const { normalized } = this.normalize(memory.embedding);
+        this.vectors.set(memory.id, normalized);
       }
     }
     this.logger.debug(
@@ -149,16 +145,15 @@ export class HybridTransientRetriever {
     if (this.vectors.size === 0) {
       return [];
     }
-    const { normalized: queryNorm, magnitude: queryMag } = this.normalize(embedding);
-    if (queryNorm.every((v) => v === 0) || queryMag === 0) {
+    const { normalized: queryNorm } = this.normalize(embedding);
+    if (queryNorm.every((v) => v === 0)) {
       return [];
     }
+    // Both queryNorm and each stored vec are unit vectors, so their dot
+    // product equals cosine similarity directly — no further division needed.
     const scored: Array<{ id: string; score: number }> = [];
     for (const [id, vec] of this.vectors.entries()) {
-      const dot = this.dotProduct(queryNorm, vec);
-      const denom = queryMag * (this.magnitudes.get(id) ?? 0);
-      if (denom === 0) continue;
-      const cosine = dot / denom;
+      const cosine = this.dotProduct(queryNorm, vec);
       scored.push({ id, score: cosine });
     }
     scored.sort((a, b) => {

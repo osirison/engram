@@ -65,20 +65,16 @@ default.
 
 ```bash
 npm exec --yes pnpm@11.4.0 -- install
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  npm exec --yes pnpm@11.4.0 -- db:migrate
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  npm exec --yes pnpm@11.4.0 -- build
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+# Generate the encryption key once and persist it — reusing the same key
+# across commands ensures previously-written records remain decryptable.
+echo "LOCAL_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.4.0 -- db:migrate
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.4.0 -- build
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
 ```
 
-Generate a fresh key per host. The server refuses to start in production
-without `LOCAL_ENCRYPTION_KEY`; in development it derives an ephemeral key
-with a loud warning.
+The server refuses to start in production without `LOCAL_ENCRYPTION_KEY`;
+in development it derives an ephemeral key with a loud warning.
 
 ### profile-enterprise — full stack
 

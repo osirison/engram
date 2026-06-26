@@ -115,7 +115,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.hasConnected) {
+    // Always disconnect for database-capable profiles; $disconnect() is
+    // safe to call even when no connection was established (e.g. profile=lite
+    // with lazy connect that never fired).
+    if (this.profile !== 'memory') {
       await this.$disconnect();
     }
   }

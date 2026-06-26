@@ -28,55 +28,64 @@ export class PostgresCheckpointBackend implements MigrationCheckpointBackend {
    */
   async save(checkpoint: MigrationCheckpoint): Promise<void> {
     const parsed = migrationCheckpointSchema.parse(checkpoint);
-    const existing = await this.prisma.migrationCheckpoint.findUnique({
-      where: { id: parsed.id },
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.migrationCheckpoint.findUnique({
+          where: { id: parsed.id },
+        });
 
-    if (!existing) {
-      await this.prisma.migrationCheckpoint.create({
-        data: {
-          id: parsed.id,
-          sourceProfile: parsed.sourceProfile,
-          targetProfile: parsed.targetProfile,
-          state: parsed.state,
-          cursor: parsed.cursor,
-          progress: parsed.progress,
-          totalItems: parsed.totalItems,
-          startedAt: new Date(parsed.startedAt),
-          updatedAt: new Date(parsed.updatedAt),
-          completedAt: parsed.completedAt ? new Date(parsed.completedAt) : null,
-          sourceManifestHash: parsed.sourceManifestHash,
-          history: parsed.history,
-        },
-      });
-      return;
-    }
+        if (!existing) {
+          await tx.migrationCheckpoint.create({
+            data: {
+              id: parsed.id,
+              sourceProfile: parsed.sourceProfile,
+              targetProfile: parsed.targetProfile,
+              state: parsed.state,
+              cursor: parsed.cursor,
+              progress: parsed.progress,
+              totalItems: parsed.totalItems,
+              startedAt: new Date(parsed.startedAt),
+              updatedAt: new Date(parsed.updatedAt),
+              completedAt: parsed.completedAt
+                ? new Date(parsed.completedAt)
+                : null,
+              sourceManifestHash: parsed.sourceManifestHash,
+              history: parsed.history,
+            },
+          });
+          return;
+        }
 
-    // Refuse to regress the state machine — caller's responsibility is
-    // to validate transitions before calling `save`, but a defensive
-    // guard here makes the intent explicit.
-    if (!canAdvance(existing.state, parsed.state)) {
-      throw new Error(
-        `PostgresCheckpointBackend refused to regress state for ${parsed.id}: ` +
-          `${existing.state} -> ${parsed.state}`,
-      );
-    }
+        // Refuse to regress the state machine — caller's responsibility is
+        // to validate transitions before calling `save`, but a defensive
+        // guard here makes the intent explicit.
+        if (!canAdvance(existing.state, parsed.state)) {
+          throw new Error(
+            `PostgresCheckpointBackend refused to regress state for ${parsed.id}: ` +
+              `${existing.state} -> ${parsed.state}`,
+          );
+        }
 
-    await this.prisma.migrationCheckpoint.update({
-      where: { id: parsed.id },
-      data: {
-        sourceProfile: parsed.sourceProfile,
-        targetProfile: parsed.targetProfile,
-        state: parsed.state,
-        cursor: parsed.cursor,
-        progress: parsed.progress,
-        totalItems: parsed.totalItems,
-        updatedAt: new Date(parsed.updatedAt),
-        completedAt: parsed.completedAt ? new Date(parsed.completedAt) : null,
-        sourceManifestHash: parsed.sourceManifestHash,
-        history: parsed.history,
+        await tx.migrationCheckpoint.update({
+          where: { id: parsed.id },
+          data: {
+            sourceProfile: parsed.sourceProfile,
+            targetProfile: parsed.targetProfile,
+            state: parsed.state,
+            cursor: parsed.cursor,
+            progress: parsed.progress,
+            totalItems: parsed.totalItems,
+            updatedAt: new Date(parsed.updatedAt),
+            completedAt: parsed.completedAt
+              ? new Date(parsed.completedAt)
+              : null,
+            sourceManifestHash: parsed.sourceManifestHash,
+            history: parsed.history,
+          },
+        });
       },
-    });
+      { isolationLevel: 'Serializable' },
+    );
   }
 
   async load(id: string): Promise<MigrationCheckpoint | null> {

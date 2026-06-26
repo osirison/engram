@@ -35,11 +35,15 @@ export class MemoryLiteModule {
       providers: [
         {
           provide: LITE_STORE_TOKEN,
-          useFactory: () => getLiteStore(resolved.dataDir, resolved.encryptionKey),
+          useFactory: async (): Promise<LiteJsonStore> => {
+            await assertSecureStartup(resolved);
+            return getLiteStore(resolved.dataDir, resolved.encryptionKey);
+          },
         },
         {
           provide: LiteJsonStore,
-          useFactory: () => new LiteJsonStore(resolved.dataDir, resolved.encryptionKey),
+          inject: [LITE_STORE_TOKEN],
+          useFactory: (store: LiteJsonStore) => store,
         },
         {
           provide: 'MEMORY_LITE_OPTIONS',

@@ -19,7 +19,7 @@ import { LoggerModule } from 'nestjs-pino';
  * the redaction applies to every NestJS logger in the application graph
  * and to the HTTP request logger attached by nestjs-pino.
  */
-const REDACT_PATHS: ReadonlyArray<string> = [
+export const REDACT_PATHS: ReadonlyArray<string> = [
   'adminToken',
   '*.adminToken',
   'authorization',

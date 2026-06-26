@@ -1,7 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
-import { PrismaModule } from '@engram/database';
 import { EmbeddingsModule } from '@engram/embeddings';
 import { RedisModule } from '@engram/redis';
 import { QdrantModule, VectorStoreModule } from '@engram/vector-store';
@@ -31,7 +30,8 @@ export class HealthModule {
     ];
 
     if (capabilities.requiresDatabase) {
-      imports.push(PrismaModule);
+      // PrismaModule is @Global() — no re-import needed; PrismaService is
+      // available from the root context already.
       providers.push(PrismaHealthIndicator);
     }
     if (capabilities.requiresRedis) {

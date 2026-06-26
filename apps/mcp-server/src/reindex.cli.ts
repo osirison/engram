@@ -96,4 +96,6 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+void main().finally(() => {
+  process.exit(process.exitCode ?? 0);
+});

@@ -1249,10 +1249,14 @@ export class MemoryController {
     if (capabilities.profile === DeploymentProfile.MEMORY) {
       exclude.add('reindex_memories');
       exclude.add('queue_reindex_memories');
+      exclude.add('get_reindex_status');
       exclude.add('cancel_reindex_job');
+      exclude.add('retry_reindex_job');
     } else if (capabilities.profile === DeploymentProfile.LITE) {
       exclude.add('queue_reindex_memories');
+      exclude.add('get_reindex_status');
       exclude.add('cancel_reindex_job');
+      exclude.add('retry_reindex_job');
     }
 
     if (exclude.size === 0) {

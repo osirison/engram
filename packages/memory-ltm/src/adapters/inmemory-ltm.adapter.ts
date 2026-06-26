@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { EmbeddingsService } from '@engram/embeddings';
 import { type Memory } from '@engram/database';
 import { STM_PROVIDER } from '@engram/memory-stm';
+import { HybridTransientRetriever } from '../retrieval/hybrid-transient-retriever.js';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -50,7 +51,8 @@ export class InMemoryLtmAdapter {
 
   constructor(
     @Optional() private readonly embeddingsService?: EmbeddingsService,
-    @Optional() @Inject(STM_PROVIDER) private readonly stmProvider?: unknown
+    @Optional() @Inject(STM_PROVIDER) private readonly stmProvider?: unknown,
+    @Optional() private readonly retriever?: HybridTransientRetriever
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
   }
@@ -263,17 +265,45 @@ export class InMemoryLtmAdapter {
     });
   }
 
-  /**
-   * Semantic search is unsupported in profile-memory because there is no
-   * vector store. Returns an empty array so callers that do not check for
-   * `null` continue to work.
-   */
   async semanticSearch(
-    _userId: string,
-    _query: string,
-    _options?: SemanticSearchOptions
+    userId: string,
+    query: string,
+    options?: SemanticSearchOptions
   ): Promise<SemanticSearchResult[]> {
-    return [];
+    if (!this.retriever) return [];
+
+    const ids = this.byUser.get(userId);
+    if (!ids || ids.size === 0) return [];
+
+    let candidates = [...ids]
+      .map((id) => this.memories.get(id))
+      .filter((m): m is LtmMemory => m !== undefined);
+
+    if (options?.organizationId) {
+      candidates = candidates.filter((m) => m.organizationId === options.organizationId);
+    }
+    if (options?.tags && options.tags.length > 0) {
+      candidates = candidates.filter((m) => options.tags!.some((t) => m.tags.includes(t)));
+    }
+    if (options?.createdFrom) {
+      candidates = candidates.filter((m) => m.createdAt >= options.createdFrom!);
+    }
+    if (options?.createdTo) {
+      candidates = candidates.filter((m) => m.createdAt <= options.createdTo!);
+    }
+
+    if (candidates.length === 0) return [];
+
+    this.retriever.index(candidates);
+
+    let embedding: number[] | undefined;
+    if (this.embeddingsService) {
+      const result = await this.embeddingsService.generate({ text: query }).catch(() => null);
+      embedding = result?.embedding ?? undefined;
+    }
+
+    const topK = options?.limit ?? 10;
+    return this.retriever.search(query, embedding, topK);
   }
 
   /**

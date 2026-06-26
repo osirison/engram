@@ -1,44 +1,6 @@
 import { Writable } from 'node:stream';
 import pino from 'pino';
-
-/**
- * Pino redaction paths used by LoggingModule.
- *
- * Mirrored here so we can assert redaction without booting the full
- * NestJS application graph. The constants are intentionally duplicated
- * (rather than imported) so the test fails loudly if the production list
- * diverges from the expected set.
- *
- * Note: pino's redact paths use `*` for one path segment and `**` for
- * any depth. We list both single-segment and top-level variants so the
- * redaction applies whether the secret is logged at the root of the
- * record or nested inside a metadata / options object.
- */
-const REDACT_PATHS: ReadonlyArray<string> = [
-  'adminToken',
-  '*.adminToken',
-  'authorization',
-  '*.authorization',
-  'apiKey',
-  '*.apiKey',
-  'api_key',
-  '*.api_key',
-  'OPENAI_API_KEY',
-  '*.OPENAI_API_KEY',
-  'openaiApiKey',
-  '*.openaiApiKey',
-  'jwtSecret',
-  '*.jwtSecret',
-  'JWT_SECRET',
-  '*.JWT_SECRET',
-  'MCP_ADMIN_TOKEN',
-  '*.MCP_ADMIN_TOKEN',
-  'metadata.secrets',
-  'metadata.admin',
-  'req.headers.authorization',
-  'req.headers["mcp-admin-token"]',
-  'res.headers["set-cookie"]',
-];
+import { REDACT_PATHS } from '@engram/core';
 
 interface PinoPayload {
   adminToken?: string;
