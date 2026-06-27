@@ -569,7 +569,12 @@ describe('MemoryLtmService', () => {
 
       const result = await service.promote(mockUserId, mockMemoryId);
 
-      expect(stmService.findById).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
+      expect(stmService.findById).toHaveBeenCalledWith(
+        mockUserId,
+        mockMemoryId,
+        undefined,
+        undefined
+      );
       expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
       expect(result).toEqual(
         expect.objectContaining({

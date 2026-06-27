@@ -24,6 +24,8 @@ export interface LtmMemory extends Memory {
 export interface CreateLtmMemoryData {
   userId: string;
   organizationId?: string;
+  /** Optional namespace for agent/session/project isolation. */
+  scope?: string;
   content: string;
   metadata?: Record<string, unknown>;
   tags?: string[];
@@ -48,6 +50,8 @@ export interface LtmQueryOptions {
   limit?: number;
   cursor?: string;
   organizationId?: string;
+  /** Optional namespace filter; omit to return all scopes. */
+  scope?: string;
   tags?: string[];
   dateFrom?: Date;
   dateTo?: Date;
@@ -199,6 +203,7 @@ export interface DecayPolicyResult {
 export const createLtmMemorySchema = z.object({
   userId: userIdSchema,
   organizationId: z.string().cuid2().optional(),
+  scope: z.string().min(1).max(256).optional(),
   content: z.string().min(1, 'Content cannot be empty').max(10240, 'Content cannot exceed 10KB'),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   tags: z.array(z.string()).optional().default([]),
@@ -221,6 +226,7 @@ export const ltmQueryOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
   cursor: cursorIdSchema.optional(),
   organizationId: z.string().cuid2().optional(),
+  scope: z.string().min(1).max(256).optional(),
   tags: z.array(z.string()).optional(),
   dateFrom: z.date().optional(),
   dateTo: z.date().optional(),

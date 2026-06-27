@@ -56,6 +56,8 @@ export interface StmMemory extends Memory {
   accessCount: number;
   /** Organization scope; absent for personal (non-org) memories. */
   organizationId?: string;
+  /** Optional namespace for agent/session/project isolation. */
+  scope?: string;
 }
 
 // Validation schemas for STM operations
@@ -88,6 +90,7 @@ const ttlSchema = z
 export const createStmMemorySchema = z.object({
   userId: userIdSchema,
   organizationId: z.string().cuid2().optional(),
+  scope: z.string().min(1).max(256).optional(),
   content: contentSchema,
   metadata: metadataSchema,
   tags: tagsSchema.optional(),
@@ -111,6 +114,7 @@ export const listStmOptionsSchema = z.object({
     .default('0'),
   tags: z.array(z.string()).optional(),
   organizationId: z.string().cuid2().optional(),
+  scope: z.string().min(1).max(256).optional(),
 });
 
 // Type exports

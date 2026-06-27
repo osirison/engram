@@ -78,6 +78,8 @@ export interface Memory {
   id: string;
   userId: string;
   organizationId?: string | null;
+  /** Optional namespace for agent/session/project isolation. */
+  scope?: string | null;
   content: string;
   metadata?: Record<string, unknown> | null;
   tags: string[];

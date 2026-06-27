@@ -85,7 +85,12 @@ describe('MemoryService Promotion Integration', () => {
       const result = await service.promoteMemory(TEST_USER_ID, STM_ID);
 
       expect(result).toEqual(promoted);
-      expect(ltmService.promote).toHaveBeenCalledWith(TEST_USER_ID, STM_ID);
+      expect(ltmService.promote).toHaveBeenCalledWith(
+        TEST_USER_ID,
+        STM_ID,
+        undefined,
+        undefined,
+      );
       expect(ltmService.promote).toHaveBeenCalledTimes(1);
     });
 
@@ -202,10 +207,14 @@ describe('MemoryService Promotion Integration', () => {
       expect(stmService.findById).toHaveBeenCalledWith(
         TEST_USER_ID,
         promotedResult.id,
+        undefined,
+        undefined,
       );
       expect(ltmService.get).toHaveBeenCalledWith(
         TEST_USER_ID,
         promotedResult.id,
+        undefined,
+        undefined,
       );
     });
   });

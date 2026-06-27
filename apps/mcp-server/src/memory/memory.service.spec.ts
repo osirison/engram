@@ -137,7 +137,12 @@ describe('MemoryService', () => {
       const result = await service.getMemory('user-1', 'stm-123');
 
       expect(result).toEqual(mockStmMemory);
-      expect(stmService.findById).toHaveBeenCalledWith('user-1', 'stm-123');
+      expect(stmService.findById).toHaveBeenCalledWith(
+        'user-1',
+        'stm-123',
+        undefined,
+        undefined,
+      );
       expect(ltmService.get).not.toHaveBeenCalled();
     });
 
@@ -150,8 +155,18 @@ describe('MemoryService', () => {
       const result = await service.getMemory('user-1', 'ltm-456');
 
       expect(result).toEqual(mockLtmMemory);
-      expect(stmService.findById).toHaveBeenCalledWith('user-1', 'ltm-456');
-      expect(ltmService.get).toHaveBeenCalledWith('user-1', 'ltm-456');
+      expect(stmService.findById).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-456',
+        undefined,
+        undefined,
+      );
+      expect(ltmService.get).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-456',
+        undefined,
+        undefined,
+      );
     });
 
     it('should return null if memory not found in either store', async () => {
@@ -173,6 +188,28 @@ describe('MemoryService', () => {
         'Redis connection failed',
       );
       expect(ltmService.get).not.toHaveBeenCalled();
+    });
+
+    it('forwards a provided scope to both STM and LTM lookups', async () => {
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError('ltm-456'),
+      );
+      ltmService.get.mockResolvedValue(mockLtmMemory);
+
+      await service.getMemory('user-1', 'ltm-456', 'agent:alpha');
+
+      expect(stmService.findById).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-456',
+        undefined,
+        'agent:alpha',
+      );
+      expect(ltmService.get).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-456',
+        undefined,
+        'agent:alpha',
+      );
     });
   });
 
@@ -321,6 +358,34 @@ describe('MemoryService', () => {
       expect(result.startCursor).toBeUndefined();
       expect(result.endCursor).toBeUndefined();
     });
+
+    it('forwards the scope filter to BOTH the STM and LTM list calls', async () => {
+      stmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      ltmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      await service.listMemories('user-1', { limit: 20, scope: 'agent:alpha' });
+
+      // Regression: STM previously dropped the scope filter, leaking other
+      // namespaces' short-term memories into a scoped list.
+      expect(stmService.list).toHaveBeenCalledWith('user-1', {
+        limit: 20,
+        scope: 'agent:alpha',
+      });
+      expect(ltmService.list).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ scope: 'agent:alpha' }),
+      );
+    });
   });
 
   describe('updateMemory', () => {
@@ -336,12 +401,18 @@ describe('MemoryService', () => {
       });
 
       expect(result.content).toBe('Updated content');
-      expect(stmService.update).toHaveBeenCalledWith('user-1', 'stm-123', {
-        content: 'Updated content',
-        metadata: undefined,
-        tags: [],
-        ttl: undefined,
-      });
+      expect(stmService.update).toHaveBeenCalledWith(
+        'user-1',
+        'stm-123',
+        {
+          content: 'Updated content',
+          metadata: undefined,
+          tags: [],
+          ttl: undefined,
+        },
+        undefined,
+        undefined,
+      );
     });
 
     it('should update memory in LTM if not found in STM', async () => {
@@ -359,11 +430,17 @@ describe('MemoryService', () => {
       });
 
       expect(result.content).toBe('Updated content');
-      expect(ltmService.update).toHaveBeenCalledWith('user-1', 'ltm-456', {
-        content: 'Updated content',
-        metadata: undefined,
-        tags: undefined,
-      });
+      expect(ltmService.update).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-456',
+        {
+          content: 'Updated content',
+          metadata: undefined,
+          tags: undefined,
+        },
+        undefined,
+        undefined,
+      );
     });
 
     it('should throw NotFoundException if memory not found in either store', async () => {
@@ -398,7 +475,12 @@ describe('MemoryService', () => {
       const result = await service.deleteMemory('user-1', 'stm-123');
 
       expect(result).toBe(true);
-      expect(stmService.delete).toHaveBeenCalledWith('user-1', 'stm-123');
+      expect(stmService.delete).toHaveBeenCalledWith(
+        'user-1',
+        'stm-123',
+        undefined,
+        undefined,
+      );
     });
 
     it('should delete from LTM successfully', async () => {
@@ -410,7 +492,12 @@ describe('MemoryService', () => {
       const result = await service.deleteMemory('user-1', 'ltm-456');
 
       expect(result).toBe(true);
-      expect(ltmService.delete).toHaveBeenCalledWith('user-1', 'ltm-456');
+      expect(ltmService.delete).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-456',
+        undefined,
+        undefined,
+      );
     });
 
     it('should return false if not found in either store', async () => {
@@ -430,8 +517,18 @@ describe('MemoryService', () => {
 
       const result = await service.deleteMemory('user-1', 'dual-store-id');
 
-      expect(stmService.delete).toHaveBeenCalledWith('user-1', 'dual-store-id');
-      expect(ltmService.delete).toHaveBeenCalledWith('user-1', 'dual-store-id');
+      expect(stmService.delete).toHaveBeenCalledWith(
+        'user-1',
+        'dual-store-id',
+        undefined,
+        undefined,
+      );
+      expect(ltmService.delete).toHaveBeenCalledWith(
+        'user-1',
+        'dual-store-id',
+        undefined,
+        undefined,
+      );
       expect(result).toBe(true);
     });
 
@@ -456,6 +553,26 @@ describe('MemoryService', () => {
         'Database connection failed',
       );
     });
+
+    it('forwards a provided scope to both STM and LTM deletes', async () => {
+      stmService.delete.mockResolvedValue(undefined);
+      ltmService.delete.mockResolvedValue(true);
+
+      await service.deleteMemory('user-1', 'mem-1', 'agent:alpha');
+
+      expect(stmService.delete).toHaveBeenCalledWith(
+        'user-1',
+        'mem-1',
+        undefined,
+        'agent:alpha',
+      );
+      expect(ltmService.delete).toHaveBeenCalledWith(
+        'user-1',
+        'mem-1',
+        undefined,
+        'agent:alpha',
+      );
+    });
   });
 
   describe('promoteMemory', () => {
@@ -465,7 +582,12 @@ describe('MemoryService', () => {
       const result = await service.promoteMemory('user-1', 'stm-123');
 
       expect(result).toEqual(mockLtmMemory);
-      expect(ltmService.promote).toHaveBeenCalledWith('user-1', 'stm-123');
+      expect(ltmService.promote).toHaveBeenCalledWith(
+        'user-1',
+        'stm-123',
+        undefined,
+        undefined,
+      );
     });
   });
 

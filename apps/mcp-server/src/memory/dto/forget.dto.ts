@@ -28,6 +28,11 @@ export const forgetToolSchema = z
     confirm: z.boolean().optional().default(false),
     /** Minimum similarity score [0–1] for a memory to be considered a match */
     minScore: z.coerce.number().min(0).max(1).optional().default(0.6),
+    /**
+     * Optional namespace; when set, only memories in this scope are searched
+     * and deleted, so a scoped caller cannot forget another scope's memories.
+     */
+    scope: z.string().min(1).max(256).optional(),
   })
   .strict();
 

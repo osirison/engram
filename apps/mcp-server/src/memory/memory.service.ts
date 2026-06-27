@@ -25,11 +25,17 @@ type StmServiceContract = {
   create: (input: {
     userId: string;
     content: string;
+    scope?: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
     ttl?: number;
   }) => Promise<Memory>;
-  findById: (userId: string, memoryId: string) => Promise<Memory>;
+  findById: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory>;
   update: (
     userId: string,
     memoryId: string,
@@ -39,11 +45,18 @@ type StmServiceContract = {
       tags?: string[];
       ttl?: number;
     },
+    organizationId?: string,
+    scope?: string,
   ) => Promise<Memory>;
-  delete: (userId: string, memoryId: string) => Promise<void>;
+  delete: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<void>;
   list: (
     userId: string,
-    options: { limit: number },
+    options: { limit: number; scope?: string },
   ) => Promise<MemoryListResult>;
 };
 
@@ -51,11 +64,17 @@ type LtmServiceContract = {
   create: (input: {
     userId: string;
     content: string;
+    scope?: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
     skipDuplicateCheck?: boolean;
   }) => Promise<Memory>;
-  get: (userId: string, memoryId: string) => Promise<Memory | null>;
+  get: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory | null>;
   update: (
     userId: string,
     memoryId: string,
@@ -64,20 +83,33 @@ type LtmServiceContract = {
       metadata?: Record<string, unknown>;
       tags?: string[];
     },
+    organizationId?: string,
+    scope?: string,
   ) => Promise<Memory>;
-  delete: (userId: string, memoryId: string) => Promise<boolean>;
+  delete: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<boolean>;
   list: (
     userId: string,
     options: {
       limit: number;
       cursor?: string;
+      scope?: string;
       tags?: string[];
       search?: string;
       sortBy?: 'createdAt' | 'updatedAt';
       sortOrder?: 'asc' | 'desc';
     },
   ) => Promise<MemoryListResult>;
-  promote: (userId: string, memoryId: string) => Promise<Memory>;
+  promote: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory>;
   semanticSearch: (
     userId: string,
     query: string,
@@ -118,6 +150,7 @@ export interface CreateMemoryDto {
   userId: string;
   content: string;
   type: 'short-term' | 'long-term';
+  scope?: string;
   metadata?: Record<string, unknown>;
   tags?: string[];
   ttl?: number;
@@ -134,6 +167,7 @@ export interface UpdateMemoryDto {
 export interface ListMemoryOptions {
   limit?: number;
   cursor?: string;
+  scope?: string;
   tags?: string[];
   search?: string;
 }
@@ -200,6 +234,19 @@ export interface ContextBlock {
   charCount: number;
 }
 
+export interface PromptContextBlock {
+  /** Formatted text ready for prompt injection, ranked by relevance */
+  context: string;
+  memoryCount: number;
+  truncated: boolean;
+  /** Token estimate of the assembled block (~4 chars/token; may under-count for CJK/emoji) */
+  estimatedTokens: number;
+  /** The token budget that was requested */
+  tokenBudget: number;
+  /** Total candidates returned by semantic search before minScore filtering */
+  candidatesFound: number;
+}
+
 export interface IngestConversationResult {
   /** Number of chunks successfully stored as new memories */
   ingested: number;
@@ -242,6 +289,7 @@ export class MemoryService {
       return await this.stm.create({
         userId: dto.userId,
         content: dto.content,
+        scope: dto.scope,
         metadata: dto.metadata,
         tags: dto.tags,
         ttl: dto.ttl,
@@ -251,6 +299,7 @@ export class MemoryService {
       return await this.ltm.create({
         userId: dto.userId,
         content: dto.content,
+        scope: dto.scope,
         metadata: dto.metadata,
         tags: dto.tags,
         skipDuplicateCheck: dto.skipDuplicateCheck,
@@ -261,19 +310,34 @@ export class MemoryService {
   /**
    * Get a memory - tries STM first, then falls back to LTM
    */
-  async getMemory(userId: string, memoryId: string): Promise<Memory | null> {
+  async getMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<Memory | null> {
     this.logger.debug(`Getting memory ${memoryId} for user: ${userId}`);
 
     try {
-      // Try STM first (faster access)
-      const stmMemory = await this.stm.findById(userId, memoryId);
+      // Try STM first (faster access). Scope is forwarded so a namespaced
+      // caller cannot read another scope's memory by id.
+      const stmMemory = await this.stm.findById(
+        userId,
+        memoryId,
+        undefined,
+        scope,
+      );
       return stmMemory;
     } catch (error) {
       if (error instanceof StmMemoryNotFoundError) {
         // Not in STM, try LTM
         this.logger.debug(`Memory ${memoryId} not found in STM, checking LTM`);
         try {
-          const ltmMemory = await this.ltm.get(userId, memoryId);
+          const ltmMemory = await this.ltm.get(
+            userId,
+            memoryId,
+            undefined,
+            scope,
+          );
           return ltmMemory;
         } catch (ltmError) {
           if (ltmError instanceof LtmMemoryNotFoundError) {
@@ -305,11 +369,12 @@ export class MemoryService {
     // Note: STM list is not fully implemented yet, but we'll call it anyway
     const [stmResult, ltmResult] = await Promise.all([
       this.stm
-        .list(userId, { limit })
+        .list(userId, { limit, scope: options.scope })
         .catch(() => ({ items: [] as Memory[], totalCount: 0 })),
       this.ltm.list(userId, {
         limit,
         cursor: options.cursor,
+        scope: options.scope,
         tags: options.tags,
         search: options.search,
       }),
@@ -350,40 +415,59 @@ export class MemoryService {
     userId: string,
     memoryId: string,
     updates: UpdateMemoryDto,
+    scope?: string,
   ): Promise<Memory> {
     this.logger.debug(
       `Updating memory ${memoryId} for user: ${userId} with updates:`,
       updates,
     );
 
-    // Try to find the memory first to determine which service to use
+    // Try to find the memory first to determine which service to use. Scope is
+    // forwarded so a namespaced caller cannot locate or modify a foreign memory.
     try {
       // Try STM first
-      await this.stm.findById(userId, memoryId);
+      await this.stm.findById(userId, memoryId, undefined, scope);
 
       // Found in STM, update it
-      return await this.stm.update(userId, memoryId, {
-        content: updates.content,
-        metadata: updates.metadata,
-        tags: updates.tags ?? ([] as string[]),
-        ttl: updates.ttl,
-      });
+      return await this.stm.update(
+        userId,
+        memoryId,
+        {
+          content: updates.content,
+          metadata: updates.metadata,
+          tags: updates.tags ?? ([] as string[]),
+          ttl: updates.ttl,
+        },
+        undefined,
+        scope,
+      );
     } catch (error) {
       if (error instanceof StmMemoryNotFoundError) {
         // Not in STM, try LTM
         this.logger.debug(`Memory ${memoryId} not in STM, trying LTM`);
 
-        const ltmMemory = await this.ltm.get(userId, memoryId);
+        const ltmMemory = await this.ltm.get(
+          userId,
+          memoryId,
+          undefined,
+          scope,
+        );
         if (!ltmMemory) {
           throw new NotFoundException(`Memory ${memoryId} not found`);
         }
 
         // Update in LTM (TTL is ignored for LTM)
-        return await this.ltm.update(userId, memoryId, {
-          content: updates.content,
-          metadata: updates.metadata,
-          tags: updates.tags,
-        });
+        return await this.ltm.update(
+          userId,
+          memoryId,
+          {
+            content: updates.content,
+            metadata: updates.metadata,
+            tags: updates.tags,
+          },
+          undefined,
+          scope,
+        );
       }
       throw error;
     }
@@ -392,15 +476,20 @@ export class MemoryService {
   /**
    * Delete a memory - tries both STM and LTM
    */
-  async deleteMemory(userId: string, memoryId: string): Promise<boolean> {
+  async deleteMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<boolean> {
     this.logger.debug(`Deleting memory ${memoryId} for user: ${userId}`);
 
     let deletedFromStm = false;
     let deletedFromLtm = false;
 
-    // Try to delete from STM
+    // Try to delete from STM. Scope is forwarded so a namespaced caller cannot
+    // delete a memory that lives in a different scope.
     try {
-      await this.stm.delete(userId, memoryId);
+      await this.stm.delete(userId, memoryId, undefined, scope);
       deletedFromStm = true;
       this.logger.debug(`Memory ${memoryId} deleted from STM`);
     } catch (error) {
@@ -411,7 +500,12 @@ export class MemoryService {
 
     // Try to delete from LTM
     try {
-      deletedFromLtm = await this.ltm.delete(userId, memoryId);
+      deletedFromLtm = await this.ltm.delete(
+        userId,
+        memoryId,
+        undefined,
+        scope,
+      );
       if (deletedFromLtm) {
         this.logger.debug(`Memory ${memoryId} deleted from LTM`);
       }
@@ -428,13 +522,18 @@ export class MemoryService {
   /**
    * Promote a memory from STM to LTM
    */
-  async promoteMemory(userId: string, memoryId: string): Promise<Memory> {
+  async promoteMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<Memory> {
     this.logger.debug(
       `Promoting memory ${memoryId} from STM to LTM for user: ${userId}`,
     );
 
-    // Use LTM service's promote method which handles the transfer
-    return await this.ltm.promote(userId, memoryId);
+    // Use LTM service's promote method which handles the transfer. Scope is
+    // forwarded so a namespaced caller cannot promote a foreign-scope memory.
+    return await this.ltm.promote(userId, memoryId, undefined, scope);
   }
 
   /**
@@ -479,6 +578,7 @@ export class MemoryService {
     userId: string;
     content: string;
     type: 'auto' | 'short-term' | 'long-term';
+    scope?: string;
     metadata?: Record<string, unknown>;
     tags?: string[];
     ttl?: number;
@@ -493,6 +593,7 @@ export class MemoryService {
       userId: input.userId,
       content: input.content,
       type: resolvedType,
+      scope: input.scope,
       metadata: input.metadata,
       tags: input.tags,
       ttl: input.ttl,
@@ -513,9 +614,13 @@ export class MemoryService {
     limit: number;
     confirm: boolean;
     minScore: number;
+    scope?: string;
   }): Promise<ForgetResult> {
+    // Confine both the search and the deletion to the caller's namespace so a
+    // scoped `forget` cannot surface or remove memories from another scope.
     const hits = await this.ltm.semanticSearch(input.userId, input.query, {
       limit: input.limit,
+      scope: input.scope,
     });
 
     const candidates: ForgetCandidate[] = hits
@@ -529,7 +634,9 @@ export class MemoryService {
     let deleted = 0;
     if (input.confirm && candidates.length > 0) {
       const results = await Promise.allSettled(
-        candidates.map((c) => this.deleteMemory(input.userId, c.memoryId)),
+        candidates.map((c) =>
+          this.deleteMemory(input.userId, c.memoryId, input.scope),
+        ),
       );
       deleted = results.filter(
         (r) => r.status === 'fulfilled' && r.value,
@@ -617,6 +724,39 @@ export class MemoryService {
   }
 
   /**
+   * Assemble a token-budgeted context block ranked by query relevance.
+   * Uses a conservative ~4 chars/token estimate so the assembled block stays
+   * within the requested budget. Memories are greedy-packed in relevance order;
+   * content is truncated when a single memory exceeds the remaining budget.
+   */
+  async assemblePromptContext(input: {
+    userId: string;
+    query: string;
+    tokenBudget: number;
+    limit: number;
+    minScore: number;
+    scope?: string;
+    tags?: string[];
+    createdFrom?: Date;
+    createdTo?: Date;
+  }): Promise<PromptContextBlock> {
+    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
+      limit: input.limit,
+      scope: input.scope,
+      tags: input.tags,
+      createdFrom: input.createdFrom,
+      createdTo: input.createdTo,
+    });
+
+    const relevant = hits.filter((h) => h.score >= input.minScore);
+    return MemoryService.buildTokenBudgetedBlock(
+      relevant.map((h) => h.memory),
+      input.tokenBudget,
+      hits.length,
+    );
+  }
+
+  /**
    * Load the most relevant memories for a session opening.
    * Blends recency with importance so the agent is primed with both
    * fresh context and durable knowledge.
@@ -635,6 +775,7 @@ export class MemoryService {
             limit: input.recentLimit,
             sortBy: 'createdAt',
             sortOrder: 'desc',
+            scope: input.scope,
             tags: input.tags,
           })
         : Promise.resolve({ items: [] as Memory[] }),
@@ -643,6 +784,7 @@ export class MemoryService {
             limit: input.importantLimit * 3, // fetch extra, sort by importance, take top N
             sortBy: 'updatedAt',
             sortOrder: 'desc',
+            scope: input.scope,
             tags: input.tags,
           })
         : Promise.resolve({ items: [] as Memory[] }),
@@ -849,6 +991,85 @@ export class MemoryService {
       memoryCount: included,
       truncated,
       charCount: context.length,
+    };
+  }
+
+  /**
+   * Token estimate: ceil(chars / 4). Conservative for ASCII/English text; may
+   * severely under-count for CJK, emoji, or other multi-byte content where BPE
+   * models produce 4–6× more tokens per character. The budget guarantee only
+   * holds for predominantly ASCII input.
+   */
+  static estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Greedy-pack memories into a token-budgeted block, ranked by relevance order.
+   * Content is truncated when a single memory would otherwise overflow the budget.
+   * The assembled block is guaranteed to satisfy estimatedTokens ≤ tokenBudget.
+   */
+  static buildTokenBudgetedBlock(
+    memories: Memory[],
+    tokenBudget: number,
+    candidatesFound = 0,
+  ): PromptContextBlock {
+    if (memories.length === 0) {
+      const ctx = '(no memories)';
+      return {
+        context: ctx,
+        memoryCount: 0,
+        truncated: false,
+        estimatedTokens: MemoryService.estimateTokens(ctx),
+        tokenBudget,
+        candidatesFound,
+      };
+    }
+
+    const preamble = '## Memory Context\n\n';
+    let assembled = preamble;
+    let included = 0;
+    let truncated = false;
+
+    for (const m of memories) {
+      const date = m.createdAt.toISOString().slice(0, 10);
+      const tagPart = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : '';
+      const entryHeader = `### [${date}]${tagPart}\n`;
+
+      const currentTokens = MemoryService.estimateTokens(assembled);
+      const headerTokens = MemoryService.estimateTokens(entryHeader);
+      // -4: safety margin so ceil() rounding can't push us over budget.
+      // -3 below (in slice) matches the 3-char '...' suffix — keep both in sync.
+      const maxContentChars =
+        (tokenBudget - currentTokens - headerTokens) * 4 - 4;
+
+      if (maxContentChars <= 0) {
+        truncated = true;
+        break;
+      }
+
+      const contentTruncated = m.content.length > maxContentChars;
+      const content = contentTruncated
+        ? m.content.slice(0, maxContentChars - 3) + '...'
+        : m.content;
+      if (contentTruncated) truncated = true;
+
+      assembled += `${entryHeader}${content}\n`;
+      included++;
+
+      if (MemoryService.estimateTokens(assembled) >= tokenBudget) {
+        if (included < memories.length) truncated = true;
+        break;
+      }
+    }
+
+    return {
+      context: assembled,
+      memoryCount: included,
+      truncated,
+      estimatedTokens: MemoryService.estimateTokens(assembled),
+      tokenBudget,
+      candidatesFound,
     };
   }
 

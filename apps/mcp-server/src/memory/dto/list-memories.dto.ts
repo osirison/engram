@@ -6,6 +6,7 @@ export const listMemoriesToolSchema = z.object({
   type: z.enum(['short-term', 'long-term']).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
   cursor: cursorIdSchema.optional(),
+  scope: z.string().min(1).max(256).optional(),
   tags: z.array(z.string()).optional(),
   search: z.string().max(500).optional(),
 });
