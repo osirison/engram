@@ -48,7 +48,16 @@
       "Skill(run:*)",
       "Read(//home/qp/.claude/**)",
       "Bash(node --env-file=.env apps/mcp-server/dist/main.js)",
-      "Bash(echo \"PID: $!\")"
+      "Bash(echo \"PID: $!\")",
+      "Bash(DEPLOYMENT_PROFILE=memory EMBEDDING_PROVIDER=local timeout 15 node dist/main.js)",
+      "Bash(pkill -f \"dist/main.js\")",
+      "Bash(DEPLOYMENT_PROFILE=memory EMBEDDING_PROVIDER=local node dist/main.js)",
+      "Bash(DEPLOYMENT_PROFILE=enterprise DATABASE_URL=postgresql://postgres:postgres@localhost:5432/engram REDIS_URL=redis://localhost:6379 QDRANT_URL=http://127.0.0.1:6333 EMBEDDING_PROVIDER=disabled MCP_ADMIN_TOKEN=test-token timeout 8 node apps/mcp-server/dist/main.js)",
+      "Bash(DEPLOYMENT_PROFILE=memory EMBEDDING_PROVIDER=disabled MCP_ADMIN_TOKEN=test-token timeout 5 node apps/mcp-server/dist/main.js)",
+      "Bash(DEPLOYMENT_PROFILE=lite DATABASE_URL=postgresql://postgres:postgres@localhost:5432/engram EMBEDDING_PROVIDER=disabled MCP_ADMIN_TOKEN=test-token timeout 5 node apps/mcp-server/dist/main.js)",
+      "Bash(DEPLOYMENT_PROFILE=enterprise DATABASE_URL=postgresql://postgres:postgres@localhost:5432/engram REDIS_URL=redis://localhost:6379 QDRANT_URL=http://127.0.0.1:6333 EMBEDDING_PROVIDER=disabled MCP_ADMIN_TOKEN=test-token timeout 5 node apps/mcp-server/dist/main.js)",
+      "Bash(Read /tmp/claude-1000/-home-qp-Cloud-Projects-engram--worktrees-multi-tiered-memory/e57219bb-f9df-4c9f-9ee7-2d465eb0bef8/tasks/be0f68z4h.output)",
+      "Skill(code-review)"
     ],
     "deny": [],
     "ask": []
