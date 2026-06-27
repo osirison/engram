@@ -124,12 +124,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   /**
-   * Ensure the underlying client is connected before running a query.
-   *
-   * Public consumers that need DB access in profile=memory should
-   * never call this — the in-memory LTM adapter is the sanctioned
-   * path. profile=lite consumers should call `ensureConnected()` (or
-   * `getLtmProvider()`) before issuing Prisma queries.
+   * Optional pre-flight check: verifies DB connectivity before a batch
+   * operation. In profile=lite Prisma lazy-connects on the first query, so
+   * calling this is not required for correctness but lets callers fail-fast
+   * before a long operation. Throws in profile=memory (Postgres is forbidden).
    */
   async ensureConnected(): Promise<void> {
     if (this.profile === 'enterprise' || this.hasConnected) {
