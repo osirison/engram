@@ -15,6 +15,7 @@ import {
   enumerateLiteUsers,
   listLitePage,
 } from './lite-enumerator';
+import { resolveDataDir, sortKeys } from './migration-utils';
 
 /**
  * Result returned by a {@link BackfillService.run} invocation.
@@ -90,7 +91,7 @@ function decodeCursor(token: string | null): {
 export async function computeLiteManifestHash(
   store: LiteJsonStore,
 ): Promise<string> {
-  const dataDir = resolveDataDir(store);
+  const dataDir = resolveDataDir(store, 'BackfillService');
   const userIds = await enumerateLiteUsers(dataDir);
   userIds.sort();
   const hasher = createHash('sha256');
@@ -99,24 +100,6 @@ export async function computeLiteManifestHash(
     hasher.update(`${userId}:${total};`);
   }
   return hasher.digest('hex');
-}
-
-/**
- * Best-effort accessor for the lite-store data directory. The store's
- * `dataDir` is a `private readonly` field; the migration tooling is the
- * single legitimate consumer and it always knows the directory it
- * constructed the store with, so we read it via a tiny escape hatch
- * (`Reflect.get`) gated behind a typed check.
- */
-function resolveDataDir(store: LiteJsonStore): string {
-  const value = (store as unknown as { dataDir?: unknown }).dataDir;
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(
-      'BackfillService: LiteJsonStore.dataDir is not accessible. ' +
-        'Pass dataDir via options.dataDir when constructing BackfillService.',
-    );
-  }
-  return value;
 }
 
 /**
@@ -196,7 +179,7 @@ export class BackfillService {
     const resumeFrom =
       options.cursor !== undefined ? options.cursor : existing.cursor;
     const decoded = decodeCursor(resumeFrom);
-    const dataDir = resolveDataDir(this.liteStore);
+    const dataDir = resolveDataDir(this.liteStore, 'BackfillService');
     const allUsers = await enumerateLiteUsers(dataDir);
     allUsers.sort();
 
@@ -444,19 +427,6 @@ function normaliseMetadata(metadata: unknown): unknown {
   const keys = Object.keys(record);
   if (keys.length === 0) return null;
   return metadata;
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(record).sort()) {
-      out[key] = sortKeys(record[key]);
-    }
-    return out;
-  }
-  return value;
 }
 
 function isDuplicateConflict(error: unknown): boolean {

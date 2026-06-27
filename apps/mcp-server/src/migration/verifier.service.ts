@@ -9,6 +9,7 @@ import {
   DEFAULT_MIGRATION_ID,
 } from './migration-state.service';
 import { countLiteMemories, enumerateLiteUsers } from './lite-enumerator';
+import { resolveDataDir, sortKeys } from './migration-utils';
 
 /**
  * Hard-stop threshold (fraction). When the mismatch ratio exceeds this
@@ -159,7 +160,7 @@ export class VerifierService {
     hardStop: number,
     reportPath: string | undefined,
   ): Promise<VerifierReport> {
-    const dataDir = resolveDataDir(this.liteStore);
+    const dataDir = resolveDataDir(this.liteStore, 'VerifierService');
     const users = await enumerateLiteUsers(dataDir);
     users.sort();
 
@@ -199,8 +200,7 @@ export class VerifierService {
       let userMatch = 0;
       let userMismatch = 0;
       let cursor: string | null = null;
-      // Defensive cap: 500 pages * 100 per page = 50k records.
-      for (let i = 0; i < 500; i += 1) {
+      while (true) {
         const page = await this.liteStore.list(userId, {
           cursor: cursor ?? undefined,
           limit: 100,
@@ -295,13 +295,28 @@ export class VerifierService {
   private async safeListTargetIds(userId: string): Promise<string[]> {
     if (!this.enterpriseLtm) return [];
     try {
-      const page = (await this.enterpriseLtm.list(userId, {
-        limit: 500,
-      })) as unknown;
-      const items = Array.isArray(page)
-        ? (page as TargetMemoryLite[])
-        : ((page as { items: TargetMemoryLite[] }).items ?? []);
-      return items.map((memory) => memory.id);
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      while (true) {
+        const page = (await this.enterpriseLtm.list(userId, {
+          limit: 100,
+          cursor,
+        })) as unknown;
+        const result = page as {
+          items?: TargetMemoryLite[];
+          hasNextPage?: boolean;
+          endCursor?: string;
+        };
+        const items = Array.isArray(page)
+          ? (page as TargetMemoryLite[])
+          : (result.items ?? []);
+        for (const memory of items) {
+          ids.push((memory as TargetMemoryLite & { id: string }).id);
+        }
+        if (!result.hasNextPage || !result.endCursor) break;
+        cursor = result.endCursor;
+      }
+      return ids;
     } catch (error) {
       this.logger.error(
         `verifier: failed to list target ids for ${userId}: ${String(error)}`,
@@ -371,29 +386,6 @@ function hashMemory(memory: {
   hasher.update('\u0000');
   hasher.update([...memory.tags].sort().join('|'));
   return hasher.digest('hex');
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(record).sort()) {
-      out[key] = sortKeys(record[key]);
-    }
-    return out;
-  }
-  return value;
-}
-
-function resolveDataDir(store: LiteJsonStore): string {
-  const value = (store as unknown as { dataDir?: unknown }).dataDir;
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(
-      'VerifierService: LiteJsonStore.dataDir is not accessible.',
-    );
-  }
-  return value;
 }
 
 export { hashMemory };

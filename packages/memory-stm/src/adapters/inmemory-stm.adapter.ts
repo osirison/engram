@@ -146,7 +146,11 @@ export class InMemoryStmAdapter {
     const newTtl = validated.ttl ?? existing.ttl;
     this.validateTtl(newTtl);
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + newTtl * 1000);
+    // Only reset expiresAt when the caller explicitly provides a new TTL;
+    // preserving the original expiry matches Redis behaviour where HSET
+    // does not reset the key's EXPIRE unless PEXPIREAT is also called.
+    const expiresAt =
+      validated.ttl !== undefined ? new Date(now.getTime() + newTtl * 1000) : existing.expiresAt;
 
     const updated: StmMemory = {
       ...existing,
@@ -158,7 +162,9 @@ export class InMemoryStmAdapter {
       ttl: newTtl,
     };
     this.store.set(key, updated);
-    this.scheduleExpiry(key, newTtl);
+    if (validated.ttl !== undefined) {
+      this.scheduleExpiry(key, newTtl);
+    }
     return updated;
   }
 

@@ -94,10 +94,11 @@ class UserLockTable {
     const next = new Promise<void>((resolve) => {
       release = resolve;
     });
-    this.chains.set(
-      key,
-      previous.then(() => next)
-    );
+    // Capture the chain promise so the cleanup check can use identity
+    // comparison — Promise.then() always creates a new object, so comparing
+    // against next.then(...) would always be false.
+    const chain = previous.then(() => next);
+    this.chains.set(key, chain);
     try {
       await previous;
       return await fn();
@@ -105,7 +106,7 @@ class UserLockTable {
       release?.();
       // Best-effort cleanup: if no new chain queued behind us, drop the
       // entry so the Map does not grow without bound.
-      if (this.chains.get(key) === next.then(() => undefined)) {
+      if (this.chains.get(key) === chain) {
         this.chains.delete(key);
       }
     }
@@ -286,8 +287,8 @@ export class LiteJsonStore {
           continue;
         }
         if (options.tags && options.tags.length > 0) {
-          const hasAll = options.tags.every((t) => memory.tags.includes(t));
-          if (!hasAll) continue;
+          const hasAny = options.tags.some((t) => memory.tags.includes(t));
+          if (!hasAny) continue;
         }
         if (options.search && options.search.length > 0) {
           const needle = options.search.toLowerCase();

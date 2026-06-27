@@ -150,8 +150,12 @@ function canAdvance(current: string, next: string): boolean {
     // Unknown state — refuse to clobber; force caller to validate.
     return false;
   }
-  // Rollback is reachable from any non-terminal state but is itself
-  // terminal; we treat it as a regression from the operator's view.
+  // 'complete' (5) and 'rollback' (-1) are terminal states; no further
+  // transitions are permitted, including complete → rollback.
+  if (cur === 5 || cur === -1) {
+    return false;
+  }
+  // Rollback is reachable from any non-terminal state.
   if (nxt === -1) return true;
   return nxt >= cur;
 }

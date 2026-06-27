@@ -294,7 +294,11 @@ export class InMemoryLtmAdapter {
 
     if (candidates.length === 0) return [];
 
-    this.retriever.index(candidates);
+    // Create a call-local retriever so concurrent requests for different
+    // users cannot overwrite each other's index between index() and search().
+    // The injected this.retriever acts as a feature flag only.
+    const localRetriever = new HybridTransientRetriever();
+    localRetriever.index(candidates);
 
     let embedding: number[] | undefined;
     if (this.embeddingsService) {
@@ -303,7 +307,7 @@ export class InMemoryLtmAdapter {
     }
 
     const topK = options?.limit ?? 10;
-    return this.retriever.search(query, embedding, topK);
+    return localRetriever.search(query, embedding, topK);
   }
 
   /**

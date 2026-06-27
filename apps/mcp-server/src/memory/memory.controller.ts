@@ -6,7 +6,11 @@ import {
   Optional,
 } from '@nestjs/common';
 import type { Tool } from '@engram/core';
-import { DeploymentProfile, resolveCapabilities } from '@engram/config';
+import {
+  DeploymentProfile,
+  resolveCapabilities,
+  coerceDeploymentProfile,
+} from '@engram/config';
 import {
   MemoryService,
   CreateMemoryDto,
@@ -59,31 +63,6 @@ import { ConsolidationService } from './consolidation.service';
 import { constantTimeStringEqual } from '../security/admin-token.util';
 
 /**
- * Resolve the active deployment profile from the host process.
- *
- * Mirrors the resolution logic in `apps/mcp-server/src/app.module.ts`
- * so the controller can decide which MCP tools to surface without a
- * Nest injection cycle.
- */
-function resolveActiveProfile(): DeploymentProfile {
-  const raw = process.env['DEPLOYMENT_PROFILE'];
-  if (raw === undefined || raw === null || raw === '') {
-    return DeploymentProfile.ENTERPRISE;
-  }
-  const value = String(raw).toLowerCase();
-  switch (value) {
-    case 'memory':
-      return DeploymentProfile.MEMORY;
-    case 'lite':
-      return DeploymentProfile.LITE;
-    case 'enterprise':
-      return DeploymentProfile.ENTERPRISE;
-    default:
-      return DeploymentProfile.ENTERPRISE;
-  }
-}
-
-/**
  * MCP Memory Tools Controller
  *
  * Implements 19 MCP tools for memory management:
@@ -120,7 +99,10 @@ export class MemoryController {
     private readonly reindexQueue: ReindexQueueService | null,
     private readonly consolidation: ConsolidationService,
   ) {
-    this.activeProfile = resolveActiveProfile();
+    this.activeProfile = coerceDeploymentProfile(
+      process.env['DEPLOYMENT_PROFILE'],
+      DeploymentProfile.ENTERPRISE,
+    );
   }
 
   private assertAdminAuthorized(

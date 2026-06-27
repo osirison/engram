@@ -228,10 +228,6 @@ export class DualWriteCoordinator implements OnModuleDestroy {
       tags: patch.tags,
     });
 
-    if (!updated) {
-      return null;
-    }
-
     const hash =
       patch.contentHash ?? computeContentHash(userId, updated.content);
     const state = await this.migrationState.currentState();
@@ -280,7 +276,7 @@ export class DualWriteCoordinator implements OnModuleDestroy {
       return true;
     }
 
-    await this.retry(`delete:${memoryId}`, async () => {
+    await this.retry(memoryId, `delete:${memoryId}`, async () => {
       await this.enterpriseLtm!.delete(userId, memoryId);
     });
     return true;
@@ -435,7 +431,11 @@ export class DualWriteCoordinator implements OnModuleDestroy {
     };
   }
 
-  private async retry(label: string, op: () => Promise<void>): Promise<void> {
+  private async retry(
+    memoryId: string,
+    label: string,
+    op: () => Promise<void>,
+  ): Promise<void> {
     let attempt = 0;
     while (attempt < DualWriteCoordinator.SHADOW_MAX_ATTEMPTS) {
       try {
@@ -444,6 +444,8 @@ export class DualWriteCoordinator implements OnModuleDestroy {
       } catch (error) {
         attempt += 1;
         if (attempt >= DualWriteCoordinator.SHADOW_MAX_ATTEMPTS) {
+          // Record for the next backfill pass, matching runShadowWrite semantics.
+          this.pendingShadowWrites.add(memoryId);
           this.logger.error(
             `dual-write ${label} failed after ${attempt} attempts: ${String(error)}`,
           );
