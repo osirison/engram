@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   deploy:
+    env:
+      MARKETING_SITE_DOMAIN: engram.events
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -29,7 +31,7 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
-          cname: engram.events
+          cname: ${{ env.MARKETING_SITE_DOMAIN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -57,7 +59,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const expectedCname = 'engram.events';
+            const expectedCname = process.env.MARKETING_SITE_DOMAIN;
             const { data } = await github.rest.repos.getPages({
               owner: context.repo.owner,
               repo: context.repo.repo,

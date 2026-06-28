@@ -34,7 +34,7 @@ Use one of:
   - `185.199.109.153`
   - `185.199.110.153`
   - `185.199.111.153`
-- or provider ALIAS/ANAME flattening to your `<user>.github.io` Pages host.
+- or provider ALIAS/ANAME flattening to your `<owner>.github.io` Pages host.
 
 ### `www` (`www.engram.events`)
 
