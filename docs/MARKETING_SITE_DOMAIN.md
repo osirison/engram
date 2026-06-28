@@ -10,7 +10,7 @@ GitHub Pages at `engram.events`.
 
 ## Source of truth in repository
 
-- Deploy workflow: `/home/runner/work/engram/engram/.github/workflows/node.js.yml`
+- Deploy workflow: `.github/workflows/node.js.yml`
 - Custom domain in workflow: `cname: engram.events`
 - Build output deployed to Pages: `apps/marketing-site/dist`
 
@@ -48,7 +48,7 @@ Remove conflicting records that point to non-GitHub infrastructure.
 1. DNS resolves correctly:
    - `dig +short engram.events A`
    - `dig +short www.engram.events CNAME`
-2. Hosted pages is bound to expected custom domain:
+2. GitHub Pages is bound to expected custom domain:
    - workflow step **Verify Pages custom domain binding** passes.
 3. Certificate includes expected hostname(s):
    - `openssl s_client -servername engram.events -connect engram.events:443 </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName`
