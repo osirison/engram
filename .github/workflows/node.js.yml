@@ -52,3 +52,23 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify Pages custom domain binding
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const expectedCname = 'engram.events';
+            const { data } = await github.rest.repos.getPages({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            core.info(`Pages html_url: ${data.html_url}`);
+            core.info(`Pages custom domain: ${data.cname ?? '(none)'}`);
+            core.info(`Pages https_enforced: ${data.https_enforced}`);
+
+            if (data.cname !== expectedCname) {
+              core.setFailed(
+                `Expected Pages custom domain '${expectedCname}', found '${data.cname ?? '(none)'}'.`,
+              );
+            }
