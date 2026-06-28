@@ -37,6 +37,7 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
     compressContext: jest.fn(),
     loadContext: jest.fn(),
     ingestConversation: jest.fn(),
+    assemblePromptContext: jest.fn(),
   };
 
   const mockReindexQueueService = {
@@ -357,6 +358,147 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
         controller.ingestConversation({
           userId: 'not-a-cuid',
           turns: baseTurns,
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  // ─── prompt_context ──────────────────────────────────────────────────────────
+
+  describe('prompt_context tool', () => {
+    const mockContextBlock = {
+      context:
+        'Memory 1: TypeScript is structurally typed.\n\nMemory 2: Zod validates at runtime.',
+      memoryCount: 2,
+      estimatedTokens: 20,
+      tokenBudget: 2000,
+      truncated: false,
+      candidatesFound: 3,
+    };
+
+    it('returns context text as first content item', async () => {
+      mockMemoryService.assemblePromptContext.mockResolvedValue(
+        mockContextBlock,
+      );
+
+      const response = await controller.promptContext({
+        userId: USER_ID,
+        query: 'TypeScript types',
+        tokenBudget: 2000,
+      });
+
+      expect(response.content).toHaveLength(2);
+      expect(response.content[0]!.type).toBe('text');
+      expect(response.content[0]!.text).toBe(mockContextBlock.context);
+    });
+
+    it('returns token-budget metadata as second content item', async () => {
+      mockMemoryService.assemblePromptContext.mockResolvedValue(
+        mockContextBlock,
+      );
+
+      const response = await controller.promptContext({
+        userId: USER_ID,
+        query: 'TypeScript types',
+        tokenBudget: 2000,
+      });
+
+      const meta = JSON.parse(response.content[1]!.text) as {
+        memoryCount: number;
+        estimatedTokens: number;
+        tokenBudget: number;
+        truncated: boolean;
+        candidatesFound: number;
+      };
+
+      expect(meta.memoryCount).toBe(2);
+      expect(meta.estimatedTokens).toBe(20);
+      expect(meta.tokenBudget).toBe(2000);
+      expect(meta.truncated).toBe(false);
+      expect(meta.candidatesFound).toBe(3);
+    });
+
+    it('forwards all filter args to assemblePromptContext', async () => {
+      mockMemoryService.assemblePromptContext.mockResolvedValue({
+        ...mockContextBlock,
+        memoryCount: 0,
+        context: '',
+      });
+
+      const createdFrom = new Date('2024-01-01');
+      const createdTo = new Date('2024-12-31');
+
+      await controller.promptContext({
+        userId: USER_ID,
+        query: 'test query',
+        tokenBudget: 500,
+        limit: 10,
+        minScore: 0.7,
+        scope: 'project:alpha',
+        tags: ['typescript', 'zod'],
+        createdFrom,
+        createdTo,
+      });
+
+      expect(mockMemoryService.assemblePromptContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: USER_ID,
+          query: 'test query',
+          tokenBudget: 500,
+          limit: 10,
+          minScore: 0.7,
+          scope: 'project:alpha',
+          tags: ['typescript', 'zod'],
+          createdFrom,
+          createdTo,
+        }),
+      );
+    });
+
+    it('reports truncated=true when budget was exceeded', async () => {
+      mockMemoryService.assemblePromptContext.mockResolvedValue({
+        ...mockContextBlock,
+        truncated: true,
+        estimatedTokens: 100,
+        tokenBudget: 100,
+        memoryCount: 1,
+      });
+
+      const response = await controller.promptContext({
+        userId: USER_ID,
+        query: 'large context',
+        tokenBudget: 100,
+      });
+
+      const meta = JSON.parse(response.content[1]!.text) as {
+        truncated: boolean;
+        estimatedTokens: number;
+      };
+      expect(meta.truncated).toBe(true);
+      expect(meta.estimatedTokens).toBeLessThanOrEqual(100);
+    });
+
+    it('throws on invalid userId', async () => {
+      await expect(
+        controller.promptContext({
+          userId: 'not-a-cuid',
+          query: 'TypeScript',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('throws on missing query', async () => {
+      await expect(
+        controller.promptContext({ userId: USER_ID }),
+      ).rejects.toThrow();
+    });
+
+    it('throws when tokenBudget exceeds maximum', async () => {
+      await expect(
+        controller.promptContext({
+          userId: USER_ID,
+          query: 'test',
+          tokenBudget: 99999,
         }),
       ).rejects.toThrow();
     });
