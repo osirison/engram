@@ -33,6 +33,7 @@ export class EngramClient {
   private readonly _client: Client;
   private readonly _transport: Transport;
   private _connected = false;
+  private _connectPromise: Promise<void> | null = null;
 
   constructor(options: EngramClientOptions, transport?: Transport) {
     this._client = new Client({ name: '@engram/client', version: '0.1.0' }, { capabilities: {} });
@@ -50,11 +51,14 @@ export class EngramClient {
     }
   }
 
-  private async _ensureConnected(): Promise<void> {
-    if (!this._connected) {
-      await this._client.connect(this._transport);
-      this._connected = true;
+  private _ensureConnected(): Promise<void> {
+    if (this._connected) return Promise.resolve();
+    if (!this._connectPromise) {
+      this._connectPromise = this._client.connect(this._transport).then(() => {
+        this._connected = true;
+      });
     }
+    return this._connectPromise;
   }
 
   private async _callTool(name: string, args: Record<string, unknown>): Promise<ContentItem[]> {

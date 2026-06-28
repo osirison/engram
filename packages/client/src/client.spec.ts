@@ -51,12 +51,14 @@ async function createPair(
 }
 
 describe('EngramClient', () => {
-  let client: EngramClient;
-  let server: Server;
+  let client: EngramClient | undefined;
+  let server: Server | undefined;
 
   afterEach(async () => {
-    await client.close();
-    await server.close();
+    await client?.close();
+    await server?.close();
+    client = undefined;
+    server = undefined;
   });
 
   // ─── remember ─────────────────────────────────────────────────────────────
