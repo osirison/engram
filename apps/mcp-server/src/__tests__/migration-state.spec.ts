@@ -7,7 +7,10 @@ import {
   DEFAULT_MIGRATION_ID,
   MigrationCheckpointNotFoundError,
   InvalidMigrationTransitionError,
+  selectCheckpointBackend,
+  PostgresCheckpointBackend,
 } from '../migration';
+import { DeploymentProfile } from '@engram/config';
 
 /**
  * Migration state service tests.
@@ -40,6 +43,32 @@ afterEach(() => {
 });
 
 describe('FileCheckpointBackend', () => {
+  it('clear() deletes an existing checkpoint file', async () => {
+    const { backend } = setupService();
+    const checkpoint = {
+      id: DEFAULT_MIGRATION_ID,
+      sourceProfile: 'lite' as const,
+      targetProfile: 'enterprise' as const,
+      state: 'preparing' as const,
+      cursor: null,
+      progress: 0,
+      totalItems: null,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      completedAt: null,
+      sourceManifestHash: null,
+      history: [],
+    };
+    await backend.save(checkpoint);
+    await backend.clear(DEFAULT_MIGRATION_ID);
+    await expect(backend.load(DEFAULT_MIGRATION_ID)).resolves.toBeNull();
+  });
+
+  it('clear() is a no-op when no checkpoint file exists', async () => {
+    const { backend } = setupService();
+    await expect(backend.clear('nonexistent-id')).resolves.toBeUndefined();
+  });
+
   it('round-trips a checkpoint', async () => {
     const { backend } = setupService();
     const checkpoint = {
@@ -246,5 +275,65 @@ describe('MigrationStateService without a backend', () => {
     await expect(
       bare.checkpointMigration('preparing', { cursor: null, progress: 0 }),
     ).rejects.toThrow(/no backend/);
+  });
+});
+
+describe('selectCheckpointBackend', () => {
+  const enterpriseCapabilities = {
+    profile: DeploymentProfile.ENTERPRISE,
+    requiresDatabase: true,
+    requiresRedis: true,
+    requiresQdrant: true,
+    inProcessAdapters: false,
+  };
+
+  const liteCapabilities = {
+    profile: DeploymentProfile.LITE,
+    requiresDatabase: true,
+    requiresRedis: false,
+    requiresQdrant: false,
+    inProcessAdapters: false,
+  };
+
+  it('returns forceBackend immediately when provided', () => {
+    const forced = {} as FileCheckpointBackend;
+    expect(selectCheckpointBackend({ forceBackend: forced })).toBe(forced);
+  });
+
+  it('returns a PostgresCheckpointBackend for enterprise profile with prisma', () => {
+    const prisma = {} as never;
+    const result = selectCheckpointBackend({
+      capabilities: enterpriseCapabilities,
+      prisma,
+    });
+    expect(result).toBeInstanceOf(PostgresCheckpointBackend);
+  });
+
+  it('throws for enterprise profile without prisma', () => {
+    expect(() =>
+      selectCheckpointBackend({ capabilities: enterpriseCapabilities }),
+    ).toThrow(/enterprise profile requires a PrismaService/);
+  });
+
+  it('returns a FileCheckpointBackend for lite profile with dataDir', () => {
+    const result = selectCheckpointBackend({
+      capabilities: liteCapabilities,
+      dataDir: '/tmp/test',
+    });
+    expect(result).toBeInstanceOf(FileCheckpointBackend);
+  });
+
+  it('falls back to defaultDataDir when dataDir is absent', () => {
+    const result = selectCheckpointBackend({
+      capabilities: liteCapabilities,
+      defaultDataDir: '/tmp/default',
+    });
+    expect(result).toBeInstanceOf(FileCheckpointBackend);
+  });
+
+  it('throws for non-enterprise profile with no data directory', () => {
+    expect(() =>
+      selectCheckpointBackend({ capabilities: liteCapabilities }),
+    ).toThrow(/requires a dataDir/);
   });
 });
