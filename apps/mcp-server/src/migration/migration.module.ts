@@ -6,10 +6,8 @@ import type { MigrationCheckpointBackend } from './migration.backend.interface';
  * Nest module that wires the migration state service.
  *
  * Callers supply a {@link MigrationCheckpointBackend} implementation.
- * `apps/mcp-server/src/main.ts` (and any future Postgres-backed wiring)
- * passes a {@link FileCheckpointBackend} for profile-lite; profile-enterprise
- * will swap in a SQL implementation when the MigrationCheckpoint Prisma
- * model lands.
+ * `apps/mcp-server/src/main.ts` passes a {@link FileCheckpointBackend} for
+ * profile-lite and a `PostgresCheckpointBackend` for profile-enterprise.
  */
 @Module({})
 export class MigrationModule {

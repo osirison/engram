@@ -13,10 +13,10 @@ semantic search, and health checks.
 
 - Node.js 20 or newer with npm
 - Git
-- Optional: pnpm 11.4.0 on your `PATH`
+- Optional: pnpm 11.5.0 on your `PATH`
 - Optional: Docker and Docker Compose v2 (only for `profile-enterprise`)
 
-ENGRAM pins `pnpm@11.4.0` in [package.json](package.json). The quick start
+ENGRAM pins `pnpm@11.5.0` in [package.json](package.json). The quick start
 uses npm to run that pinned pnpm version, so it works even when `pnpm` is not
 installed globally.
 
@@ -45,9 +45,9 @@ demos, CI smoke tests, and exploring the MCP tool surface. Data is lost when
 the process exits.
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- install
-DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.4.0 -- build
-DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.5.0 -- install
+DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- build
+DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000`. Check it with:
@@ -64,13 +64,13 @@ absent. Best for single-host deployments that need at-rest encryption by
 default.
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- install
+npm exec --yes pnpm@11.5.0 -- install
 # Generate the encryption key once and persist it — reusing the same key
 # across commands ensures previously-written records remain decryptable.
 echo "LOCAL_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
-DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.4.0 -- db:migrate
-DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.4.0 -- build
-DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- db:migrate
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- build
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
 ```
 
 The server refuses to start in production without `LOCAL_ENCRYPTION_KEY`;
@@ -78,20 +78,19 @@ in development it derives an ephemeral key with a loud warning.
 
 ### profile-enterprise — full stack
 
-Postgres + Redis + Qdrant with cluster-scale durability, hybrid lexical
-
-- semantic retrieval, and queued reindex / cancel / retry maintenance
-  tools. Best for production deployments that need horizontal scale,
-  background jobs, and zero-downtime backfill.
+Postgres + Redis + Qdrant with cluster-scale durability, hybrid lexical +
+semantic retrieval, and queued reindex / cancel / retry maintenance
+tools. Best for production deployments that need horizontal scale,
+background jobs, and zero-downtime backfill.
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- install
+npm exec --yes pnpm@11.5.0 -- install
 test -f .env || cp .env.example .env
-npm exec --yes pnpm@11.4.0 -- docker:up
-npm exec --yes pnpm@11.4.0 -- db:generate
-npm exec --yes pnpm@11.4.0 -- db:migrate
-DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.4.0 -- build
-DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.4.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.5.0 -- docker:up
+npm exec --yes pnpm@11.5.0 -- db:generate
+npm exec --yes pnpm@11.5.0 -- db:migrate
+DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.5.0 -- build
+DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000` by default. Check it with:
@@ -103,13 +102,13 @@ curl http://localhost:3000/health
 To stop local infrastructure without deleting data:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- docker:down
+npm exec --yes pnpm@11.5.0 -- docker:down
 ```
 
 To remove containers and local volumes:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- docker:clean
+npm exec --yes pnpm@11.5.0 -- docker:clean
 ```
 
 After installing pnpm globally, you can use the shorter `pnpm <command>` form
@@ -196,7 +195,7 @@ the port inside `DATABASE_URL`.
 Build the server before connecting it to an MCP client:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- build
+npm exec --yes pnpm@11.5.0 -- build
 ```
 
 Then copy [claude_desktop_config.json.example](claude_desktop_config.json.example)
@@ -216,7 +215,7 @@ With the MCP server already running on `http://localhost:3000`, start the
 inspector in a separate terminal:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- inspector
+npm exec --yes pnpm@11.5.0 -- inspector
 ```
 
 Then open:
@@ -235,7 +234,7 @@ First ensure the base infrastructure is up (`pnpm docker:up`) and the MCP
 server is running on the host. Then start the Inspector container:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:up
+npm exec --yes pnpm@11.5.0 -- docker:inspector:up
 ```
 
 The container reaches the host-side MCP server via `host.docker.internal`.
@@ -248,5 +247,5 @@ http://localhost:6274/?transport=streamable-http&serverUrl=http%3A%2F%2Fhost.doc
 Stop the container with:
 
 ```bash
-npm exec --yes pnpm@11.4.0 -- docker:inspector:down
+npm exec --yes pnpm@11.5.0 -- docker:inspector:down
 ```

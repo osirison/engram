@@ -1292,11 +1292,13 @@ export class MemoryController {
    * Filter the full tool list by the active deployment profile.
    *
    *   - profile=memory: hide `reindex_memories`, `queue_reindex_memories`,
-   *     `cancel_reindex_job`. Everything else is available (the
-   *     in-process LTM adapter handles reindex as a no-op).
-   *   - profile=lite: hide `queue_reindex_memories` and
-   *     `cancel_reindex_job` (they require a BullMQ worker). Keep
-   *     `reindex_memories` as a synchronous in-process operation.
+   *     `get_reindex_status`, `cancel_reindex_job`, `retry_reindex_job`.
+   *     All reindex and queue maintenance tools are excluded (in-process
+   *     LTM has no vector store to backfill).
+   *   - profile=lite: hide `queue_reindex_memories`, `get_reindex_status`,
+   *     `cancel_reindex_job`, `retry_reindex_job` (they require a BullMQ
+   *     worker). Keep `reindex_memories` as a synchronous in-process
+   *     operation.
    *   - profile=enterprise: expose every tool.
    */
   private filterToolsByProfile(all: Tool[]): Tool[] {

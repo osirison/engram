@@ -8,9 +8,9 @@ import type { ProfileCapabilities } from '@engram/config';
 /**
  * Token that resolves to whichever STM implementation is active for the
  * current deployment profile. The Redis-backed `MemoryStmService` is
- * used for profile-enterprise / profile-lite; `InMemoryStmAdapter` is
- * used for profile-memory so the process can boot with no external
- * services.
+ * used for profile-enterprise only; `InMemoryStmAdapter` is used for
+ * profile-memory and profile-lite (both have `requiresRedis: false`) so
+ * those profiles boot without an external Redis.
  */
 export const STM_PROVIDER = Symbol.for('engram.memory-stm.provider');
 
