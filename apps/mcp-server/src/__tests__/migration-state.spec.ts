@@ -285,6 +285,7 @@ describe('selectCheckpointBackend', () => {
     requiresRedis: true,
     requiresQdrant: true,
     inProcessAdapters: false,
+    persistent: true,
   };
 
   const liteCapabilities = {
@@ -293,6 +294,7 @@ describe('selectCheckpointBackend', () => {
     requiresRedis: false,
     requiresQdrant: false,
     inProcessAdapters: false,
+    persistent: true,
   };
 
   it('returns forceBackend immediately when provided', () => {
