@@ -68,7 +68,8 @@ jobs:
             core.info(`Pages https_enforced: ${data.https_enforced}`);
 
             if (data.cname !== expectedCname) {
+              const runbookUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/MARKETING_SITE_DOMAIN.md`;
               core.setFailed(
-                `Expected Pages custom domain '${expectedCname}', found '${data.cname ?? '(none)'}'. See docs/MARKETING_SITE_DOMAIN.md for DNS/TLS setup instructions.`,
+                `Expected Pages custom domain '${expectedCname}', found '${data.cname ?? '(none)'}'. See ${runbookUrl} for DNS/TLS setup instructions.`,
               );
             }
