@@ -5,6 +5,7 @@
     "NODE_ENV",
     "LOG_LEVEL",
     "PORT",
+    "DEPLOYMENT_PROFILE",
     "DATABASE_URL",
     "REDIS_URL",
     "QDRANT_URL",

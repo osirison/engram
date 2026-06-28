@@ -573,7 +573,7 @@ describe('MemoryLtmService', () => {
         mockUserId,
         mockMemoryId,
         undefined,
-        undefined,
+        undefined
       );
       expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
       expect(result).toEqual(

@@ -28,6 +28,7 @@
     "@engram/core": "workspace:^",
     "@engram/database": "workspace:^",
     "@engram/embeddings": "workspace:^",
+    "@engram/memory-lite": "workspace:^",
     "@engram/memory-ltm": "workspace:^",
     "@engram/memory-stm": "workspace:^",
     "@engram/redis": "workspace:^",
@@ -41,6 +42,7 @@
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/terminus": "^11.1.1",
     "axios": "^1.16.1",
+    "express": "^5.0.0",
     "nestjs-pino": "^4.6.1",
     "openai": "^6.39.1",
     "reflect-metadata": "^0.2.2",
@@ -119,6 +121,7 @@
     "moduleNameMapper": {
       "^@engram/database$": "<rootDir>/../../packages/database/src/index.ts",
       "^@engram/embeddings$": "<rootDir>/../../packages/embeddings/src/index.ts",
+      "^@engram/memory-lite$": "<rootDir>/../../packages/memory-lite/src/index.ts",
       "^@engram/redis$": "<rootDir>/src/__mocks__/@engram/redis.ts",
       "^@engram/vector-store$": "<rootDir>/../../packages/vector-store/src/index.ts",
       "^@engram/config$": "<rootDir>/../../packages/config/src/index.ts",

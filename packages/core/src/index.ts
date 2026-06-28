@@ -10,7 +10,7 @@ export function getVersion(): string {
 }
 
 // Logging
-export { LoggingModule } from './logging/logging.module';
+export { LoggingModule, REDACT_PATHS } from './logging/logging.module';
 
 // MCP Protocol
 export { McpModule } from './mcp/mcp.module';

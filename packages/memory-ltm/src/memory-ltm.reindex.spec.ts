@@ -5,7 +5,7 @@ import type { VectorStore } from '@engram/vector-store';
 
 const mockUserId = 'cldx4k8xp000108l83h4y8v2q';
 
-function buildMemory(id: string, overrides: Record<string, unknown> = {}) {
+function buildMemory(id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id,
     userId: mockUserId,

@@ -76,11 +76,13 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
   let prisma: any;
   let db: Row[];
 
-  function buildPrisma(rows: Row[]) {
+  function buildPrisma(rows: Row[]): Record<string, unknown> {
     db = rows;
     return {
       memory: {
-        findFirst: vi.fn(({ where }) => Promise.resolve(db.find((r) => whereMatches(r, where)) ?? null)),
+        findFirst: vi.fn(({ where }) =>
+          Promise.resolve(db.find((r) => whereMatches(r, where)) ?? null)
+        ),
         findMany: vi.fn(({ where }) => Promise.resolve(db.filter((r) => whereMatches(r, where)))),
         create: vi.fn(({ data }: { data: Partial<Row> }) =>
           Promise.resolve(makeRow({ ...data, id: 'row-new' }))
@@ -98,14 +100,19 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
     generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
   };
 
-  function makeVectorStore(hits: Array<{ id: string; score: number; payload?: Record<string, unknown> }>) {
+  function makeVectorStore(
+    hits: Array<{ id: string; score: number; payload?: Record<string, unknown> }>
+  ): Record<string, unknown> {
     return {
       backend: 'qdrant',
       ensureReady: vi.fn().mockResolvedValue(undefined),
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
       search: vi.fn().mockResolvedValue(hits),
-    } as unknown as VectorStore & { search: ReturnType<typeof vi.fn>; upsert: ReturnType<typeof vi.fn> };
+    } as unknown as VectorStore & {
+      search: ReturnType<typeof vi.fn>;
+      upsert: ReturnType<typeof vi.fn>;
+    };
   }
 
   beforeEach(() => {
@@ -191,7 +198,9 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
     it('drops a cross-scope vector hit so an unscoped create is not deduped against a scoped memory', async () => {
       prisma = buildPrisma([makeRow({ id: 'scoped', scope: SCOPE_A, content: 'similar' })]);
       // A near-identical hit, but it belongs to SCOPE_A.
-      const vectorStore = makeVectorStore([{ id: 'scoped', score: 0.999, payload: { userId: USER, scope: SCOPE_A } }]);
+      const vectorStore = makeVectorStore([
+        { id: 'scoped', score: 0.999, payload: { userId: USER, scope: SCOPE_A } },
+      ]);
       const service = new MemoryLtmService(
         prisma,
         undefined,
@@ -210,7 +219,9 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
 
     it('dedups against a same-scope vector hit', async () => {
       prisma = buildPrisma([makeRow({ id: 'row-existing', scope: SCOPE_A, content: 'similar' })]);
-      const vectorStore = makeVectorStore([{ id: 'row-existing', score: 0.999, payload: { userId: USER, scope: SCOPE_A } }]);
+      const vectorStore = makeVectorStore([
+        { id: 'row-existing', score: 0.999, payload: { userId: USER, scope: SCOPE_A } },
+      ]);
       const service = new MemoryLtmService(
         prisma,
         undefined,

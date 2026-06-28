@@ -4,3 +4,9 @@
  */
 
 export { envSchema, validateEnv, type Env } from './env.schema';
+export {
+  DeploymentProfile,
+  resolveCapabilities,
+  coerceDeploymentProfile,
+  type ProfileCapabilities,
+} from './profile';

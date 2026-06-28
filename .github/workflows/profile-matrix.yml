@@ -1,0 +1,394 @@
+name: Profile Matrix
+
+on:
+  push:
+    branches: [main, multi-tiered-memory]
+  pull_request:
+    branches: [main, multi-tiered-memory]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# The profile matrix exercises every deployment profile that ENGRAM
+# supports and surfaces a per-profile smoke test alongside the standard
+# build / lint / typecheck / test gates. All jobs run on
+# ubuntu-latest and reuse the same Postgres + Redis + Qdrant services
+# for the profiles that need them.
+
+jobs:
+  # ─── build across all profiles ────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [memory, lite, enterprise]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Build (${{ matrix.profile }})
+        run: pnpm build
+        env:
+          DEPLOYMENT_PROFILE: ${{ matrix.profile }}
+
+  # ─── lint / typecheck / test (run once at the top, profile-agnostic) ─
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm build
+      - run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm build
+      - run: pnpm typecheck
+
+  test:
+    name: Test (jest + vitest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: engram_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:latest
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      qdrant:
+        image: qdrant/qdrant:v1.13.6
+        ports:
+          - 6333:6333
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+      REDIS_URL: redis://localhost:6379
+      QDRANT_URL: http://127.0.0.1:6333
+      PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm db:migrate:deploy
+      - run: pnpm test
+
+  # ─── smoke: profile-memory (no external services) ────────────────────
+  smoke-profile-memory:
+    name: Smoke (profile=memory)
+    runs-on: ubuntu-latest
+    needs: [build, typecheck]
+    env:
+      DEPLOYMENT_PROFILE: memory
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm build
+      - name: Boot profile-memory
+        run: |
+          pnpm --filter mcp-server start:prod &
+          SERVER_PID=$!
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            if curl -sf http://127.0.0.1:3000/health; then
+              echo "profile-memory up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "profile-memory failed to start within 15s"
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1
+      - name: Health endpoint contract
+        run: |
+          set -euo pipefail
+          response=$(curl -s http://127.0.0.1:3000/health)
+          echo "$response" | jq -e '.status == "ok"' >/dev/null
+          echo "$response" | jq -e '.info["memory-store"].status == "up"' >/dev/null
+          echo "$response" | jq -e '.info["database"] == null' >/dev/null
+          echo "$response" | jq -e '.info["redis"] == null' >/dev/null
+          echo "$response" | jq -e '.info["qdrant"] == null' >/dev/null
+      - name: Profile label in metrics
+        run: |
+          curl -sf http://127.0.0.1:3000/health/metrics \
+            | grep -E '^engram_deployment_profile_info\{profile="memory"\} 1$'
+      - name: Cleanup
+        if: always()
+        run: pkill -f 'apps/mcp-server/dist/main.js' || true
+
+  # ─── smoke: profile-lite (Postgres + encrypted local store) ───────────
+  smoke-profile-lite:
+    name: Smoke (profile=lite)
+    runs-on: ubuntu-latest
+    needs: [build, typecheck]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: engram_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DEPLOYMENT_PROFILE: lite
+      DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+      LOCAL_DATA_DIR: /tmp/engram-lite-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Generate encryption key
+        run: echo "LOCAL_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> $GITHUB_ENV
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm db:migrate:deploy
+      - run: pnpm build
+      - name: Boot profile-lite
+        run: |
+          mkdir -p "$LOCAL_DATA_DIR"
+          chmod 0700 "$LOCAL_DATA_DIR"
+          pnpm --filter mcp-server start:prod &
+          SERVER_PID=$!
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            if curl -sf http://127.0.0.1:3000/health; then
+              echo "profile-lite up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "profile-lite failed to start within 15s"
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1
+      - name: Health endpoint contract
+        run: |
+          set -euo pipefail
+          response=$(curl -s http://127.0.0.1:3000/health)
+          echo "$response" | jq -e '.status == "ok"' >/dev/null
+          echo "$response" | jq -e '.info["memory-store"].status == "up"' >/dev/null
+          echo "$response" | jq -e '.info["database"].status == "up"' >/dev/null
+          echo "$response" | jq -e '.info["redis"] == null' >/dev/null
+          echo "$response" | jq -e '.info["qdrant"] == null' >/dev/null
+      - name: Profile label in metrics
+        run: |
+          curl -sf http://127.0.0.1:3000/health/metrics \
+            | grep -E '^engram_deployment_profile_info\{profile="lite"\} 1$'
+      - name: Encrypted data dir perms
+        run: |
+          stat -c '%a' "$LOCAL_DATA_DIR" | grep -q '^700$'
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -f 'apps/mcp-server/dist/main.js' || true
+          rm -rf "$LOCAL_DATA_DIR"
+
+  # ─── smoke: profile-enterprise (Postgres + Redis + Qdrant) ────────────
+  smoke-profile-enterprise:
+    name: Smoke (profile=enterprise)
+    runs-on: ubuntu-latest
+    needs: [build, typecheck]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: engram_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:latest
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      qdrant:
+        image: qdrant/qdrant:v1.13.6
+        ports:
+          - 6333:6333
+    env:
+      DEPLOYMENT_PROFILE: enterprise
+      DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+      REDIS_URL: redis://localhost:6379
+      QDRANT_URL: http://127.0.0.1:6333
+      MCP_ADMIN_TOKEN: smoke-test-admin-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm db:migrate:deploy
+      - run: pnpm build
+      - name: Boot profile-enterprise
+        run: |
+          pnpm --filter mcp-server start:prod &
+          SERVER_PID=$!
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            if curl -sf http://127.0.0.1:3000/health; then
+              echo "profile-enterprise up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "profile-enterprise failed to start within 20s"
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1
+      - name: Health endpoint contract
+        run: |
+          set -euo pipefail
+          response=$(curl -s http://127.0.0.1:3000/health)
+          echo "$response" | jq -e '.status == "ok"' >/dev/null
+          echo "$response" | jq -e '.info["memory-store"].status == "up"' >/dev/null
+          echo "$response" | jq -e '.info["database"].status == "up"' >/dev/null
+          echo "$response" | jq -e '.info["redis"].status == "up"' >/dev/null
+          echo "$response" | jq -e '.info["qdrant"].status == "up"' >/dev/null
+      - name: Reindex CLI smoke
+        run: |
+          pnpm --filter mcp-server reindex -- --max 5 || true
+      - name: Cleanup
+        if: always()
+        run: pkill -f 'apps/mcp-server/dist/main.js' || true
+
+  # ─── migration: profile-lite → profile-enterprise (unit + integration) ─
+  migration-lite-to-enterprise:
+    name: Migration (lite → enterprise)
+    runs-on: ubuntu-latest
+    needs: [build, typecheck]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: engram_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:latest
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      qdrant:
+        image: qdrant/qdrant:v1.13.6
+        ports:
+          - 6333:6333
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+      REDIS_URL: redis://localhost:6379
+      QDRANT_URL: http://127.0.0.1:6333
+      PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
+      MCP_ADMIN_TOKEN: migration-smoke-admin-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm db:migrate:deploy
+      - name: Migration integration tests
+        run: pnpm --filter mcp-server exec -- jest --testPathPatterns='__tests__/migration'
+      - name: Migration state + dual-write tests
+        run: pnpm --filter mcp-server exec -- jest --testPathPatterns='__tests__/(migration-state|dual-write|verifier)'

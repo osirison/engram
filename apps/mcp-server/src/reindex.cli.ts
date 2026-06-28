@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   const logger = new Logger('ReindexCli');
   const args = parseArgs(process.argv.slice(2));
 
-  const app = await NestFactory.createApplicationContext(AppModule, {
+  const app = await NestFactory.createApplicationContext(AppModule.forRoot(), {
     bufferLogs: false,
   });
 
@@ -96,4 +96,6 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+void main().finally(() => {
+  process.exit(process.exitCode ?? 0);
+});

@@ -6,12 +6,16 @@ import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { EmbeddingsService } from '@engram/embeddings';
+import { MemoryStoreHealthIndicator } from './memory-store.health';
 
 describe('HealthController', () => {
   let controller: HealthController;
 
   const healthServiceMock = {
     check: jest.fn(),
+  };
+  const memoryStoreHealthMock = {
+    isHealthy: jest.fn(),
   };
   const prismaHealthMock = {
     isHealthy: jest.fn(),
@@ -38,6 +42,10 @@ describe('HealthController', () => {
         {
           provide: HealthCheckService,
           useValue: healthServiceMock,
+        },
+        {
+          provide: MemoryStoreHealthIndicator,
+          useValue: memoryStoreHealthMock,
         },
         {
           provide: PrismaHealthIndicator,
@@ -85,6 +93,7 @@ describe('HealthController', () => {
   it('returns base metrics when embeddings service is unavailable', async () => {
     const noEmbeddingsController = new HealthController(
       healthServiceMock as unknown as HealthCheckService,
+      memoryStoreHealthMock as unknown as MemoryStoreHealthIndicator,
       prismaHealthMock as unknown as PrismaHealthIndicator,
       redisHealthMock as unknown as RedisHealthIndicator,
       qdrantHealthMock as unknown as QdrantHealthIndicator,

@@ -159,9 +159,7 @@ describe('MemoryStmService — scope isolation', () => {
 
       await service.delete(USER_A, created.id, undefined, SCOPE_A);
 
-      await expect(service.findById(USER_A, created.id)).rejects.toThrow(
-        StmMemoryNotFoundError
-      );
+      await expect(service.findById(USER_A, created.id)).rejects.toThrow(StmMemoryNotFoundError);
     });
 
     it('does NOT delete and throws when the scope does not match', async () => {
@@ -172,9 +170,9 @@ describe('MemoryStmService — scope isolation', () => {
         ttl: TTL,
       });
 
-      await expect(
-        service.delete(USER_A, created.id, undefined, SCOPE_B)
-      ).rejects.toThrow(StmMemoryNotFoundError);
+      await expect(service.delete(USER_A, created.id, undefined, SCOPE_B)).rejects.toThrow(
+        StmMemoryNotFoundError
+      );
 
       // The memory must still be present — a foreign scope cannot delete it.
       const stillThere = await service.findById(USER_A, created.id);
@@ -191,9 +189,7 @@ describe('MemoryStmService — scope isolation', () => {
 
       await service.delete(USER_A, created.id);
 
-      await expect(service.findById(USER_A, created.id)).rejects.toThrow(
-        StmMemoryNotFoundError
-      );
+      await expect(service.findById(USER_A, created.id)).rejects.toThrow(StmMemoryNotFoundError);
     });
   });
 

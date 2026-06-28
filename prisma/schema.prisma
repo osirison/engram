@@ -114,3 +114,32 @@ model Memory {
   @@map("memories")
 }
 
+/// Migration checkpoint persisted in Postgres for profile-enterprise.
+///
+/// The profile-lite checkpoint lives in the file-backed JSON store; this
+/// row is the parallel representation used when the target profile is
+/// enterprise and Postgres is the authoritative source of truth.
+///
+/// `state` mirrors the enum in
+/// `apps/mcp-server/src/migration/migration.types.ts`. We store it as a
+/// `String` (not a Postgres enum) so the lifecycle can evolve without a
+/// schema migration; the Zod parser in the application enforces the
+/// closed set at read time.
+model MigrationCheckpoint {
+  id                 String    @id @default(cuid(2))
+  sourceProfile      String
+  targetProfile      String
+  state              String    // 'idle' | 'preparing' | 'copying' | 'verifying' | 'cutting_over' | 'complete' | 'rollback'
+  cursor             String?
+  progress           Int       @default(0)
+  totalItems         Int?
+  startedAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  completedAt        DateTime?
+  sourceManifestHash String?
+  history            Json      @default("[]")
+
+  @@index([state])
+  @@map("migration_checkpoints")
+}
+
