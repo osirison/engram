@@ -69,6 +69,6 @@ jobs:
 
             if (data.cname !== expectedCname) {
               core.setFailed(
-                `Expected Pages custom domain '${expectedCname}', found '${data.cname ?? '(none)'}'.`,
+                `Expected Pages custom domain '${expectedCname}', found '${data.cname ?? '(none)'}'. See docs/MARKETING_SITE_DOMAIN.md for DNS/TLS setup instructions.`,
               );
             }

@@ -39,6 +39,7 @@ Use one of:
 ### `www` (`www.engram.events`)
 
 - `CNAME` to `<user>.github.io` (for this repo owner: `osirison.github.io`)
+- `CNAME` to `<owner>.github.io`
 - or provider-level redirect to apex.
 
 Remove conflicting records that point to non-GitHub infrastructure.
