@@ -39,7 +39,9 @@ function psql(query: string): string {
  * dump, so it must not depend on redis/qdrant being reachable.
  */
 function pgOnlyEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env, DATABASE_URL: TEST_URL };
+  // Annotate as ProcessEnv so the index signature survives (object spread
+  // drops it), keeping REDIS_URL / QDRANT_URL deletable under strict tsc.
+  const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: TEST_URL };
   delete env.REDIS_URL;
   delete env.QDRANT_URL;
   return env;
