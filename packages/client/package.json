@@ -1,0 +1,36 @@
+{
+  "name": "@engram/client",
+  "version": "0.1.0",
+  "description": "TypeScript client SDK for the ENGRAM MCP memory server",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "engram",
+    "memory",
+    "mcp",
+    "client",
+    "sdk"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^25.9.1",
+    "eslint": "^9.39.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}
