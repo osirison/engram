@@ -32,6 +32,19 @@ function psql(query: string): string {
   }).trim();
 }
 
+/**
+ * Environment for the backup/restore scripts scoped to Postgres only.
+ * REDIS_URL and QDRANT_URL are stripped so the scripts skip those stores —
+ * the CI runner has no redis-cli, and this suite only asserts on the postgres
+ * dump, so it must not depend on redis/qdrant being reachable.
+ */
+function pgOnlyEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env, DATABASE_URL: TEST_URL };
+  delete env.REDIS_URL;
+  delete env.QDRANT_URL;
+  return env;
+}
+
 describe('backup / restore (postgres)', () => {
   let backupDir: string;
 
@@ -61,7 +74,7 @@ describe('backup / restore (postgres)', () => {
     backupDir = mkdtempSync(join(tmpdir(), 'engram-backup-test-'));
 
     execSync(`bash "${BACKUP_SCRIPT}" --out "${backupDir}"`, {
-      env: { ...process.env, DATABASE_URL: TEST_URL! },
+      env: pgOnlyEnv(),
       stdio: 'pipe',
     });
 
@@ -95,7 +108,7 @@ describe('backup / restore (postgres)', () => {
 
     execSync(
       `bash "${RESTORE_SCRIPT}" --archive "${archivePath}" --pg-only --no-confirm`,
-      { env: { ...process.env, DATABASE_URL: TEST_URL! }, stdio: 'pipe' },
+      { env: pgOnlyEnv(), stdio: 'pipe' },
     );
 
     const after = psql(
