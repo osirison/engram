@@ -26,9 +26,21 @@ if (endpoint) {
     instrumentations: [new HttpInstrumentation(), new ExpressInstrumentation()],
   });
 
-  sdk.start();
+  // start() is synchronous (returns void) but can throw on misconfiguration;
+  // tracing is best-effort and must never crash the application.
+  try {
+    sdk.start();
+  } catch (err) {
+    console.error('OpenTelemetry SDK failed to start:', err);
+  }
 
-  process.on('SIGTERM', () => {
-    void sdk.shutdown();
-  });
+  // Flush buffered spans on shutdown. Handle both SIGTERM (orchestrators) and
+  // SIGINT (Ctrl+C); `once` so a repeated signal doesn't re-enter shutdown.
+  const shutdown = (): void => {
+    sdk.shutdown().catch((err: unknown) => {
+      console.error('OpenTelemetry SDK shutdown error:', err);
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }

@@ -97,6 +97,12 @@ Set `DEPLOYMENT_PROFILE` in `.env.prod`:
 | `lite`       | Postgres only                       |
 | `enterprise` | Postgres + Redis + Qdrant (default) |
 
+> **Note:** `docker-compose.prod.yml` is enterprise-focused — it always
+> provisions Postgres, Redis, and Qdrant and requires `REDIS_PASSWORD`. To run
+> a leaner profile (`memory` or `lite`), set `DEPLOYMENT_PROFILE` accordingly
+> and start only the services that profile needs (or remove the unused service
+> definitions / `depends_on` entries from the compose file).
+
 ---
 
 ## Observability
@@ -168,6 +174,6 @@ docker compose -f docker-compose.prod.yml run --rm mcp-server \
 ## Security considerations
 
 - All secrets are passed via environment variables; never baked into the image.
-- The container runs as user `engram` (non-root); the image has no shell.
+- The container runs as user `engram` (non-root) on a minimal `node:22-alpine` base.
 - Postgres and Redis ports are not published externally in `docker-compose.prod.yml`.
 - Review `docs/security/owasp-checklist.md` before going to production.

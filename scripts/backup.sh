@@ -61,8 +61,10 @@ if [[ -n "${REDIS_URL:-}" ]]; then
   REDIS_PASS="$(echo "${REDIS_URL}" | sed -E 's|redis[s]?://[^:]*:([^@]+)@.*|\1|')"
 
   REDIS_CLI_ARGS=(-h "${REDIS_HOST}" -p "${REDIS_PORT}")
+  # Pass the password via REDISCLI_AUTH (env) rather than -a so the secret
+  # never appears in the process list / argv.
   if [[ "${REDIS_PASS}" != "${REDIS_URL}" && -n "${REDIS_PASS}" ]]; then
-    REDIS_CLI_ARGS+=(-a "${REDIS_PASS}")
+    export REDISCLI_AUTH="${REDIS_PASS}"
   fi
 
   redis-cli "${REDIS_CLI_ARGS[@]}" BGSAVE
@@ -83,7 +85,10 @@ if [[ -n "${REDIS_URL:-}" ]]; then
   else
     echo "[backup] warning: could not locate redis RDB file — skipping copy"
   fi
-  echo "[backup] redis done → ${BACKUP_PATH}/redis.rdb"
+  # Only report success when the RDB was actually captured.
+  if [[ -s "${BACKUP_PATH}/redis.rdb" ]]; then
+    echo "[backup] redis done → ${BACKUP_PATH}/redis.rdb"
+  fi
 else
   echo "[backup] REDIS_URL not set — skipping redis"
 fi
