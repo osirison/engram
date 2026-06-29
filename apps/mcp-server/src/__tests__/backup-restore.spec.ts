@@ -12,7 +12,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,6 +50,11 @@ describe('backup / restore (postgres)', () => {
     } catch {
       // best-effort cleanup
     }
+    // Remove the temp backup directory (and its archives) so repeated CI runs
+    // do not accumulate gigabyte-scale leftovers in the OS temp dir.
+    if (backupDir) {
+      rmSync(backupDir, { recursive: true, force: true });
+    }
   });
 
   itIfPg('backup.sh produces an archive with a postgres dump', () => {
@@ -76,6 +81,9 @@ describe('backup / restore (postgres)', () => {
     const archives = readdirSync(backupDir).filter((f) =>
       f.endsWith('.tar.gz'),
     );
+    // Guard against the first test having failed to produce an archive so the
+    // failure points here rather than at a nonsensical '.../undefined' path.
+    expect(archives.length).toBeGreaterThan(0);
     const archivePath = join(backupDir, archives[0]!);
 
     // Remove the sentinel so we can prove restore brought it back.

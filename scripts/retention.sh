@@ -47,7 +47,8 @@ done
 while IFS= read -r -d '' ARCHIVE; do
   FNAME="$(basename "${ARCHIVE}")"
   # Archive name format: engram_backup_YYYYMMDD_HHMMSS.tar.gz
-  DATE_STR="$(echo "${FNAME}" | grep -oP '\d{8}_\d{6}' || true)"
+  # grep -oE (POSIX) instead of grep -oP (PCRE) for BusyBox/BSD grep portability.
+  DATE_STR="$(echo "${FNAME}" | grep -oE '[0-9]{8}_[0-9]{6}' || true)"
   if [[ -z "${DATE_STR}" ]]; then continue; fi
 
   ARCHIVE_TS="$(date -d "${DATE_STR:0:8} ${DATE_STR:9:2}:${DATE_STR:11:2}:${DATE_STR:13:2}" +%s \

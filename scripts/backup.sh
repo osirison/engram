@@ -35,12 +35,13 @@ echo "[backup] starting — writing to ${BACKUP_PATH}"
 # ── Postgres ──────────────────────────────────────────────────────────────────
 if [[ -n "${DATABASE_URL:-}" ]]; then
   echo "[backup] dumping postgres …"
-  PG_DUMP="pg_dump"
+  PG_DUMP=(pg_dump)
   if ! command -v pg_dump &>/dev/null; then
     # Fall back to docker exec if pg_dump is not available locally.
-    PG_DUMP="docker compose -f ${COMPOSE_FILE} exec -T postgres pg_dump"
+    # Use an array so a COMPOSE_FILE path with spaces is not word-split.
+    PG_DUMP=(docker compose -f "${COMPOSE_FILE}" exec -T postgres pg_dump)
   fi
-  ${PG_DUMP} "${DATABASE_URL}" \
+  "${PG_DUMP[@]}" "${DATABASE_URL}" \
     --format=custom \
     --no-acl \
     --no-owner \
@@ -92,7 +93,9 @@ echo "[backup] creating qdrant snapshot …"
 COLLECTION="${VECTOR_COLLECTION:-memories}"
 SNAPSHOT_RESP="$(curl -sf -X POST "${QDRANT_URL}/collections/${COLLECTION}/snapshots" \
   -H 'Content-Type: application/json' || echo '{}')"
-SNAPSHOT_NAME="$(echo "${SNAPSHOT_RESP}" | grep -oP '"name":"\K[^"]+' || true)"
+# grep -oE (POSIX) instead of grep -oP (PCRE \K) so this works on BusyBox/BSD
+# grep too; preserve empty-on-no-match so the guard below skips correctly.
+SNAPSHOT_NAME="$(echo "${SNAPSHOT_RESP}" | grep -oE '"name":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
 
 if [[ -n "${SNAPSHOT_NAME}" ]]; then
   curl -sf "${QDRANT_URL}/collections/${COLLECTION}/snapshots/${SNAPSHOT_NAME}" \

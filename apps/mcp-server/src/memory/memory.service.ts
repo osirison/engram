@@ -602,7 +602,12 @@ export class MemoryService {
     );
     try {
       const result = await this.ltm.reindex(options);
-      this.metricsService?.reindexOpsTotal.inc({ status: 'success' });
+      // Mirror ConsolidationService's vocabulary: per-item failures are
+      // tolerated but surfaced as 'partial' so dashboards/alerts can
+      // distinguish a clean run from one that skipped items.
+      this.metricsService?.reindexOpsTotal.inc({
+        status: result.failed > 0 ? 'partial' : 'success',
+      });
       return result;
     } catch (err) {
       this.metricsService?.reindexOpsTotal.inc({ status: 'error' });

@@ -154,6 +154,9 @@ export class HealthController {
       parts.push(this.embeddingsService.getPrometheusMetrics());
     }
 
-    return parts.join('\n') + '\n';
+    // prom-client output already ends in a newline; strip trailing newlines
+    // from each block so families are separated by a single newline rather
+    // than a blank line (cleaner for strict exposition-format parsers).
+    return parts.map((part) => part.replace(/\n+$/, '')).join('\n') + '\n';
   }
 }
