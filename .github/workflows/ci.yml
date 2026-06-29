@@ -169,6 +169,10 @@ jobs:
           context: .
           file: apps/mcp-server/Dockerfile
           push: false
+          # Load the built image into the docker daemon so the smoke-test step
+          # below can `docker run` it; without this the build stays in buildkit
+          # and `docker run` fails with "Unable to find image locally".
+          load: true
           tags: engram-mcp-server:ci-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
