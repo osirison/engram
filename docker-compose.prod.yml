@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: engram-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-engram}
+      POSTGRES_USER: ${POSTGRES_USER:-engram}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-engram} -d ${POSTGRES_DB:-engram}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - engram-network
+    # Do not expose ports in production — mcp-server connects internally.
+
+  redis:
+    image: redis:7-alpine
+    container_name: engram-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - engram-network
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: engram-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ['CMD-SHELL', "timeout 5 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - engram-network
+
+  mcp-server:
+    image: ghcr.io/osirison/engram/mcp-server:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/mcp-server/Dockerfile
+    container_name: engram-mcp-server
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-enterprise}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-engram}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-engram}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      QDRANT_URL: http://qdrant:6333
+      VECTOR_BACKEND: ${VECTOR_BACKEND:-qdrant}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:?MCP_ADMIN_TOKEN is required}
+      MCP_TRANSPORT: streamable-http
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: engram-mcp-server
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - engram-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  qdrant_data:
+    driver: local
+
+networks:
+  engram-network:
+    driver: bridge
