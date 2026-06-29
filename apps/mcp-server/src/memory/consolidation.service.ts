@@ -12,6 +12,7 @@ import {
   LtmMemoryQuotaExceededError,
   ImportanceScoringService,
 } from '@engram/memory-ltm';
+import { MetricsService } from '../metrics/metrics.service';
 
 export interface ConsolidationResult {
   promoted: number;
@@ -33,6 +34,7 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly stmService?: MemoryStmService,
     @Optional() private readonly ltmService?: MemoryLtmService,
     @Optional() private readonly importanceService?: ImportanceScoringService,
+    @Optional() private readonly metricsService?: MetricsService,
   ) {
     this.accessThreshold = ConsolidationService.parseEnvInt(
       process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD,
@@ -191,6 +193,11 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Consolidation pass complete: promoted=${promoted} skipped=${skipped} failed=${failed}`,
     );
+    const runStatus = failed > 0 ? 'partial' : 'success';
+    this.metricsService?.consolidationOpsTotal.inc({ status: runStatus });
+    if (promoted > 0) {
+      this.metricsService?.memoriesPromotedTotal.inc(promoted);
+    }
     return { promoted, skipped, failed };
   }
 
