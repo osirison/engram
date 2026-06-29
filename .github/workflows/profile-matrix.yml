@@ -126,6 +126,18 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install PostgreSQL 17 client (match service version)
+        # backup-restore.spec.ts shells out to pg_dump/pg_restore, which refuse
+        # a server newer than the client; the runner ships pg16 but the service
+        # is pg17, so install the matching major version.
+        run: |
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       - run: pnpm db:migrate:deploy

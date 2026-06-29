@@ -11,6 +11,7 @@ import {
   ImportanceScoringService,
 } from '@engram/memory-ltm';
 import { Memory } from '@engram/database';
+import { MetricsService } from '../metrics/metrics.service';
 
 type MemoryListResult = {
   items: Memory[];
@@ -273,6 +274,7 @@ export class MemoryService {
     private readonly stmService: MemoryStmService,
     private readonly ltmService: MemoryLtmService,
     @Optional() private readonly importanceService?: ImportanceScoringService,
+    @Optional() private readonly metricsService?: MetricsService,
   ) {
     this.stm = this.stmService as unknown as StmServiceContract;
     this.ltm = this.ltmService;
@@ -283,27 +285,44 @@ export class MemoryService {
    */
   async createMemory(dto: CreateMemoryDto): Promise<Memory> {
     this.logger.debug(`Creating ${dto.type} memory for user: ${dto.userId}`);
-
-    if (dto.type === 'short-term') {
-      // Create short-term memory with TTL
-      return await this.stm.create({
-        userId: dto.userId,
-        content: dto.content,
-        scope: dto.scope,
-        metadata: dto.metadata,
-        tags: dto.tags,
-        ttl: dto.ttl,
-      });
-    } else {
-      // Create long-term memory
-      return await this.ltm.create({
-        userId: dto.userId,
-        content: dto.content,
-        scope: dto.scope,
-        metadata: dto.metadata,
-        tags: dto.tags,
-        skipDuplicateCheck: dto.skipDuplicateCheck,
-      });
+    const tier = dto.type === 'short-term' ? 'stm' : 'ltm';
+    const start = Date.now();
+    try {
+      let result: Memory;
+      if (dto.type === 'short-term') {
+        result = await this.stm.create({
+          userId: dto.userId,
+          content: dto.content,
+          scope: dto.scope,
+          metadata: dto.metadata,
+          tags: dto.tags,
+          ttl: dto.ttl,
+        });
+      } else {
+        result = await this.ltm.create({
+          userId: dto.userId,
+          content: dto.content,
+          scope: dto.scope,
+          metadata: dto.metadata,
+          tags: dto.tags,
+          skipDuplicateCheck: dto.skipDuplicateCheck,
+        });
+      }
+      this.metricsService?.recordOp(
+        'create',
+        tier,
+        'success',
+        Date.now() - start,
+      );
+      return result;
+    } catch (err) {
+      this.metricsService?.recordOp(
+        'create',
+        tier,
+        'error',
+        Date.now() - start,
+      );
+      throw err;
     }
   }
 
@@ -546,14 +565,31 @@ export class MemoryService {
     options: RecallOptions = {},
   ): Promise<RecallResult[]> {
     this.logger.debug(`Recalling memories for user: ${userId}`);
-
-    return await this.ltm.semanticSearch(userId, query, {
-      limit: options.limit,
-      scope: options.scope,
-      tags: options.tags,
-      createdFrom: options.createdFrom,
-      createdTo: options.createdTo,
-    });
+    const start = Date.now();
+    try {
+      const result = await this.ltm.semanticSearch(userId, query, {
+        limit: options.limit,
+        scope: options.scope,
+        tags: options.tags,
+        createdFrom: options.createdFrom,
+        createdTo: options.createdTo,
+      });
+      this.metricsService?.recordOp(
+        'recall',
+        'ltm',
+        'success',
+        Date.now() - start,
+      );
+      return result;
+    } catch (err) {
+      this.metricsService?.recordOp(
+        'recall',
+        'ltm',
+        'error',
+        Date.now() - start,
+      );
+      throw err;
+    }
   }
 
   /**
@@ -564,8 +600,19 @@ export class MemoryService {
     this.logger.debug(
       `Reindexing vector store${options.userId ? ` for user: ${options.userId}` : ' for all users'}`,
     );
-
-    return await this.ltm.reindex(options);
+    try {
+      const result = await this.ltm.reindex(options);
+      // Mirror ConsolidationService's vocabulary: per-item failures are
+      // tolerated but surfaced as 'partial' so dashboards/alerts can
+      // distinguish a clean run from one that skipped items.
+      this.metricsService?.reindexOpsTotal.inc({
+        status: result.failed > 0 ? 'partial' : 'success',
+      });
+      return result;
+    } catch (err) {
+      this.metricsService?.reindexOpsTotal.inc({ status: 'error' });
+      throw err;
+    }
   }
 
   // ─── C1: High-Level Agent UX Methods ───────────────────────────────────────

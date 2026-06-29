@@ -11,6 +11,7 @@ import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { MemoryStoreHealthIndicator } from './memory-store.health';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({})
 export class HealthModule {
@@ -27,6 +28,7 @@ export class HealthModule {
       TerminusModule,
       HttpModule,
       EmbeddingsModule,
+      MetricsModule,
     ];
 
     if (capabilities.requiresDatabase) {

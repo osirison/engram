@@ -1,6 +1,8 @@
+import './telemetry';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Request, type Response } from 'express';
+import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -10,6 +12,7 @@ import { McpHandler } from '@engram/core';
 import type { McpServerConfig } from '@engram/core';
 import { ApiKeysController } from './api-keys/api-keys.controller';
 import { MemoryController } from './memory/memory.controller';
+import { MetricsService } from './metrics/metrics.service';
 
 type McpHandlerContract = {
   registerAdditionalTools: (
@@ -33,6 +36,12 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(app.get(Logger));
 
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+    }),
+  );
+
   app.enableCors({
     origin: true,
     methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
@@ -45,6 +54,9 @@ async function bootstrap(): Promise<void> {
   const memoryController = app.get<MemoryController>(MemoryController);
   const apiKeysController =
     app.get<ApiKeysControllerContract>(ApiKeysController);
+  const metricsService = app.get<MetricsService>(MetricsService, {
+    strict: false,
+  });
   const mcpTransport = process.env.MCP_TRANSPORT ?? 'stdio';
 
   try {
@@ -126,6 +138,7 @@ async function bootstrap(): Promise<void> {
                 enableJsonResponse: true,
                 onsessioninitialized: (sid: string): void => {
                   transports.set(sid, transport!);
+                  metricsService?.activeMcpSessions.inc();
                   logger.log(`MCP session initialized: ${sid}`, 'McpSession');
                 },
               });
@@ -133,6 +146,7 @@ async function bootstrap(): Promise<void> {
               transport.onclose = (): void => {
                 const sid = transport!.sessionId;
                 if (sid && transports.delete(sid)) {
+                  metricsService?.activeMcpSessions.dec();
                   logger.log(`MCP session closed: ${sid}`, 'McpSession');
                 }
               };

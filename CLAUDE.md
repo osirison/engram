@@ -126,15 +126,18 @@ Dependency-free harness for scoring retrieval quality (precision@k, recall@k, MR
 
 Key variables (full list in `.env.example`):
 
-| Variable             | Purpose                                                 |
-| -------------------- | ------------------------------------------------------- |
-| `DATABASE_URL`       | PostgreSQL connection string                            |
-| `REDIS_URL`          | Redis connection string                                 |
-| `QDRANT_URL`         | Qdrant HTTP URL (required when `VECTOR_BACKEND=qdrant`) |
-| `VECTOR_BACKEND`     | `qdrant` or `pgvector`                                  |
-| `EMBEDDING_PROVIDER` | `openai`, `local`, or `disabled`                        |
-| `OPENAI_API_KEY`     | Required for OpenAI embeddings                          |
-| `MCP_ADMIN_TOKEN`    | Required for reindex admin MCP tools                    |
-| `PGVECTOR_TEST_URL`  | Enables pgvector integration tests in CI                |
+| Variable                      | Purpose                                                 |
+| ----------------------------- | ------------------------------------------------------- |
+| `DATABASE_URL`                | PostgreSQL connection string                            |
+| `REDIS_URL`                   | Redis connection string                                 |
+| `QDRANT_URL`                  | Qdrant HTTP URL (required when `VECTOR_BACKEND=qdrant`) |
+| `VECTOR_BACKEND`              | `qdrant` or `pgvector`                                  |
+| `EMBEDDING_PROVIDER`          | `openai`, `local`, or `disabled`                        |
+| `OPENAI_API_KEY`              | Required for OpenAI embeddings                          |
+| `MCP_ADMIN_TOKEN`             | Required for reindex admin MCP tools                    |
+| `PGVECTOR_TEST_URL`           | Enables pgvector integration tests in CI                |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Enable OTel tracing; omit to disable (no overhead)      |
+| `BACKUP_DIR`                  | Backup archive destination (default `./backups`)        |
+| `BACKUP_RETENTION_DAYS`       | Daily backup retention window (default 30)              |
 
 Read [AGENTS.md](AGENTS.md) before working in this repository.

@@ -9,8 +9,18 @@ allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+  protobufjs: true
   sharp: true
   unrs-resolver: true
+
+overrides:
+  multer: '>=2.2.0'
+  form-data: '>=4.0.6'
+  # Pin to the patched 6.x line: the unbounded '>=6.27.0' pulled undici 8.x into
+  # @qdrant/js-client-rest (which needs ^6.24.0), breaking its REST transport
+  # ("invalid onRequestStart method"). 6.27.0 is the patched 6.x release.
+  undici: '>=6.27.0 <7'
+  hono: '>=4.12.25'
 
 # Allow openai to use zod v4 (openai declares a peer dep on zod ^3 but only uses
 # it for its optional structured-output helpers, which we don't use).

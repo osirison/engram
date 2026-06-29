@@ -16,6 +16,7 @@ import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
 import { InsightExtractionService } from './insight-extraction.service';
 import type { ProfileCapabilities } from '@engram/config';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({})
 export class MemoryModule {
@@ -24,6 +25,7 @@ export class MemoryModule {
       ScheduleModule.forRoot(),
       MemoryStmModule.forRoot(capabilities),
       MemoryLtmModule.forRoot(capabilities),
+      MetricsModule,
     ];
 
     if (capabilities.requiresDatabase) {

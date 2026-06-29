@@ -17,6 +17,7 @@ import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { MemoryStoreHealthIndicator } from './memory-store.health';
+import { MetricsService } from '../metrics/metrics.service';
 
 /**
  * Controller for `/health`, `/health/ready`, and `/health/metrics`.
@@ -36,6 +37,7 @@ export class HealthController {
     @Optional() private readonly qdrantHealth?: QdrantHealthIndicator,
     @Optional() private readonly pgVectorHealth?: PgVectorHealthIndicator,
     @Optional() private readonly embeddingsService?: EmbeddingsService,
+    @Optional() private readonly metricsService?: MetricsService,
     @Optional()
     @Inject('ENGRAM_PROFILE')
     private readonly injectedProfile?: DeploymentProfile,
@@ -111,12 +113,25 @@ export class HealthController {
   async getMetrics(): Promise<string> {
     const backend = (process.env.VECTOR_BACKEND ?? 'qdrant').toLowerCase();
     const capabilities = this.activeCapabilities();
-    const lines = [
-      `engram_vector_backend_info{backend="${backend}"} 1`,
-      'engram_pgvector_ready 0',
-      `engram_deployment_profile_info{profile="${capabilities.profile}"} 1`,
-    ];
 
+    const parts: string[] = [];
+
+    if (this.metricsService) {
+      parts.push(await this.metricsService.getMetrics());
+    }
+
+    // Static info gauges (profile + vector backend).
+    parts.push(
+      `# HELP engram_vector_backend_info Active vector backend`,
+      `# TYPE engram_vector_backend_info gauge`,
+      `engram_vector_backend_info{backend="${backend}"} 1`,
+      `# HELP engram_deployment_profile_info Active deployment profile`,
+      `# TYPE engram_deployment_profile_info gauge`,
+      `engram_deployment_profile_info{profile="${capabilities.profile}"} 1`,
+    );
+
+    // pgvector readiness (async health probe).
+    let pgvectorReady = 0;
     if (
       backend === 'pgvector' &&
       capabilities.requiresQdrant &&
@@ -124,17 +139,24 @@ export class HealthController {
     ) {
       try {
         await this.pgVectorHealth.isHealthy('pgvector');
-        lines[1] = 'engram_pgvector_ready 1';
+        pgvectorReady = 1;
       } catch {
-        lines[1] = 'engram_pgvector_ready 0';
+        pgvectorReady = 0;
       }
     }
+    parts.push(
+      `# HELP engram_pgvector_ready Whether the pgvector extension is reachable`,
+      `# TYPE engram_pgvector_ready gauge`,
+      `engram_pgvector_ready ${pgvectorReady}`,
+    );
 
-    if (!this.embeddingsService) {
-      return `${lines.join('\n')}\n`;
+    if (this.embeddingsService) {
+      parts.push(this.embeddingsService.getPrometheusMetrics());
     }
 
-    const embeddingMetrics = this.embeddingsService.getPrometheusMetrics();
-    return `${lines.join('\n')}\n${embeddingMetrics}`;
+    // prom-client output already ends in a newline; strip trailing newlines
+    // from each block so families are separated by a single newline rather
+    // than a blank line (cleaner for strict exposition-format parsers).
+    return parts.map((part) => part.replace(/\n+$/, '')).join('\n') + '\n';
   }
 }
