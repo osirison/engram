@@ -7,6 +7,7 @@
     "^.+\\.(t|j)s$": [
       "ts-jest",
       {
+        "isolatedModules": true,
         "tsconfig": {
           "module": "commonjs",
           "moduleResolution": "node",
@@ -17,16 +18,24 @@
           "allowSyntheticDefaultImports": true,
           "target": "ES2022",
           "strictNullChecks": true,
-          "skipLibCheck": true
+          "skipLibCheck": true,
+          "isolatedModules": true,
+          "noEmit": true,
+          "rootDir": "../.."
         }
       }
     ]
   },
   "automock": false,
-  "modulePathIgnorePatterns": ["<rootDir>/src/__mocks__"],
+  "roots": ["<rootDir>/test"],
+  "modulePathIgnorePatterns": [
+    "<rootDir>/src/__mocks__",
+    "<rootDir>/dist/__mocks__"
+  ],
   "setupFiles": ["<rootDir>/node_modules/reflect-metadata/Reflect.js"],
   "moduleNameMapper": {
     "^reflect-metadata$": "<rootDir>/node_modules/reflect-metadata/Reflect.js",
+    "^@engram/redis$": "<rootDir>/../../packages/redis/dist/index.js",
     "^(\\..+)\\.js$": "$1"
   },
   "testTimeout": 30000

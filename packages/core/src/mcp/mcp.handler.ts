@@ -8,7 +8,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig, McpServer } from './types.js';
-import { registerTools, type Tool } from './tools/index.js';
+import { registerTools, type Tool, type AuthPolicy } from './tools/index.js';
 
 /**
  * MCP Protocol Handler
@@ -21,6 +21,7 @@ export class McpHandler implements OnModuleDestroy {
   private transport: Transport | null = null;
   private isConnected = false;
   private additionalTools: Tool[] = [];
+  private authPolicy: AuthPolicy = { required: false };
 
   /**
    * Register additional tools before initialization
@@ -29,6 +30,15 @@ export class McpHandler implements OnModuleDestroy {
   registerAdditionalTools(tools: Tool[]): void {
     this.additionalTools = [...this.additionalTools, ...tools];
     this.logger.log(`Registered ${tools.length} additional tools`);
+  }
+
+  /**
+   * Set the authentication policy applied during tool dispatch. When
+   * `required` is true, non-public tools reject unauthenticated requests.
+   */
+  setAuthPolicy(policy: AuthPolicy): void {
+    this.authPolicy = policy;
+    this.logger.log(`MCP auth policy: required=${policy.required}`);
   }
 
   /**
@@ -66,7 +76,7 @@ export class McpHandler implements OnModuleDestroy {
       };
 
       // Register MCP tools (built-in + additional)
-      registerTools(this.server, this.additionalTools);
+      registerTools(this.server, this.additionalTools, this.authPolicy);
 
       this.logger.log('MCP server initialized successfully');
     } catch (error) {
@@ -127,7 +137,7 @@ export class McpHandler implements OnModuleDestroy {
     server.onerror = (error): void => {
       this.logger.error('MCP session server error:', error);
     };
-    registerTools(server, this.additionalTools);
+    registerTools(server, this.additionalTools, this.authPolicy);
     return server;
   }
 

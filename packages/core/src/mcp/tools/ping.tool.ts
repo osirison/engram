@@ -37,4 +37,6 @@ export const pingTool = {
   description: 'Test connectivity to ENGRAM server',
   inputSchema: pingInputSchema,
   handler: pingHandler,
+  // Connectivity check — callable without authentication.
+  auth: 'public' as const,
 };

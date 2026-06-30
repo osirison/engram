@@ -176,6 +176,9 @@ export class ApiKeysController {
         description:
           'Issue a new API key for programmatic agent access. The raw key is returned once and never stored — save it securely.',
         inputSchema: createApiKeyToolSchema,
+        // Admin-gated: issues a key FOR an arbitrary userId, so the caller's
+        // identity must not overwrite the target userId.
+        auth: 'admin',
         handler: this.createApiKey.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -185,6 +188,8 @@ export class ApiKeysController {
         description:
           'List all active (non-revoked, non-expired) API keys for a user. Returns key metadata only — the raw key is never shown again after creation.',
         inputSchema: listApiKeysToolSchema,
+        // Identity-scoped: under enforcement a caller may only list their own keys.
+        auth: 'identity',
         handler: this.listApiKeys.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -194,6 +199,8 @@ export class ApiKeysController {
         description:
           'Immediately revoke an API key by ID. The key will be rejected on all subsequent requests.',
         inputSchema: revokeApiKeyToolSchema,
+        // Identity-scoped: under enforcement a caller may only revoke their own keys.
+        auth: 'identity',
         handler: this.revokeApiKey.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,

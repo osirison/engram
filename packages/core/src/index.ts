@@ -16,5 +16,5 @@ export { LoggingModule, REDACT_PATHS } from './logging/logging.module';
 export { McpModule } from './mcp/mcp.module';
 export { McpHandler } from './mcp/mcp.handler';
 export type { McpServerConfig, McpServer, ServerInfo } from './mcp/types';
-export { registerTools, type Tool } from './mcp/tools/index';
+export { registerTools, type Tool, type ToolAuthMode, type AuthPolicy } from './mcp/tools/index';
 export { pingTool } from './mcp/tools/ping.tool';

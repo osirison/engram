@@ -13,11 +13,21 @@ import type { McpServerConfig } from '@engram/core';
 import { ApiKeysController } from './api-keys/api-keys.controller';
 import { MemoryController } from './memory/memory.controller';
 import { MetricsService } from './metrics/metrics.service';
+import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
+import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
+import { isAuthRequired } from './auth/auth.config';
+
+type ExpressMiddleware = (
+  req: Request,
+  res: Response,
+  next: (err?: unknown) => void,
+) => void;
 
 type McpHandlerContract = {
   registerAdditionalTools: (
     tools: ReturnType<MemoryController['getMcpTools']>,
   ) => void;
+  setAuthPolicy: (policy: { required: boolean }) => void;
   start: (options: McpServerConfig) => Promise<void>;
   createConfiguredServer: (options: McpServerConfig) => {
     connect: (t: StreamableHTTPServerTransport) => Promise<void>;
@@ -59,6 +69,35 @@ async function bootstrap(): Promise<void> {
   });
   const mcpTransport = process.env.MCP_TRANSPORT ?? 'stdio';
 
+  // Auth enforcement only applies over the HTTP transport (stdio is trusted
+  // local). When enabled, non-public tools require an authenticated identity
+  // and the acting userId is derived from the credential, not tool input.
+  const authRequired = isAuthRequired() && mcpTransport === 'streamable-http';
+  mcpHandler.setAuthPolicy({ required: authRequired });
+
+  // Resolve auth/rate-limit middleware if the active profile wired them.
+  const tryGet = <T>(token: unknown): T | undefined => {
+    try {
+      return app.get<T>(token as never, { strict: false });
+    } catch {
+      return undefined;
+    }
+  };
+  const authMiddleware = tryGet<McpAuthMiddleware>(McpAuthMiddleware);
+  const rateLimitMiddleware = tryGet<McpRateLimitMiddleware>(
+    McpRateLimitMiddleware,
+  );
+  if (authRequired && !authMiddleware) {
+    logger.error(
+      'AUTH_REQUIRED is set but no auth middleware is available for this profile — refusing to start unprotected.',
+    );
+    throw new Error('AUTH_REQUIRED but auth is not wired for this profile');
+  }
+  logger.log(
+    `MCP auth: required=${authRequired} rateLimiting=${Boolean(rateLimitMiddleware)}`,
+    'Bootstrap',
+  );
+
   try {
     const memoryTools = memoryController.getMcpTools();
     const apiKeyTools = apiKeysController.getMcpTools();
@@ -77,6 +116,37 @@ async function bootstrap(): Promise<void> {
         .getHttpAdapter()
         .getInstance() as express.Application;
       const mcpJsonParser = express.json({ limit: '4mb' });
+
+      // Auth + rate-limit run after JSON parsing (they inspect the body) and
+      // before the MCP handler. Async rejections are converted to a 500 so they
+      // never hang the request.
+      const wrapAsync =
+        (
+          fn: (
+            req: Request,
+            res: Response,
+            next: (err?: unknown) => void,
+          ) => void | Promise<void>,
+        ): ExpressMiddleware =>
+        (req, res, next): void => {
+          void Promise.resolve(fn(req, res, next)).catch((err: unknown) => {
+            logger.error('Error in /mcp middleware:', err);
+            if (!res.headersSent) {
+              res.status(500).json({
+                jsonrpc: '2.0',
+                error: { code: -32603, message: 'Internal server error' },
+                id: null,
+              });
+            }
+          });
+        };
+      const mcpPreHandlers: ExpressMiddleware[] = [];
+      if (authMiddleware) {
+        mcpPreHandlers.push(wrapAsync(authMiddleware.handle));
+      }
+      if (rateLimitMiddleware) {
+        mcpPreHandlers.push(wrapAsync(rateLimitMiddleware.handle));
+      }
 
       const handleSessionRequest = async (
         req: Request,
@@ -102,6 +172,7 @@ async function bootstrap(): Promise<void> {
       expressApp.post(
         '/mcp',
         mcpJsonParser,
+        ...mcpPreHandlers,
         async (req: Request, res: Response) => {
           try {
             const sessionId = req.headers['mcp-session-id'];
