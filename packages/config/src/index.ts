@@ -8,5 +8,7 @@ export {
   DeploymentProfile,
   resolveCapabilities,
   coerceDeploymentProfile,
+  usesPgVector,
+  DEFAULT_VECTOR_BACKEND,
   type ProfileCapabilities,
 } from './profile';
