@@ -94,7 +94,11 @@ function build(
 }
 
 function mockRes(): Response {
-  return { redirect: jest.fn(), cookie: jest.fn() } as unknown as Response;
+  return {
+    redirect: jest.fn(),
+    cookie: jest.fn(),
+    clearCookie: jest.fn(),
+  } as unknown as Response;
 }
 
 describe('AuthController', () => {
@@ -125,12 +129,13 @@ describe('AuthController', () => {
         'github',
         { code: 'c', state: 'state-1' },
         res,
-      )) as { token: string; sessionId: string };
+      )) as { token: string; sessionId?: string };
       expect(sessions.consumeOAuthState).toHaveBeenCalledWith('state-1');
       expect(users.upsertByEmail).toHaveBeenCalledWith('octo@gh.com');
       expect(jwt.issue).toHaveBeenCalled();
       expect(result.token).toBe('jwt-token');
-      expect(result.sessionId).toBe('sess-1');
+      // The session id must NOT be echoed in the body — cookie only.
+      expect(result.sessionId).toBeUndefined();
       expect(res.cookie).toHaveBeenCalledWith(
         'engram_session',
         'sess-1',
@@ -194,10 +199,23 @@ describe('AuthController', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    it('destroys the session on logout', async () => {
+    it('destroys the session named by the cookie and clears it', async () => {
       const { controller, sessions } = build();
-      await controller.logout({ sessionId: 'sess-1' });
+      const res = mockRes();
+      await controller.logout(
+        { headers: { cookie: 'foo=bar; engram_session=sess-1' } } as never,
+        res,
+      );
       expect(sessions.destroySession).toHaveBeenCalledWith('sess-1');
+      expect(res.clearCookie).toHaveBeenCalledWith('engram_session');
+    });
+
+    it('is a no-op destroy when no session cookie is present', async () => {
+      const { controller, sessions } = build();
+      const res = mockRes();
+      await controller.logout({ headers: {} } as never, res);
+      expect(sessions.destroySession).not.toHaveBeenCalled();
+      expect(res.clearCookie).toHaveBeenCalledWith('engram_session');
     });
   });
 });

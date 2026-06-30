@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Get,
   HttpCode,
@@ -35,6 +34,27 @@ export const OAUTH_REDIRECT_BASE_URL = Symbol.for('engram.oauth-redirect-base');
  */
 const SESSION_SCOPES = ['memories:read', 'memories:write', 'memories:delete'];
 
+/** Name of the httpOnly cookie carrying the interactive session id. */
+const SESSION_COOKIE = 'engram_session';
+
+/**
+ * Read the session id from the httpOnly `engram_session` cookie. The id is
+ * never returned in a response body (that would defeat `httpOnly` and expose
+ * it to XSS), so logout recovers it from the cookie the browser sends back.
+ */
+function readSessionCookie(req: Request): string | undefined {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === SESSION_COOKIE) {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+  }
+  return undefined;
+}
+
 const callbackQuerySchema = z.object({
   code: z.string().min(1),
   state: z.string().min(1),
@@ -49,7 +69,7 @@ function isProviderName(value: string): value is OAuthProviderName {
  *   - `GET  /auth/:provider/login`    → redirect to the provider with CSRF state
  *   - `GET  /auth/:provider/callback` → exchange code, upsert user, issue JWT + session
  *   - `GET  /auth/me`                 → resolve the caller's identity
- *   - `POST /auth/logout`             → destroy a session
+ *   - `POST /auth/logout`             → destroy the session named by its cookie
  */
 @Controller('auth')
 export class AuthController {
@@ -134,7 +154,7 @@ export class AuthController {
       scopes: SESSION_SCOPES,
     });
 
-    res.cookie('engram_session', sessionId, {
+    res.cookie(SESSION_COOKIE, sessionId, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
@@ -142,11 +162,13 @@ export class AuthController {
     });
 
     this.logger.log(`oauth_login_ok provider=${provider} userId=${user.id}`);
+    // The session id is intentionally NOT echoed in the body — it lives only in
+    // the httpOnly cookie above. The Bearer token is the credential for API
+    // clients; logout recovers the session id from the cookie.
     return {
       token,
       tokenType: 'Bearer',
       expiresIn: this.jwt.tokenLifetimeSeconds,
-      sessionId,
       user: {
         id: user.id,
         email: user.email,
@@ -166,15 +188,14 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
-  async logout(@Body() body: unknown): Promise<void> {
-    const sessionId =
-      body &&
-      typeof body === 'object' &&
-      typeof (body as { sessionId?: unknown }).sessionId === 'string'
-        ? (body as { sessionId: string }).sessionId
-        : undefined;
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    const sessionId = readSessionCookie(req);
     if (sessionId) {
       await this.sessions.destroySession(sessionId);
     }
+    res.clearCookie(SESSION_COOKIE);
   }
 }
