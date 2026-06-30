@@ -1,0 +1,12 @@
+# Build outputs
+.next/
+.turbo/
+dist/
+out/
+
+# Machine-generated
+pnpm-lock.yaml
+
+# Env files (no parser)
+.env
+.env.*
