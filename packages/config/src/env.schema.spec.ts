@@ -27,6 +27,13 @@ describe('envSchema', () => {
         VECTOR_BACKEND: 'qdrant',
         STM_CONSOLIDATION_ACCESS_THRESHOLD: 3,
         STM_CONSOLIDATION_INTERVAL_MS: 300_000,
+        JWT_EXPIRES_IN: '7d',
+        AUTH_REQUIRED: false,
+        RATE_LIMIT_ENABLED: false,
+        RATE_LIMIT_WINDOW_SEC: 60,
+        RATE_LIMIT_USER_RPM: 120,
+        RATE_LIMIT_ORG_RPM: 6000,
+        RATE_LIMIT_IP_RPM: 60,
       });
     });
 
@@ -231,6 +238,90 @@ describe('envSchema', () => {
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
+    });
+  });
+
+  describe('auth & rate limiting', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+      REDIS_URL: 'redis://localhost:6379',
+      QDRANT_URL: 'http://localhost:6333',
+    };
+
+    const secret = 'a-very-long-secret-key-of-at-least-32-characters';
+
+    it('parses AUTH_REQUIRED truthy strings without the z.coerce.boolean footgun', () => {
+      expect(
+        envSchema.parse({ ...base, AUTH_REQUIRED: 'true', JWT_SECRET: secret }).AUTH_REQUIRED
+      ).toBe(true);
+      expect(
+        envSchema.parse({ ...base, AUTH_REQUIRED: '1', JWT_SECRET: secret }).AUTH_REQUIRED
+      ).toBe(true);
+      // The string 'false' must NOT be coerced to true (the z.coerce.boolean footgun).
+      expect(envSchema.parse({ ...base, AUTH_REQUIRED: 'false' }).AUTH_REQUIRED).toBe(false);
+      expect(envSchema.parse({ ...base, AUTH_REQUIRED: '0' }).AUTH_REQUIRED).toBe(false);
+    });
+
+    it('requires a 32+ char JWT_SECRET when AUTH_REQUIRED=true', () => {
+      expect(() => envSchema.parse({ ...base, AUTH_REQUIRED: 'true' })).toThrow(ZodError);
+      expect(() =>
+        envSchema.parse({ ...base, AUTH_REQUIRED: 'true', JWT_SECRET: 'short' })
+      ).toThrow(ZodError);
+      expect(
+        envSchema.parse({
+          ...base,
+          AUTH_REQUIRED: 'true',
+          JWT_SECRET: 'a-very-long-secret-key-of-at-least-32-characters',
+        }).JWT_SECRET
+      ).toHaveLength(48);
+    });
+
+    it('does not require JWT_SECRET when auth is disabled', () => {
+      expect(() => envSchema.parse(base)).not.toThrow();
+      expect(envSchema.parse(base).JWT_SECRET).toBeUndefined();
+    });
+
+    it('coerces rate-limit numbers and rejects non-positive limits', () => {
+      const result = envSchema.parse({
+        ...base,
+        RATE_LIMIT_ENABLED: 'true',
+        RATE_LIMIT_USER_RPM: '300',
+        RATE_LIMIT_WINDOW_SEC: '30',
+      });
+      expect(result.RATE_LIMIT_ENABLED).toBe(true);
+      expect(result.RATE_LIMIT_USER_RPM).toBe(300);
+      expect(result.RATE_LIMIT_WINDOW_SEC).toBe(30);
+      expect(() => envSchema.parse({ ...base, RATE_LIMIT_USER_RPM: '0' })).toThrow(ZodError);
+    });
+
+    it('accepts a well-formed RATE_LIMIT_TOOL_OVERRIDES and rejects a malformed one', () => {
+      expect(
+        envSchema.parse({
+          ...base,
+          RATE_LIMIT_TOOL_OVERRIDES: '{"reindex_memories":{"limit":2,"windowSeconds":3600}}',
+        }).RATE_LIMIT_TOOL_OVERRIDES
+      ).toContain('reindex_memories');
+      // Not JSON.
+      expect(() => envSchema.parse({ ...base, RATE_LIMIT_TOOL_OVERRIDES: 'not-json' })).toThrow(
+        ZodError
+      );
+      // Wrong shape (missing windowSeconds / non-positive).
+      expect(() =>
+        envSchema.parse({
+          ...base,
+          RATE_LIMIT_TOOL_OVERRIDES: '{"t":{"limit":0,"windowSeconds":60}}',
+        })
+      ).toThrow(ZodError);
+    });
+
+    it('validates OAUTH_REDIRECT_BASE_URL as a URL when present', () => {
+      expect(
+        envSchema.parse({ ...base, OAUTH_REDIRECT_BASE_URL: 'https://api.example.com' })
+          .OAUTH_REDIRECT_BASE_URL
+      ).toBe('https://api.example.com');
+      expect(() => envSchema.parse({ ...base, OAUTH_REDIRECT_BASE_URL: 'not-a-url' })).toThrow(
+        ZodError
+      );
     });
   });
 

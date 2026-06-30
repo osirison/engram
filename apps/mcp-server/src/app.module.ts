@@ -20,6 +20,7 @@ import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeysModule } from './api-keys/api-keys.module';
+import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { MemoryModule } from './memory/memory.module';
 
@@ -70,6 +71,9 @@ function buildImportsForProfile(
 
   if (capabilities.requiresDatabase) {
     imports.push(PrismaModule);
+    // Auth needs Postgres (API keys, user upsert). OAuth/sessions/rate-limiting
+    // inside AuthModule are further gated on Redis (enterprise) internally.
+    imports.push(AuthModule.forRoot(capabilities));
   }
   if (capabilities.requiresRedis) {
     imports.push(RedisModule.forRoot());

@@ -1,0 +1,39 @@
+{
+  "name": "@engram/auth",
+  "version": "0.1.0",
+  "description": "Authentication & authorization primitives for ENGRAM: HS256 JWT, OAuth (GitHub/Google), Redis-backed sessions, and fixed-window rate limiting.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "engram",
+    "auth",
+    "jwt",
+    "oauth",
+    "rate-limit",
+    "multi-tenancy"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.24",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^25.9.1",
+    "eslint": "^9.39.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.24",
+    "reflect-metadata": "^0.2.2",
+    "tslib": "^2.8.1",
+    "zod": "^4.4.3"
+  }
+}

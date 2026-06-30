@@ -1170,6 +1170,7 @@ export class MemoryController {
         description:
           'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable',
         inputSchema: reindexToolSchema,
+        auth: 'admin',
         handler: this.reindexMemories.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1179,6 +1180,7 @@ export class MemoryController {
         description:
           'Queue asynchronous vector reindexing with persisted progress and resumability cursor',
         inputSchema: reindexQueueToolSchema,
+        auth: 'admin',
         handler: this.queueReindexMemories.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1188,6 +1190,7 @@ export class MemoryController {
         description:
           'Get status and progress for a queued reindex job (queued/running/completed/failed)',
         inputSchema: reindexStatusToolSchema,
+        auth: 'admin',
         handler: this.getReindexStatus.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1197,6 +1200,7 @@ export class MemoryController {
         description:
           'Cancel a queued/running reindex job and preserve progress cursor',
         inputSchema: reindexCancelToolSchema,
+        auth: 'admin',
         handler: this.cancelReindexJob.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1206,6 +1210,7 @@ export class MemoryController {
         description:
           'Retry a failed/cancelled reindex job from its last persisted cursor',
         inputSchema: reindexRetryToolSchema,
+        auth: 'admin',
         handler: this.retryReindexJob.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1215,6 +1220,7 @@ export class MemoryController {
         description:
           'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage.',
         inputSchema: consolidateToolSchema,
+        auth: 'admin',
         handler: this.consolidateMemories.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1285,7 +1291,34 @@ export class MemoryController {
       },
     ];
 
-    return this.filterToolsByProfile(all);
+    // Make API-key/JWT scopes load-bearing: each memory tool requires the
+    // matching scope (the `admin` scope satisfies any). Read tools need
+    // `memories:read`, mutations `memories:write`, deletions `memories:delete`.
+    // Admin maintenance tools (reindex/consolidate) gate on MCP_ADMIN_TOKEN and
+    // intentionally carry no scope here. Enforced in the core dispatch only when
+    // a request is authenticated.
+    const scopeByTool: Record<string, string> = {
+      create_memory: 'memories:write',
+      update_memory: 'memories:write',
+      promote_memory: 'memories:write',
+      remember: 'memories:write',
+      ingest_conversation: 'memories:write',
+      delete_memory: 'memories:delete',
+      forget: 'memories:delete',
+      get_memory: 'memories:read',
+      list_memories: 'memories:read',
+      recall: 'memories:read',
+      reflect: 'memories:read',
+      compress_context: 'memories:read',
+      load_context: 'memories:read',
+      prompt_context: 'memories:read',
+    };
+    const scoped = all.map((tool) => {
+      const requiredScope = scopeByTool[tool.name];
+      return requiredScope ? { ...tool, requiredScope } : tool;
+    });
+
+    return this.filterToolsByProfile(scoped);
   }
 
   /**
