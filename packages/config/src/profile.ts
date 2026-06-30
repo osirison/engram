@@ -109,3 +109,32 @@ export function coerceDeploymentProfile(
 
   throw new Error(`DEPLOYMENT_PROFILE must be one of memory|lite|enterprise; received '${raw}'`);
 }
+
+/**
+ * The vector backend value used when `VECTOR_BACKEND` is unset.
+ *
+ * Mirrors the default in `env.schema` so callers that read `process.env`
+ * directly resolve the same backend the validated config would.
+ */
+export const DEFAULT_VECTOR_BACKEND = 'qdrant';
+
+/**
+ * Decide whether the pgvector backend is active for a given profile.
+ *
+ * pgvector stores embeddings inside Postgres, so it is reachable in any
+ * profile that provisions a database (LITE and ENTERPRISE) whenever
+ * `VECTOR_BACKEND=pgvector` — independent of whether the profile also runs a
+ * remote Qdrant service.
+ *
+ * This predicate exists so the pgvector health wiring no longer piggybacks on
+ * `requiresQdrant` (which is precisely the *no-pgvector* backend). The choice
+ * between Qdrant and pgvector is environment-driven (`VECTOR_BACKEND`), not a
+ * property of the profile, so it lives here rather than as a profile flag.
+ */
+export function usesPgVector(
+  capabilities: ProfileCapabilities,
+  backend: string | null | undefined
+): boolean {
+  const normalized = (backend ?? DEFAULT_VECTOR_BACKEND).toLowerCase();
+  return capabilities.requiresDatabase && normalized === 'pgvector';
+}

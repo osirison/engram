@@ -9,6 +9,8 @@ import {
 import {
   resolveCapabilities,
   coerceDeploymentProfile,
+  usesPgVector,
+  DEFAULT_VECTOR_BACKEND,
   type ProfileCapabilities,
   DeploymentProfile,
 } from '@engram/config';
@@ -81,15 +83,16 @@ export class HealthController {
         indicators.push(
           (): Promise<HealthIndicatorResult> => qdrant.isHealthy('qdrant'),
         );
-        const pg = this.pgVectorHealth;
-        if (
-          pg &&
-          (process.env.VECTOR_BACKEND ?? 'qdrant').toLowerCase() === 'pgvector'
-        ) {
-          indicators.push(
-            (): Promise<HealthIndicatorResult> => pg.isHealthy('pgvector'),
-          );
-        }
+      }
+    }
+    // pgvector is probed whenever it is the active backend on a DB-bearing
+    // profile (LITE or ENTERPRISE), not only alongside Qdrant.
+    if (usesPgVector(capabilities, process.env.VECTOR_BACKEND)) {
+      const pg = this.pgVectorHealth;
+      if (pg) {
+        indicators.push(
+          (): Promise<HealthIndicatorResult> => pg.isHealthy('pgvector'),
+        );
       }
     }
 
@@ -111,7 +114,9 @@ export class HealthController {
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async getMetrics(): Promise<string> {
-    const backend = (process.env.VECTOR_BACKEND ?? 'qdrant').toLowerCase();
+    const backend = (
+      process.env.VECTOR_BACKEND ?? DEFAULT_VECTOR_BACKEND
+    ).toLowerCase();
     const capabilities = this.activeCapabilities();
 
     const parts: string[] = [];
@@ -130,13 +135,11 @@ export class HealthController {
       `engram_deployment_profile_info{profile="${capabilities.profile}"} 1`,
     );
 
-    // pgvector readiness (async health probe).
+    // pgvector readiness (async health probe). Gauge reflects real
+    // reachability whenever pgvector is the active backend on a DB-bearing
+    // profile — including LITE, where requiresQdrant is false.
     let pgvectorReady = 0;
-    if (
-      backend === 'pgvector' &&
-      capabilities.requiresQdrant &&
-      this.pgVectorHealth
-    ) {
+    if (usesPgVector(capabilities, backend) && this.pgVectorHealth) {
       try {
         await this.pgVectorHealth.isHealthy('pgvector');
         pgvectorReady = 1;

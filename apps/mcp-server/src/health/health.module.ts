@@ -4,7 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { EmbeddingsModule } from '@engram/embeddings';
 import { RedisModule } from '@engram/redis';
 import { QdrantModule, VectorStoreModule } from '@engram/vector-store';
-import type { ProfileCapabilities } from '@engram/config';
+import { usesPgVector, type ProfileCapabilities } from '@engram/config';
 import { HealthController } from './health.controller';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
@@ -41,8 +41,17 @@ export class HealthModule {
       providers.push(RedisHealthIndicator);
     }
     if (capabilities.requiresQdrant) {
-      imports.push(QdrantModule, VectorStoreModule);
-      providers.push(QdrantHealthIndicator, PgVectorHealthIndicator);
+      // Qdrant is a remote service wired only when the profile deploys it.
+      imports.push(QdrantModule);
+      providers.push(QdrantHealthIndicator);
+    }
+    if (usesPgVector(capabilities, process.env.VECTOR_BACKEND)) {
+      // pgvector lives in Postgres, so it is health-checkable in any profile
+      // with a database (LITE and ENTERPRISE) — independent of requiresQdrant.
+      // VectorStoreModule provides the active VectorStore under
+      // VECTOR_STORE_TOKEN, which PgVectorHealthIndicator probes.
+      imports.push(VectorStoreModule);
+      providers.push(PgVectorHealthIndicator);
     }
 
     return {

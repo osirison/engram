@@ -103,3 +103,80 @@ describe('Health Integration Tests', () => {
     });
   });
 });
+
+describe('Health Integration Tests (LITE + pgvector)', () => {
+  let controller: HealthController;
+  let qdrantHealthMock: jest.Mock;
+  let pgVectorHealthMock: jest.Mock;
+  const ORIGINAL_BACKEND = process.env.VECTOR_BACKEND;
+
+  beforeEach(async () => {
+    process.env.VECTOR_BACKEND = 'pgvector';
+    qdrantHealthMock = jest
+      .fn()
+      .mockResolvedValue({ qdrant: { status: 'up' } });
+    pgVectorHealthMock = jest
+      .fn()
+      .mockResolvedValue({ pgvector: { status: 'up' } });
+
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [TerminusModule, HttpModule],
+      controllers: [HealthController],
+      providers: [
+        {
+          provide: MemoryStoreHealthIndicator,
+          useValue: {
+            isHealthy: jest
+              .fn()
+              .mockReturnValue({ 'memory-store': { status: 'up' } }),
+          },
+        },
+        {
+          provide: PrismaHealthIndicator,
+          useValue: {
+            isHealthy: jest
+              .fn()
+              .mockResolvedValue({ database: { status: 'up' } }),
+          },
+        },
+        {
+          provide: QdrantHealthIndicator,
+          useValue: { isHealthy: qdrantHealthMock },
+        },
+        {
+          provide: PgVectorHealthIndicator,
+          useValue: { isHealthy: pgVectorHealthMock },
+        },
+        {
+          provide: 'ENGRAM_PROFILE',
+          useValue: DeploymentProfile.LITE,
+        },
+      ],
+    }).compile();
+
+    controller = module.get<HealthController>(HealthController);
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_BACKEND === undefined) {
+      delete process.env.VECTOR_BACKEND;
+    } else {
+      process.env.VECTOR_BACKEND = ORIGINAL_BACKEND;
+    }
+  });
+
+  it('probes pgvector through the real Terminus pipeline, never Qdrant', async () => {
+    const result = await controller.check();
+
+    expect(result.status).toBe('ok');
+    expect(pgVectorHealthMock).toHaveBeenCalledWith('pgvector');
+    expect(qdrantHealthMock).not.toHaveBeenCalled();
+  });
+
+  it('exposes engram_pgvector_ready 1 in the metrics endpoint', async () => {
+    const metrics = await controller.getMetrics();
+
+    expect(metrics).toContain('engram_pgvector_ready 1');
+    expect(pgVectorHealthMock).toHaveBeenCalledWith('pgvector');
+  });
+});
