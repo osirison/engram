@@ -42,6 +42,11 @@ type ApiKeysControllerContract = {
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule.forRoot(), {
     bufferLogs: true,
+    // Without this, Nest's exception zone calls process.exit(1) when a later
+    // app.get() resolves a provider that the active profile didn't wire (e.g.
+    // McpAuthMiddleware in profile-memory, McpRateLimitMiddleware when rate
+    // limiting is off) — killing the process before tryGet's catch can run.
+    abortOnError: false,
   });
 
   app.useLogger(app.get(Logger));

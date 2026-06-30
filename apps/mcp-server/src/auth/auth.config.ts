@@ -115,7 +115,11 @@ function positiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-/** Parse rate-limit configuration; invalid tool overrides are ignored. */
+/**
+ * Parse rate-limit configuration. A malformed `RATE_LIMIT_TOOL_OVERRIDES` is
+ * already rejected at boot by `@engram/config`'s `validateEnv` (fail-fast), so
+ * it cannot reach here in practice; the guard below is defensive fallback.
+ */
 export function parseRateLimitConfig(env: Env = process.env): RateLimitConfig {
   let toolOverrides: Record<string, RateLimitRule> = {};
   if (env.RATE_LIMIT_TOOL_OVERRIDES) {
@@ -125,7 +129,8 @@ export function parseRateLimitConfig(env: Env = process.env): RateLimitConfig {
       );
       if (parsed.success) toolOverrides = parsed.data;
     } catch {
-      // Malformed JSON → no overrides (already validated at boot if present).
+      // Defensive only: boot-time validateEnv already fails fast on malformed
+      // overrides, so this fallback to "no overrides" should be unreachable.
     }
   }
   return {

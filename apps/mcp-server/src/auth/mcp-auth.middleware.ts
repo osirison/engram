@@ -9,7 +9,7 @@ const PUBLIC_TOOLS = new Set(['ping']);
 /**
  * The auth info attached to the request. The MCP streamable-http transport
  * forwards `req.auth` to tool handlers as `extra.authInfo`; the dispatch layer
- * reads `extra.userId` to derive the acting tenant.
+ * reads `extra.authInfo.extra.userId` to derive the acting tenant.
  */
 export interface McpAuthInfo {
   token: string;
