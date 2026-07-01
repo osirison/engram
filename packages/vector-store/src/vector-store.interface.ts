@@ -103,6 +103,12 @@ export interface VectorStore {
   delete(ids: string[]): Promise<void>;
 
   /**
+   * Remove all stored vectors so a subsequent {@link upsert} rebuilds the index
+   * from scratch. Used by a full reindex for a clean backfill. Idempotent.
+   */
+  reset(): Promise<void>;
+
+  /**
    * Run a k-nearest-neighbour search filtered by {@link VectorSearchFilter}.
    */
   search(

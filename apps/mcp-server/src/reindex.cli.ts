@@ -11,6 +11,11 @@
  *   --user <id>          Reindex only this user (default: all users)
  *   --batch-size <n>     Memories per page (1-1000, default 100)
  *   --regenerate         Regenerate embeddings instead of reusing stored ones
+ *   --recreate           Drop and rebuild the whole vector index first for a
+ *                        clean, orphan-free backfill. Unscoped full reindex
+ *                        only (ignored with --user, --cursor, or --max).
+ *                        Destructive and non-atomic: recall is empty until the
+ *                        rebuild completes.
  *   --max <n>            Stop after processing at most n memories
  *   --cursor <id>        Resume from a prior cursor
  */
@@ -25,6 +30,7 @@ interface CliArgs {
   reuseExistingEmbeddings?: boolean;
   maxMemories?: number;
   cursor?: string;
+  recreate?: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -54,6 +60,9 @@ function parseArgs(argv: readonly string[]): CliArgs {
         break;
       case '--regenerate':
         args.reuseExistingEmbeddings = false;
+        break;
+      case '--recreate':
+        args.recreate = true;
         break;
       default:
         break;

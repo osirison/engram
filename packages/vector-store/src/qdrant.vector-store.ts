@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { QdrantService } from './qdrant.service';
 import {
@@ -14,6 +15,54 @@ import {
  * `VECTOR_COLLECTION`.
  */
 export const DEFAULT_VECTOR_COLLECTION = 'engram_memories';
+
+/**
+ * Fixed namespace for deriving Qdrant point ids from memory ids via RFC 4122
+ * name-based (v5) UUIDs. This value MUST NEVER change: it deterministically
+ * maps a memory id to a point id, so altering it re-keys every derived point
+ * and orphans all previously-indexed vectors.
+ */
+export const ENGRAM_POINT_ID_NAMESPACE = 'a1e0f4c2-3d5b-4e6a-9c8d-7f0b1a2c3d4e';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UNSIGNED_INT_RE = /^\d+$/;
+
+function uuidToBytes(uuid: string): Buffer {
+  return Buffer.from(uuid.replace(/-/g, ''), 'hex');
+}
+
+function bytesToUuid(bytes: Buffer): string {
+  const hex = bytes.toString('hex');
+  return (
+    `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-` +
+    `${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+  );
+}
+
+/** Compute an RFC 4122 v5 (SHA-1, name-based) UUID for `name` under `namespace`. */
+function uuidV5(name: string, namespace: string): string {
+  const bytes = createHash('sha1')
+    .update(uuidToBytes(namespace))
+    .update(Buffer.from(name, 'utf8'))
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50; // version 5
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // RFC 4122 variant
+  return bytesToUuid(bytes);
+}
+
+/**
+ * Map a memory id to a valid Qdrant point id. Qdrant only accepts unsigned
+ * integers or UUIDs as point ids, but memory ids are CUIDs. Ids that are
+ * already a UUID or unsigned integer (e.g. promotion-origin memories keyed by
+ * `randomUUID`) pass through unchanged for backward compatibility; every other
+ * id is mapped to a deterministic v5 UUID. The original memory id is preserved
+ * in the point payload as `memoryId` so {@link QdrantVectorStore.search} can
+ * round-trip it back to the caller.
+ */
+export function toQdrantPointId(id: string): string {
+  return UUID_RE.test(id) || UNSIGNED_INT_RE.test(id) ? id : uuidV5(id, ENGRAM_POINT_ID_NAMESPACE);
+}
 
 type QdrantFilter = {
   must: Array<
@@ -72,9 +121,11 @@ export class QdrantVectorStore implements VectorStore {
     await this.qdrant.upsertPoints(
       this.collection,
       records.map((record) => ({
-        id: record.id,
+        // Qdrant point ids must be a uint or UUID; memory ids are CUIDs, so
+        // derive a stable point id and keep the real memory id in the payload.
+        id: toQdrantPointId(record.id),
         vector: record.vector,
-        payload: record.payload ? { ...record.payload } : undefined,
+        payload: { ...record.payload, memoryId: record.id },
       }))
     );
   }
@@ -84,7 +135,23 @@ export class QdrantVectorStore implements VectorStore {
       return;
     }
     const client = this.qdrant.getClient();
-    await client.delete(this.collection, { wait: true, points: ids });
+    await client.delete(this.collection, {
+      wait: true,
+      points: ids.map((id) => toQdrantPointId(id)),
+    });
+  }
+
+  /**
+   * Drop and forget the collection so a subsequent {@link upsert} rebuilds it
+   * from scratch. Used by a full reindex to guarantee a clean backfill with no
+   * orphaned points (e.g. legacy points keyed by a raw id). Idempotent.
+   */
+  async reset(): Promise<void> {
+    if (await this.qdrant.collectionExists(this.collection)) {
+      await this.qdrant.deleteCollection(this.collection);
+      this.logger.log(`Reset vector collection ${this.collection}`);
+    }
+    this.ensured = false;
   }
 
   async search(
@@ -110,11 +177,14 @@ export class QdrantVectorStore implements VectorStore {
       with_payload: true,
     });
 
-    return results.map((result) => ({
-      id: String(result.id),
-      score: result.score,
-      payload: result.payload as VectorSearchResult['payload'],
-    }));
+    return results.map((result) => {
+      const payload = result.payload as VectorSearchResult['payload'];
+      // Prefer the memory id stored in the payload; fall back to the point id
+      // for legacy points written before payload.memoryId existed (those were
+      // keyed by the raw memory id, so the point id IS the memory id).
+      const memoryId = typeof payload?.memoryId === 'string' ? payload.memoryId : String(result.id);
+      return { id: memoryId, score: result.score, payload };
+    });
   }
 
   private buildFilter(filter: VectorSearchFilter): QdrantFilter {

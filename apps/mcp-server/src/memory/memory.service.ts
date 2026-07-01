@@ -128,6 +128,7 @@ type LtmServiceContract = {
     reuseExistingEmbeddings?: boolean;
     cursor?: string;
     maxMemories?: number;
+    recreate?: boolean;
   }) => Promise<ReindexSummary>;
 };
 
@@ -145,6 +146,11 @@ export interface ReindexOptions {
   reuseExistingEmbeddings?: boolean;
   cursor?: string;
   maxMemories?: number;
+  /**
+   * Drop and rebuild the whole vector index before backfilling. Honoured only
+   * for an unscoped full reindex (no userId, cursor, or maxMemories).
+   */
+  recreate?: boolean;
 }
 
 export interface CreateMemoryDto {

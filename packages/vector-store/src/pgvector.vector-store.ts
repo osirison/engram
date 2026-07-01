@@ -190,6 +190,16 @@ export class PgVectorStore implements VectorStore {
     );
   }
 
+  /**
+   * Clear every stored vector so a subsequent {@link upsert} rebuilds them from
+   * scratch. Vectors live in a column on the `memories` table, so this nulls the
+   * column across all rows rather than dropping a collection. Idempotent.
+   */
+  async reset(): Promise<void> {
+    await this.client.$executeRawUnsafe(`UPDATE "${this.table}" SET "${this.column}" = NULL`);
+    this.logger.log(`Reset pgvector column ${this.table}.${this.column}`);
+  }
+
   async search(
     vector: number[],
     filter: VectorSearchFilter,

@@ -1,8 +1,10 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { QdrantClient } from '@qdrant/js-client-rest';
 import { QdrantService } from './qdrant.service';
-import { QdrantVectorStore } from './qdrant.vector-store';
+import { QdrantVectorStore, toQdrantPointId } from './qdrant.vector-store';
 import { PgVectorStore, type PgVectorClient } from './pgvector.vector-store';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function buildClient(): QdrantClient {
   return {
@@ -29,6 +31,28 @@ describe('QdrantVectorStore', () => {
     expect(store.backend).toBe('qdrant');
   });
 
+  describe('toQdrantPointId', () => {
+    it('passes an existing UUID through unchanged', () => {
+      const uuid = '3f9a1c2b-4d5e-4a6f-8b7c-9d0e1f2a3b4c';
+      expect(toQdrantPointId(uuid)).toBe(uuid);
+    });
+
+    it('passes an unsigned integer id through unchanged', () => {
+      expect(toQdrantPointId('42')).toBe('42');
+    });
+
+    it('maps a CUID to a deterministic v5 UUID', () => {
+      const cuid = 'ery92gktxle82gs2czpz1ofp';
+      const first = toQdrantPointId(cuid);
+      expect(first).toMatch(UUID_RE);
+      expect(first).not.toBe(cuid);
+      // Deterministic: the same memory id always yields the same point id.
+      expect(toQdrantPointId(cuid)).toBe(first);
+      // Distinct ids yield distinct point ids.
+      expect(toQdrantPointId('cjld2cjxh0000qzrmn831i7rn')).not.toBe(first);
+    });
+  });
+
   describe('ensureReady', () => {
     it('creates the collection when it does not exist', async () => {
       await store.ensureReady(1536);
@@ -49,7 +73,7 @@ describe('QdrantVectorStore', () => {
   });
 
   describe('upsert', () => {
-    it('ensures the collection then upserts points', async () => {
+    it('ensures the collection then upserts points with a derived id and memoryId payload', async () => {
       await store.upsert([
         {
           id: 'mem-1',
@@ -63,12 +87,20 @@ describe('QdrantVectorStore', () => {
         wait: true,
         points: [
           {
-            id: 'mem-1',
+            id: toQdrantPointId('mem-1'),
             vector: [0.1, 0.2, 0.3],
-            payload: { userId: 'user-1', type: 'long-term', tags: ['a'] },
+            payload: { userId: 'user-1', type: 'long-term', tags: ['a'], memoryId: 'mem-1' },
           },
         ],
       });
+    });
+
+    it('stores memoryId even when the record has no payload', async () => {
+      await store.upsert([{ id: 'mem-2', vector: [0.1, 0.2, 0.3] }]);
+      const call = (client.upsert as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as {
+        points: Array<{ payload: Record<string, unknown> }>;
+      };
+      expect(call.points[0]?.payload).toEqual({ memoryId: 'mem-2' });
     });
 
     it('is a no-op for an empty batch', async () => {
@@ -78,17 +110,39 @@ describe('QdrantVectorStore', () => {
   });
 
   describe('delete', () => {
-    it('deletes points by id', async () => {
+    it('deletes points by derived id', async () => {
       await store.delete(['mem-1', 'mem-2']);
       expect(client.delete).toHaveBeenCalledWith('test_memories', {
         wait: true,
-        points: ['mem-1', 'mem-2'],
+        points: [toQdrantPointId('mem-1'), toQdrantPointId('mem-2')],
       });
     });
 
     it('is a no-op for an empty id list', async () => {
       await store.delete([]);
       expect(client.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reset', () => {
+    it('deletes the collection when it exists and forces recreation on next upsert', async () => {
+      client.getCollections = vi
+        .fn()
+        .mockResolvedValueOnce({ collections: [{ name: 'test_memories' }] }) // reset() existence check
+        .mockResolvedValue({ collections: [] }); // subsequent ensureReady check
+
+      await store.reset();
+      expect(client.deleteCollection).toHaveBeenCalledWith('test_memories');
+
+      // ensured flag was cleared, so the next upsert recreates the collection.
+      await store.upsert([{ id: 'mem-1', vector: [0.1, 0.2, 0.3] }]);
+      expect(client.createCollection).toHaveBeenCalledTimes(1);
+    });
+
+    it('is a no-op when the collection does not exist', async () => {
+      client.getCollections = vi.fn().mockResolvedValue({ collections: [] });
+      await store.reset();
+      expect(client.deleteCollection).not.toHaveBeenCalled();
     });
   });
 
@@ -128,6 +182,24 @@ describe('QdrantVectorStore', () => {
         },
       });
       expect(results).toEqual([{ id: 'mem-9', score: 0.87, payload: { userId: 'user-1' } }]);
+    });
+
+    it('returns payload.memoryId as the hit id when present (derived point id)', async () => {
+      const cuid = 'ery92gktxle82gs2czpz1ofp';
+      client.getCollections = vi
+        .fn()
+        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
+      client.search = vi.fn().mockResolvedValue([
+        {
+          id: toQdrantPointId(cuid), // point id is the derived UUID, not the CUID
+          score: 0.99,
+          payload: { userId: 'user-1', memoryId: cuid },
+        },
+      ]);
+
+      const results = await store.search([0.1, 0.2], { userId: 'user-1' });
+      // Caller receives the real memory id, not the derived point id.
+      expect(results[0]?.id).toBe(cuid);
     });
 
     it('requires a userId for isolation', async () => {
@@ -279,6 +351,19 @@ describe('PgVectorStore', () => {
       const store = new PgVectorStore(client, 3);
       await store.delete([]);
       expect(client.$executeRawUnsafe).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reset', () => {
+    it('nulls the vector column across every row', async () => {
+      const client = buildClient();
+      const store = new PgVectorStore(client, 3);
+
+      await store.reset();
+
+      expect(client.$executeRawUnsafe).toHaveBeenCalledWith(
+        'UPDATE "memories" SET "embedding_vec" = NULL'
+      );
     });
   });
 
