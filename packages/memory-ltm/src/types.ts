@@ -115,6 +115,15 @@ export interface ReindexOptions {
   cursor?: string;
   /** Stop after processing at most this many memories. */
   maxMemories?: number;
+  /**
+   * When true, drop and rebuild the entire vector index before reindexing, so
+   * the backfill is clean and leaves no orphaned points. Only honoured for an
+   * unscoped full reindex (no `userId`, `cursor`, or `maxMemories`); ignored
+   * otherwise. The rebuild is destructive and NOT atomic: recall is empty for
+   * all tenants until it completes, and a mid-run failure leaves the index
+   * empty (safe to re-run — embeddings are reused from Postgres).
+   */
+  recreate?: boolean;
   /** Invoked after each batch with cumulative progress. */
   onProgress?: (progress: ReindexProgress) => void;
 }

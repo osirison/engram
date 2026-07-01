@@ -1142,6 +1142,26 @@ export class MemoryLtmService {
     let exhausted = false;
 
     try {
+      if (options.recreate) {
+        if (options.userId || options.cursor || maxMemories !== undefined) {
+          // recreate wipes the entire index, so it is only safe for an
+          // unscoped full rebuild — a scoped/capped run would clear vectors it
+          // never re-indexes, breaking recall for everything outside its slice.
+          this.logger.warn(
+            'Ignoring recreate: the vector index may only be rebuilt by an unscoped full reindex (no userId, cursor, or maxMemories)'
+          );
+        } else {
+          // NOTE: reset() is destructive and NOT atomic. It drops the whole
+          // index up front, so recall returns empty for all tenants until the
+          // backfill below completes, and a mid-run failure leaves the index
+          // empty (re-run to recover — embeddings are reused from Postgres).
+          this.logger.log(
+            'Recreating vector index before reindex (recall is unavailable until the rebuild completes)'
+          );
+          await this.vectorStore.reset();
+        }
+      }
+
       for (;;) {
         const take =
           maxMemories !== undefined ? Math.min(batchSize, maxMemories - processed) : batchSize;

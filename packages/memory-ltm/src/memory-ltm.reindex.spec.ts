@@ -33,6 +33,7 @@ describe('MemoryLtmService.reindex', () => {
     delete: ReturnType<typeof vi.fn>;
     search: ReturnType<typeof vi.fn>;
     ensureReady: ReturnType<typeof vi.fn>;
+    reset: ReturnType<typeof vi.fn>;
   };
   let service: MemoryLtmService;
 
@@ -52,6 +53,7 @@ describe('MemoryLtmService.reindex', () => {
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
       search: vi.fn().mockResolvedValue([]),
+      reset: vi.fn().mockResolvedValue(undefined),
     } as unknown as typeof vectorStore;
 
     service = new MemoryLtmService(prisma, undefined, embeddings, vectorStore);
@@ -105,6 +107,42 @@ describe('MemoryLtmService.reindex', () => {
     expect(result.skipped).toBe(1);
     expect(result.indexed).toBe(0);
     expect(vectorStore.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recreates the vector index before a full reindex when recreate is set', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+
+    await service.reindex({ recreate: true, batchSize: 1 });
+
+    expect(vectorStore.reset).toHaveBeenCalledTimes(1);
+    // reset() must happen before any upsert, so the backfill starts clean.
+    expect(vectorStore.reset.mock.invocationCallOrder[0]).toBeLessThan(
+      vectorStore.upsert.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('ignores recreate for a user-scoped reindex (does not wipe the whole index)', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+
+    await service.reindex({ recreate: true, userId: mockUserId, batchSize: 1 });
+
+    expect(vectorStore.reset).not.toHaveBeenCalled();
+  });
+
+  it('ignores recreate when resuming from a cursor', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('b')]).mockResolvedValueOnce([]);
+
+    await service.reindex({ recreate: true, cursor: 'a', batchSize: 1 });
+
+    expect(vectorStore.reset).not.toHaveBeenCalled();
+  });
+
+  it('ignores recreate for a maxMemories-capped run (would wipe more than it rebuilds)', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+
+    await service.reindex({ recreate: true, maxMemories: 1, batchSize: 1 });
+
+    expect(vectorStore.reset).not.toHaveBeenCalled();
   });
 
   it('counts per-item failures without aborting the run', async () => {

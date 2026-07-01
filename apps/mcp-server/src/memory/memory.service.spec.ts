@@ -681,5 +681,20 @@ describe('MemoryService', () => {
       expect(result).toEqual(summary);
       expect(ltmService.reindex).toHaveBeenCalledWith({});
     });
+
+    it('should forward the recreate flag to the LTM service', async () => {
+      const summary = {
+        processed: 0,
+        indexed: 0,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      };
+      ltmService.reindex.mockResolvedValue(summary);
+
+      await service.reindex({ recreate: true });
+
+      expect(ltmService.reindex).toHaveBeenCalledWith({ recreate: true });
+    });
   });
 });
