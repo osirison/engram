@@ -49,9 +49,10 @@ on `memories` and performs cosine k-nearest-neighbour search via the pgvector
 
 ### Schema
 
-The column, extension, and index are provisioned by the Prisma migration
-`prisma/migrations/20260601090000_pgvector_provider`. `PgVectorStore.ensureReady`
-also applies the same DDL idempotently as a safety net for fresh databases.
+The `vector` extension and `embedding_vec` column are provisioned by the
+baseline Prisma migration (`prisma/migrations/20251021174411_init`). The HNSW
+index is created at runtime by `PgVectorStore.ensureReady`, which also applies
+the extension and column DDL idempotently as a safety net for fresh databases.
 
 Running pgvector requires a Postgres image with the extension available (for
 example `pgvector/pgvector:pg16`). Plain `postgres:*-alpine` images do **not**
