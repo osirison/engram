@@ -76,11 +76,7 @@
       "Read(//tmp/**)",
       "Bash(PATH=/tmp/pgbin:__TRACKED_VAR__ psql postgresql://postgres:test@localhost:15432/engram_test -t -c 'SELECT 1')",
       "Bash(pg_restore --version)",
-      "Bash(docker rm *)",
-      "mcp__engram__create_memory",
-      "Bash(/tmp/engram_mcp.sh ping *)",
-      "Bash(/tmp/engram_mcp.sh create_memory '{\"userId\":\"qp\",\"content\":\"Engram is an MCP memory server built with NestJS, PostgreSQL, Redis, and Qdrant, orchestrated by Turborepo.\",\"type\":\"long-term\",\"tags\":[\"mcp-test\",\"embprobe\"],\"scope\":\"mcp-test\"}')",
-      "Bash(/tmp/engram_mcp.sh recall *)"
+      "Bash(docker rm *)"
     ],
     "deny": [],
     "ask": []
