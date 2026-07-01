@@ -37,8 +37,13 @@ describe('QdrantVectorStore', () => {
       expect(toQdrantPointId(uuid)).toBe(uuid);
     });
 
-    it('passes an unsigned integer id through unchanged', () => {
-      expect(toQdrantPointId('42')).toBe('42');
+    it('maps a digit-only id to a deterministic v5 UUID (not a numeric string)', () => {
+      // Qdrant uint point ids are JSON numbers; a numeric *string* like "42"
+      // would be rejected, so digit-only ids must be mapped, not passed through.
+      const derived = toQdrantPointId('42');
+      expect(derived).toMatch(UUID_RE);
+      expect(derived).not.toBe('42');
+      expect(toQdrantPointId('42')).toBe(derived);
     });
 
     it('maps a CUID to a deterministic v5 UUID', () => {

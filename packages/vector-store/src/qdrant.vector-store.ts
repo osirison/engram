@@ -25,7 +25,6 @@ export const DEFAULT_VECTOR_COLLECTION = 'engram_memories';
 export const ENGRAM_POINT_ID_NAMESPACE = 'a1e0f4c2-3d5b-4e6a-9c8d-7f0b1a2c3d4e';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNSIGNED_INT_RE = /^\d+$/;
 
 function uuidToBytes(uuid: string): Buffer {
   return Buffer.from(uuid.replace(/-/g, ''), 'hex');
@@ -54,14 +53,17 @@ function uuidV5(name: string, namespace: string): string {
 /**
  * Map a memory id to a valid Qdrant point id. Qdrant only accepts unsigned
  * integers or UUIDs as point ids, but memory ids are CUIDs. Ids that are
- * already a UUID or unsigned integer (e.g. promotion-origin memories keyed by
- * `randomUUID`) pass through unchanged for backward compatibility; every other
- * id is mapped to a deterministic v5 UUID. The original memory id is preserved
- * in the point payload as `memoryId` so {@link QdrantVectorStore.search} can
+ * already a UUID (e.g. promotion-origin memories keyed by `randomUUID`) pass
+ * through unchanged for backward compatibility; every other id is mapped to a
+ * deterministic v5 UUID. Digit-only ids are intentionally NOT passed through:
+ * Qdrant's uint point ids are JSON numbers, so forwarding a numeric *string*
+ * would be rejected — and real memory ids are never pure digits (CUIDs start
+ * with a letter), so this costs nothing. The original memory id is preserved in
+ * the point payload as `memoryId` so {@link QdrantVectorStore.search} can
  * round-trip it back to the caller.
  */
 export function toQdrantPointId(id: string): string {
-  return UUID_RE.test(id) || UNSIGNED_INT_RE.test(id) ? id : uuidV5(id, ENGRAM_POINT_ID_NAMESPACE);
+  return UUID_RE.test(id) ? id : uuidV5(id, ENGRAM_POINT_ID_NAMESPACE);
 }
 
 type QdrantFilter = {
@@ -125,7 +127,7 @@ export class QdrantVectorStore implements VectorStore {
         // derive a stable point id and keep the real memory id in the payload.
         id: toQdrantPointId(record.id),
         vector: record.vector,
-        payload: { ...record.payload, memoryId: record.id },
+        payload: { ...(record.payload ?? {}), memoryId: record.id },
       }))
     );
   }
