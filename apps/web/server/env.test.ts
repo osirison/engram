@@ -51,11 +51,22 @@ describe('devAuthEnabled', () => {
     expect(serverEnv.devAuthEnabled).toBe(false);
   });
 
-  it('is enabled outside production when the flag is set', async () => {
+  it('is enabled in development when the flag is set', async () => {
     const { serverEnv } = await loadEnv({
       NODE_ENV: 'development',
       ENGRAM_DASHBOARD_DEV_AUTH: 'true',
     });
     expect(serverEnv.devAuthEnabled).toBe(true);
   });
+
+  it.each(['test', 'staging', ''])(
+    'is forced off outside development (NODE_ENV=%s) even when the flag is set',
+    async (nodeEnv) => {
+      const { serverEnv } = await loadEnv({
+        NODE_ENV: nodeEnv,
+        ENGRAM_DASHBOARD_DEV_AUTH: 'true',
+      });
+      expect(serverEnv.devAuthEnabled).toBe(false);
+    },
+  );
 });

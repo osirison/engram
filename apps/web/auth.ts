@@ -4,6 +4,7 @@ import GitHub from 'next-auth/providers/github';
 import Google from 'next-auth/providers/google';
 
 import { isAllowedOperator, serverEnv } from '@/server/env';
+import { isProviderEmailVerified } from '@/lib/oauth-verify';
 
 /**
  * NextAuth.js v5 (Auth.js) configuration for the dashboard.
@@ -68,9 +69,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       : []),
   ],
   callbacks: {
-    signIn({ user, account }) {
+    signIn({ user, account, profile }) {
       // The dev provider is its own gate; OAuth logins must pass the allow-list.
       if (account?.provider === 'credentials') return true;
+      // Reject unverified provider emails before the allow-list: an attacker
+      // can set an *unverified* Google/GitHub account email to an allow-listed
+      // operator address and would otherwise pass isAllowedOperator().
+      if (!isProviderEmailVerified(account?.provider, profile)) return false;
       return isAllowedOperator(user.email);
     },
     jwt({ token, account }) {

@@ -14,6 +14,7 @@ import {
   revokeApiKeyToolSchema,
   type RevokeApiKeyToolInput,
 } from './dto/revoke-api-key.dto';
+import { constantTimeStringEqual } from '../security/admin-token.util';
 
 type McpTextResponse = { content: Array<{ type: 'text'; text: string }> };
 
@@ -29,7 +30,7 @@ export class ApiKeysController {
     if (!expected) {
       throw new Error('MCP_ADMIN_TOKEN is not configured');
     }
-    if (adminToken !== expected) {
+    if (!constantTimeStringEqual(adminToken, expected)) {
       throw new Error('Unauthorized: invalid admin token');
     }
   }

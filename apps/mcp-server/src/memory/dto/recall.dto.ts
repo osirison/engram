@@ -19,6 +19,7 @@ export const recallToolSchema = z
     createdFrom: z.coerce.date().optional(),
     createdTo: z.coerce.date().optional(),
   })
+  .strict()
   .refine(
     (val) =>
       !val.createdFrom || !val.createdTo || val.createdFrom <= val.createdTo,
