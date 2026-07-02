@@ -148,6 +148,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
           QDRANT_URL: http://127.0.0.1:6333
           EMBEDDING_PROVIDER: local
+          MCP_ADMIN_TOKEN: e2e-admin-token-min-16-chars
 
       - name: Run retrieval eval (baseline regression)
         run: pnpm eval

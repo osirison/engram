@@ -10,6 +10,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
 import type { McpServerConfig } from '@engram/core';
+import { coerceDeploymentProfile, resolveCapabilities } from '@engram/config';
 import { ApiKeysController } from './api-keys/api-keys.controller';
 import { MemoryController } from './memory/memory.controller';
 import { MetricsService } from './metrics/metrics.service';
@@ -90,10 +91,15 @@ async function bootstrap(): Promise<void> {
 
   // Fail-safe against the most dangerous misconfiguration: an HTTP transport
   // serving every tenant unauthenticated (userId taken from tool input, not a
-  // credential). In production this must be a deliberate choice, so refuse to
-  // boot unless the operator explicitly acknowledges the trusted-network
-  // posture via ALLOW_UNAUTHENTICATED_HTTP=true.
+  // credential). Only meaningful on a multi-tenant profile — memory/lite are
+  // single-user, so there is no cross-tenant data to expose. In production this
+  // must be a deliberate choice, so refuse to boot unless the operator
+  // explicitly acknowledges the trusted-network posture.
+  const capabilities = resolveCapabilities(
+    coerceDeploymentProfile(process.env.DEPLOYMENT_PROFILE),
+  );
   if (
+    capabilities.multiTenant &&
     mcpTransport === 'streamable-http' &&
     !authRequired &&
     process.env.NODE_ENV === 'production' &&

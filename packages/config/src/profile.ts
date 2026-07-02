@@ -35,6 +35,12 @@ export interface ProfileCapabilities {
   readonly inProcessAdapters: boolean;
   /** True when local persistence is expected (anything other than memory-only). */
   readonly persistent: boolean;
+  /**
+   * True when the profile serves multiple tenants (the auth/organization stack
+   * is wired). Single-user profiles (memory, lite) are false, so an
+   * unauthenticated deployment there does not expose cross-tenant data.
+   */
+  readonly multiTenant: boolean;
 }
 
 /**
@@ -53,6 +59,7 @@ export function resolveCapabilities(profile: DeploymentProfile): ProfileCapabili
         requiresQdrant: false,
         inProcessAdapters: true,
         persistent: false,
+        multiTenant: false,
       };
     case DeploymentProfile.LITE:
       return {
@@ -62,6 +69,7 @@ export function resolveCapabilities(profile: DeploymentProfile): ProfileCapabili
         requiresQdrant: false,
         inProcessAdapters: false,
         persistent: true,
+        multiTenant: false,
       };
     case DeploymentProfile.ENTERPRISE:
       return {
@@ -71,6 +79,7 @@ export function resolveCapabilities(profile: DeploymentProfile): ProfileCapabili
         requiresQdrant: true,
         inProcessAdapters: false,
         persistent: true,
+        multiTenant: true,
       };
     default: {
       // Exhaustiveness guard for future profiles.
