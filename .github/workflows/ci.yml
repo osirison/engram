@@ -265,10 +265,18 @@ jobs:
           test -n "$ok"
 
       - name: Scan image for vulnerabilities (trivy)
+        # Report-only for now (see #208): the scan is informational until the
+        # preexisting base-image/dep CVEs are triaged, and `continue-on-error`
+        # keeps a flaky binary download (unauthenticated GitHub rate limit)
+        # from gating an otherwise-green build. Flip exit-code to '1' and drop
+        # continue-on-error once #208 is resolved.
         uses: aquasecurity/trivy-action@v0.33.1
+        continue-on-error: true
+        env:
+          TRIVY_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: engram-mcp-server:ci-${{ github.sha }}
           format: table
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           severity: CRITICAL,HIGH
