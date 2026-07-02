@@ -14,7 +14,10 @@ import { coerceDeploymentProfile, resolveCapabilities } from '@engram/config';
 import { ApiKeysController } from './api-keys/api-keys.controller';
 import { MemoryController } from './memory/memory.controller';
 import { MetricsService } from './metrics/metrics.service';
-import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
+import {
+  McpAuthMiddleware,
+  type AuthedRequest,
+} from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { isAuthRequired, isFlagEnabled } from './auth/auth.config';
 
@@ -194,6 +197,26 @@ async function bootstrap(): Promise<void> {
         req: Request,
         res: Response,
       ): Promise<void> => {
+        // The auth middleware rejects invalid credentials and attaches
+        // `req.auth` for valid ones, but it only rejects a *missing* credential
+        // when it sees a protected tools/call in the parsed body. GET (stream)
+        // and DELETE (teardown) have no body, so enforce identity explicitly
+        // here: under AUTH_REQUIRED, an unauthenticated session request must be
+        // rejected even though it carries a valid session id.
+        if (authRequired && !(req as AuthedRequest).auth) {
+          res
+            .status(401)
+            .set('WWW-Authenticate', 'Bearer realm="engram"')
+            .json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32001,
+                message: 'Unauthorized: authentication is required',
+              },
+              id: null,
+            });
+          return;
+        }
         const sessionId = req.headers['mcp-session-id'];
         const transport =
           typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
@@ -300,15 +323,12 @@ async function bootstrap(): Promise<void> {
   }
 
   // Run NestJS lifecycle hooks (Redis/Prisma disconnect, metrics registry
-  // clear, MCP transport close) on orchestrator termination and drain
-  // in-flight requests instead of dropping them.
+  // clear, MCP transport close, scheduler interval cleanup) on SIGTERM/SIGINT
+  // and drain in-flight requests instead of dropping them. enableShutdownHooks
+  // wires the signal handling itself; we deliberately avoid a manual handler
+  // with process.exit() so it does not race the OTel SDK's async flush
+  // (registered in telemetry.ts) or mask a non-zero close failure.
   app.enableShutdownHooks();
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.once(signal, () => {
-      logger.log(`Received ${signal}, shutting down gracefully`, 'Bootstrap');
-      void app.close().finally(() => process.exit(0));
-    });
-  }
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

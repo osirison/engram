@@ -20,7 +20,10 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { registerTools, type Tool } from '@engram/core';
-import { McpAuthMiddleware } from '../src/auth/mcp-auth.middleware';
+import {
+  McpAuthMiddleware,
+  type AuthedRequest,
+} from '../src/auth/mcp-auth.middleware';
 import type {
   AuthResolver,
   AuthOutcome,
@@ -115,6 +118,47 @@ function buildApp(): express.Express {
     },
   );
 
+  // Session stream (GET) / teardown (DELETE) mirror main.ts: the auth
+  // middleware runs, then identity is enforced explicitly because these verbs
+  // carry no body for the middleware's tools/call check to inspect.
+  const handleSessionRequest = (req: Request, res: Response): void => {
+    if (!(req as AuthedRequest).auth) {
+      res
+        .status(401)
+        .set('WWW-Authenticate', 'Bearer realm="engram"')
+        .json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32001,
+            message: 'Unauthorized: authentication is required',
+          },
+          id: null,
+        });
+      return;
+    }
+    const sessionId = req.headers['mcp-session-id'];
+    const transport =
+      typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
+    if (!transport) {
+      res.status(400).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Invalid or missing session ID' },
+        id: null,
+      });
+      return;
+    }
+    res.status(200).end();
+  };
+  const authPreHandler = (
+    req: Request,
+    res: Response,
+    next: (err?: unknown) => void,
+  ): void => {
+    void authMiddleware.handle(req, res, next);
+  };
+  app.get('/mcp', authPreHandler, handleSessionRequest);
+  app.delete('/mcp', authPreHandler, handleSessionRequest);
+
   return app;
 }
 
@@ -183,4 +227,33 @@ describe('MCP HTTP transport -> auth -> dispatch (linchpin)', () => {
     const res = await callWhoami(app, sessionId); // no Authorization
     expect(res.status).toBe(401);
   });
+
+  it.each(['get', 'delete'] as const)(
+    'rejects an unauthenticated session %s /mcp with 401 (no body to inspect)',
+    async (method) => {
+      const app = buildApp();
+      const sessionId = await initSession(app);
+      const res = await request(app)
+        [method]('/mcp')
+        .set({ ...MCP_HEADERS, 'mcp-session-id': sessionId }); // no Authorization
+      expect(res.status).toBe(401);
+    },
+  );
+
+  it.each(['get', 'delete'] as const)(
+    'lets an authenticated session %s /mcp past the auth gate',
+    async (method) => {
+      const app = buildApp();
+      const sessionId = await initSession(app);
+      const res = await request(app)
+        [method]('/mcp')
+        .set({
+          ...MCP_HEADERS,
+          'mcp-session-id': sessionId,
+          Authorization: 'Bearer user-alice',
+        });
+      // Past the 401 auth gate: a known session resolves (200), not rejected.
+      expect(res.status).not.toBe(401);
+    },
+  );
 });

@@ -114,6 +114,10 @@ services:
     restart: unless-stopped
     # Runtime hardening: cap resources so one leak can't OOM the host, drop all
     # Linux capabilities, and forbid privilege escalation.
+    # NOTE: `deploy.resources.limits` is honored by Docker Compose v2
+    # (`docker compose up`, verified against the memory limit) and Swarm. It is
+    # ignored by the legacy Python `docker-compose` v1 (EOL); this project
+    # targets Compose v2.
     deploy:
       resources:
         limits:
