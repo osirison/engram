@@ -14,7 +14,8 @@ import { MemoryStoreHealthIndicator } from './memory-store.health';
  * compiling the Nest graph, so they assert which indicators a profile/backend
  * combination provides without standing up Postgres/Qdrant/Redis. This is the
  * regression guard for #187: pgvector wiring must follow the active backend,
- * not `requiresQdrant`.
+ * not `requiresQdrant` — and, since #193, the guard for the symmetric rule:
+ * Qdrant wiring must also follow the active backend, not the raw profile flag.
  */
 describe('HealthModule.forRoot wiring', () => {
   const ORIGINAL_BACKEND = process.env.VECTOR_BACKEND;
@@ -83,14 +84,22 @@ describe('HealthModule.forRoot wiring', () => {
     expect(imports).not.toContain(VectorStoreModule);
   });
 
-  it('ENTERPRISE + pgvector provides both indicators (no regression)', () => {
+  it('ENTERPRISE with no VECTOR_BACKEND defaults to qdrant and wires the Qdrant indicator', () => {
+    const { providers, imports } = build(DeploymentProfile.ENTERPRISE);
+    expect(providers).toContain(QdrantHealthIndicator);
+    expect(providers).not.toContain(PgVectorHealthIndicator);
+    expect(imports).toContain(QdrantModule);
+    expect(imports).not.toContain(VectorStoreModule);
+  });
+
+  it('ENTERPRISE + pgvector provides only the pgvector indicator, never Qdrant (#193)', () => {
     const { providers, imports } = build(
       DeploymentProfile.ENTERPRISE,
       'pgvector',
     );
-    expect(providers).toContain(QdrantHealthIndicator);
+    expect(providers).not.toContain(QdrantHealthIndicator);
     expect(providers).toContain(PgVectorHealthIndicator);
-    expect(imports).toContain(QdrantModule);
+    expect(imports).not.toContain(QdrantModule);
     expect(imports).toContain(VectorStoreModule);
   });
 });

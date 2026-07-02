@@ -244,13 +244,36 @@ describe('HealthController profile-aware vector wiring', () => {
     expect(metrics).toContain('engram_pgvector_ready 0');
   });
 
-  it('ENTERPRISE + pgvector probes both Qdrant and pgvector (no regression)', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
+  it('ENTERPRISE with no VECTOR_BACKEND defaults to qdrant and probes it', async () => {
+    delete process.env.VECTOR_BACKEND;
     const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
 
     await controller.check();
 
     expect(probes.qdrant).toHaveBeenCalledWith('qdrant');
+    expect(probes.pgvector).not.toHaveBeenCalled();
+  });
+
+  it('ENTERPRISE + pgvector probes pgvector only, never Qdrant (#193)', async () => {
+    process.env.VECTOR_BACKEND = 'pgvector';
+    const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
+
+    await controller.check();
+
+    expect(probes.qdrant).not.toHaveBeenCalled();
+    expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
+  });
+
+  it('ENTERPRISE + pgvector stays healthy when Qdrant is down (#193)', async () => {
+    process.env.VECTOR_BACKEND = 'pgvector';
+    const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
+    probes.qdrant.mockRejectedValue(new Error('qdrant unreachable'));
+
+    // check() awaits every composed indicator, so a probed-but-down Qdrant
+    // would reject here. Readiness must compose the same indicator set.
+    await expect(controller.check()).resolves.toEqual({ status: 'ok' });
+    await expect(controller.readiness()).resolves.toEqual({ status: 'ok' });
+    expect(probes.qdrant).not.toHaveBeenCalled();
     expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
   });
 
