@@ -107,15 +107,17 @@ jobs:
       - name: Check schema/migration drift
         # Fails when schema.prisma has edits not captured by a migration —
         # otherwise such drift only surfaces if a test happens to touch the
-        # changed column. `--exit-code` exits 2 on a non-empty diff.
+        # changed column. `--from-migrations` replays onto SHADOW_DATABASE_URL;
+        # `--exit-code` exits 2 on a non-empty diff.
         run: |
           PGPASSWORD=test psql -h localhost -U test -d engram_test \
             -c "CREATE DATABASE drift_shadow;" || true
           pnpm exec prisma migrate diff \
             --from-migrations ./prisma/migrations \
-            --to-schema-datamodel ./prisma/schema.prisma \
-            --shadow-database-url postgresql://test:test@localhost:5432/drift_shadow \
+            --to-schema ./prisma/schema.prisma \
             --exit-code
+        env:
+          SHADOW_DATABASE_URL: postgresql://test:test@localhost:5432/drift_shadow
 
       - name: Build
         run: pnpm build
