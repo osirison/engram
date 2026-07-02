@@ -179,13 +179,22 @@ jobs:
 
       - name: Smoke-test image (memory profile)
         run: |
-          docker run --rm \
+          docker run -d \
             -e DEPLOYMENT_PROFILE=memory \
             -e MCP_TRANSPORT=streamable-http \
             -e EMBEDDING_PROVIDER=local \
             -p 13000:3000 \
             --name engram-ci-smoke \
-            engram-mcp-server:ci-${{ github.sha }} &
-          sleep 10
-          curl --retry 5 --retry-delay 2 -sf http://localhost:13000/health
-          docker stop engram-ci-smoke || true
+            engram-mcp-server:ci-${{ github.sha }}
+          # Poll instead of a fixed sleep: curl's --retry does not cover
+          # connection resets (exit 56) from docker-proxy while the app boots.
+          ok=""
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:13000/health; then ok=1; break; fi
+            sleep 2
+          done
+          echo
+          echo "--- container logs ---"
+          docker logs engram-ci-smoke
+          docker rm -f engram-ci-smoke || true
+          test -n "$ok"

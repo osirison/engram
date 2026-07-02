@@ -138,3 +138,23 @@ export function usesPgVector(
   const normalized = (backend ?? DEFAULT_VECTOR_BACKEND).toLowerCase();
   return capabilities.requiresDatabase && normalized === 'pgvector';
 }
+
+/**
+ * Decide whether the Qdrant backend is active for a given profile.
+ *
+ * Mirrors {@link usesPgVector}: Qdrant is probed only on profiles that deploy
+ * the Qdrant service (`requiresQdrant`) *and* when `VECTOR_BACKEND` actually
+ * selects it. A Qdrant-bearing profile (ENTERPRISE) that runs with
+ * `VECTOR_BACKEND=pgvector` should not require a healthy Qdrant to be ready —
+ * the active vector store is pgvector.
+ *
+ * This exists so the Qdrant health wiring no longer conflates "this profile
+ * deploys the Qdrant service" with "Qdrant is the active vector backend".
+ */
+export function usesQdrant(
+  capabilities: ProfileCapabilities,
+  backend: string | null | undefined
+): boolean {
+  const normalized = (backend ?? DEFAULT_VECTOR_BACKEND).toLowerCase();
+  return capabilities.requiresQdrant && normalized === 'qdrant';
+}

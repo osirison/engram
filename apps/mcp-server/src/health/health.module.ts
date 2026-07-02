@@ -4,7 +4,11 @@ import { HttpModule } from '@nestjs/axios';
 import { EmbeddingsModule } from '@engram/embeddings';
 import { RedisModule } from '@engram/redis';
 import { QdrantModule, VectorStoreModule } from '@engram/vector-store';
-import { usesPgVector, type ProfileCapabilities } from '@engram/config';
+import {
+  usesPgVector,
+  usesQdrant,
+  type ProfileCapabilities,
+} from '@engram/config';
 import { HealthController } from './health.controller';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
@@ -40,8 +44,10 @@ export class HealthModule {
       imports.push(RedisModule.forRoot());
       providers.push(RedisHealthIndicator);
     }
-    if (capabilities.requiresQdrant) {
-      // Qdrant is a remote service wired only when the profile deploys it.
+    if (usesQdrant(capabilities, process.env.VECTOR_BACKEND)) {
+      // Qdrant is a remote service wired only when the profile deploys it AND
+      // it is the active vector backend. A Qdrant-bearing profile running
+      // VECTOR_BACKEND=pgvector must not gate readiness on Qdrant (#193).
       imports.push(QdrantModule);
       providers.push(QdrantHealthIndicator);
     }

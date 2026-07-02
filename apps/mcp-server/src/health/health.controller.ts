@@ -10,6 +10,7 @@ import {
   resolveCapabilities,
   coerceDeploymentProfile,
   usesPgVector,
+  usesQdrant,
   DEFAULT_VECTOR_BACKEND,
   type ProfileCapabilities,
   DeploymentProfile,
@@ -77,7 +78,9 @@ export class HealthController {
         );
       }
     }
-    if (capabilities.requiresQdrant) {
+    // Qdrant is probed only when it is the active backend on a Qdrant-bearing
+    // profile — symmetric with the pgvector gate below (#193).
+    if (usesQdrant(capabilities, process.env.VECTOR_BACKEND)) {
       const qdrant = this.qdrantHealth;
       if (qdrant) {
         indicators.push(
