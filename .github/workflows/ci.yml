@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege default for every job; `actions: read` is needed by
+# bench:baseline:fetch to download the main-branch baseline artifact.
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,7 +23,9 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [22.x, latest]
+        # Pinned LTS lines only: `latest` is a moving target that reddens PRs
+        # on unrelated Node releases and destabilises required-check names.
+        node-version: [22.x, 24.x]
 
     services:
       postgres:
@@ -96,6 +104,21 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
 
+      - name: Check schema/migration drift
+        # Fails when schema.prisma has edits not captured by a migration —
+        # otherwise such drift only surfaces if a test happens to touch the
+        # changed column. `--from-migrations` replays onto SHADOW_DATABASE_URL;
+        # `--exit-code` exits 2 on a non-empty diff.
+        run: |
+          PGPASSWORD=test psql -h localhost -U test -d engram_test \
+            -c "CREATE DATABASE drift_shadow;" || true
+          pnpm exec prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema ./prisma/schema.prisma \
+            --exit-code
+        env:
+          SHADOW_DATABASE_URL: postgresql://test:test@localhost:5432/drift_shadow
+
       - name: Build
         run: pnpm build
 
@@ -111,6 +134,23 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
           REDIS_URL: redis://localhost:6379
           PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
+
+      - name: Run e2e suites (real Postgres/Redis/Qdrant)
+        # The e2e specs (incl. the ungated mcp-http-transport "linchpin" test)
+        # only match test/jest-e2e.json's regex, so `pnpm test` never runs
+        # them. --forceExit: open Redis handles keep Node alive after a green
+        # run (see #189 notes); --runInBand: suites share one database.
+        run: >-
+          pnpm --filter mcp-server exec jest
+          --config ./test/jest-e2e.json --no-cache --runInBand --forceExit
+        env:
+          E2E_ENABLED: 'true'
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
+          REDIS_URL: redis://localhost:6379
+          QDRANT_URL: http://127.0.0.1:6333
+          EMBEDDING_PROVIDER: local
+          MCP_ADMIN_TOKEN: e2e-admin-token-min-16-chars
 
       - name: Run retrieval eval (baseline regression)
         run: pnpm eval
@@ -150,6 +190,31 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
           REDIS_URL: redis://localhost:6379
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'pnpm'
+
+      - name: Audit production dependencies
+        # High+ vulnerabilities in prod deps fail the build. The workspace
+        # already carries manual CVE overrides in pnpm-workspace.yaml; this
+        # step surfaces the next one automatically instead of by hand.
+        run: pnpm audit --prod --audit-level=high
 
   docker-build:
     name: Docker build (mcp-server)
@@ -198,3 +263,20 @@ jobs:
           docker logs engram-ci-smoke
           docker rm -f engram-ci-smoke || true
           test -n "$ok"
+
+      - name: Scan image for vulnerabilities (trivy)
+        # Report-only for now (see #208): the scan is informational until the
+        # preexisting base-image/dep CVEs are triaged, and `continue-on-error`
+        # keeps a flaky binary download (unauthenticated GitHub rate limit)
+        # from gating an otherwise-green build. Flip exit-code to '1' and drop
+        # continue-on-error once #208 is resolved.
+        uses: aquasecurity/trivy-action@v0.33.1
+        continue-on-error: true
+        env:
+          TRIVY_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          image-ref: engram-mcp-server:ci-${{ github.sha }}
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH

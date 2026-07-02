@@ -22,6 +22,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: engram-redis
+    environment:
+      # Consumed only by the healthcheck (via REDISCLI_AUTH); the server
+      # password is set through --requirepass below.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command: >
       redis-server
       --appendonly yes
@@ -29,7 +33,9 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      # REDISCLI_AUTH keeps the password out of argv (visible in `ps`) and out
+      # of redis-cli's own "-a is insecure" warning.
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,6 +51,9 @@ services:
     environment:
       QDRANT__SERVICE__HTTP_PORT: 6333
       QDRANT__SERVICE__GRPC_PORT: 6334
+      # Require an API key so nothing else on the bridge network can read/write
+      # the vector DB. mcp-server passes it via QDRANT_API_KEY (see below).
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     healthcheck:
       test: ['CMD-SHELL', "timeout 5 bash -c '</dev/tcp/localhost/6333' || exit 1"]
       interval: 10s
@@ -68,16 +77,27 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-engram}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-engram}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
       VECTOR_BACKEND: ${VECTOR_BACKEND:-qdrant}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:?MCP_ADMIN_TOKEN is required}
       MCP_TRANSPORT: streamable-http
+      # Auth + rate limiting default ON in production so the published /mcp
+      # port is not an unauthenticated, cross-tenant, unmetered surface.
+      # AUTH_REQUIRED=true mandates JWT_SECRET (>=32 chars).
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (>=32 chars) when AUTH_REQUIRED=true}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      # Explicit CORS allow-list; leave empty only for a trusted-network deploy.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: engram-mcp-server
     ports:
-      - '${PORT:-3000}:3000'
+      # Bind to loopback by default; put a TLS-terminating reverse proxy in
+      # front. Override MCP_BIND_ADDR=0.0.0.0 only behind a trusted LB.
+      - '${MCP_BIND_ADDR:-127.0.0.1}:${PORT:-3000}:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +112,22 @@ services:
       start_period: 30s
       retries: 3
     restart: unless-stopped
+    # Runtime hardening: cap resources so one leak can't OOM the host, drop all
+    # Linux capabilities, and forbid privilege escalation.
+    # NOTE: `deploy.resources.limits` is honored by Docker Compose v2
+    # (`docker compose up`, verified against the memory limit) and Swarm. It is
+    # ignored by the legacy Python `docker-compose` v1 (EOL); this project
+    # targets Compose v2.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - engram-network
 

@@ -72,7 +72,10 @@ export class GoogleOAuthProvider implements OAuthProvider {
     if (!user.success) {
       throw new OAuthExchangeError(this.name, 'Unexpected profile shape');
     }
-    if (user.data.verified_email === false) {
+    // Default-deny: only an explicit `verified_email === true` is trusted.
+    // A missing/null field must not be treated as verified, or an account
+    // whose email is unverified could be mapped onto an existing user.
+    if (user.data.verified_email !== true) {
       throw new OAuthExchangeError(this.name, 'Google email is not verified');
     }
 

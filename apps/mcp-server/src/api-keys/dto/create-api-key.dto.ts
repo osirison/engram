@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const createApiKeyToolSchema = z
   .object({
     userId: userIdSchema,
-    adminToken: z.string().min(1, 'Admin token is required'),
+    adminToken: z.string().min(16, 'adminToken must be at least 16 chars'),
     name: z
       .string()
       .trim()

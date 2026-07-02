@@ -10,12 +10,16 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { AppModule } from './app.module';
 import { McpHandler } from '@engram/core';
 import type { McpServerConfig } from '@engram/core';
+import { coerceDeploymentProfile, resolveCapabilities } from '@engram/config';
 import { ApiKeysController } from './api-keys/api-keys.controller';
 import { MemoryController } from './memory/memory.controller';
 import { MetricsService } from './metrics/metrics.service';
-import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
+import {
+  McpAuthMiddleware,
+  type AuthedRequest,
+} from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
-import { isAuthRequired } from './auth/auth.config';
+import { isAuthRequired, isFlagEnabled } from './auth/auth.config';
 
 type ExpressMiddleware = (
   req: Request,
@@ -57,8 +61,16 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // CORS origin policy: an explicit allow-list from CORS_ALLOWED_ORIGINS
+  // (comma-separated) when set; otherwise reflect any origin, preserving the
+  // permissive local-dev default. Set the env var in any deployment that
+  // publishes the port so a victim's browser cannot drive the server.
+  const corsOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: true,
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
     methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id'],
     exposedHeaders: ['mcp-session-id'],
@@ -79,6 +91,34 @@ async function bootstrap(): Promise<void> {
   // and the acting userId is derived from the credential, not tool input.
   const authRequired = isAuthRequired() && mcpTransport === 'streamable-http';
   mcpHandler.setAuthPolicy({ required: authRequired });
+
+  // Fail-safe against the most dangerous misconfiguration: an HTTP transport
+  // serving every tenant unauthenticated (userId taken from tool input, not a
+  // credential). Only meaningful on a multi-tenant profile — memory/lite are
+  // single-user, so there is no cross-tenant data to expose. In production this
+  // must be a deliberate choice, so refuse to boot unless the operator
+  // explicitly acknowledges the trusted-network posture.
+  const capabilities = resolveCapabilities(
+    coerceDeploymentProfile(process.env.DEPLOYMENT_PROFILE),
+  );
+  if (
+    capabilities.multiTenant &&
+    mcpTransport === 'streamable-http' &&
+    !authRequired &&
+    process.env.NODE_ENV === 'production' &&
+    !isFlagEnabled(process.env.ALLOW_UNAUTHENTICATED_HTTP)
+  ) {
+    logger.error(
+      'Refusing to start: streamable-http in production without AUTH_REQUIRED=true. ' +
+        'This would serve all tenants unauthenticated with a client-controlled userId. ' +
+        'Set AUTH_REQUIRED=true (recommended), or set ALLOW_UNAUTHENTICATED_HTTP=true to ' +
+        'acknowledge a trusted-network deployment.',
+      'Bootstrap',
+    );
+    throw new Error(
+      'Unauthenticated streamable-http in production requires explicit ALLOW_UNAUTHENTICATED_HTTP=true',
+    );
+  }
 
   // Resolve auth/rate-limit middleware if the active profile wired them.
   const tryGet = <T>(token: unknown): T | undefined => {
@@ -157,6 +197,26 @@ async function bootstrap(): Promise<void> {
         req: Request,
         res: Response,
       ): Promise<void> => {
+        // The auth middleware rejects invalid credentials and attaches
+        // `req.auth` for valid ones, but it only rejects a *missing* credential
+        // when it sees a protected tools/call in the parsed body. GET (stream)
+        // and DELETE (teardown) have no body, so enforce identity explicitly
+        // here: under AUTH_REQUIRED, an unauthenticated session request must be
+        // rejected even though it carries a valid session id.
+        if (authRequired && !(req as AuthedRequest).auth) {
+          res
+            .status(401)
+            .set('WWW-Authenticate', 'Bearer realm="engram"')
+            .json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32001,
+                message: 'Unauthorized: authentication is required',
+              },
+              id: null,
+            });
+          return;
+        }
         const sessionId = req.headers['mcp-session-id'];
         const transport =
           typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
@@ -188,14 +248,13 @@ async function bootstrap(): Promise<void> {
 
             if (!transport) {
               if (!isInitializeRequest(req.body)) {
+                // Never interpolate the raw body: it carries memory content
+                // (PII) and any token/apiKey a client placed in params, and
+                // pino's field-path redaction cannot reach a string already
+                // built here. Log only the non-sensitive JSON-RPC envelope.
+                const body = req.body as { method?: unknown; id?: unknown };
                 logger.warn(
-                  `Rejecting POST /mcp without session: body=${JSON.stringify(req.body)?.slice(0, 300)} headers=${JSON.stringify(
-                    {
-                      'content-type': req.headers['content-type'],
-                      accept: req.headers.accept,
-                      'mcp-session-id': req.headers['mcp-session-id'],
-                    },
-                  )}`,
+                  `Rejecting POST /mcp without session: method=${typeof body?.method === 'string' ? body.method : 'unknown'} content-type=${req.headers['content-type'] ?? 'none'} has-session-header=${Boolean(req.headers['mcp-session-id'])}`,
                 );
                 res.status(400).json({
                   jsonrpc: '2.0',
@@ -252,14 +311,24 @@ async function bootstrap(): Promise<void> {
         },
       );
 
-      expressApp.get('/mcp', handleSessionRequest);
-      expressApp.delete('/mcp', handleSessionRequest);
+      // Meter session GET (stream)/DELETE (teardown) too, so a holder of a
+      // valid session id cannot churn sessions without rate limiting.
+      expressApp.get('/mcp', ...mcpPreHandlers, handleSessionRequest);
+      expressApp.delete('/mcp', ...mcpPreHandlers, handleSessionRequest);
     } else {
       await mcpHandler.start(serverConfig);
     }
   } catch (error) {
     logger.error('Failed to start MCP handler:', error);
   }
+
+  // Run NestJS lifecycle hooks (Redis/Prisma disconnect, metrics registry
+  // clear, MCP transport close, scheduler interval cleanup) on SIGTERM/SIGINT
+  // and drain in-flight requests instead of dropping them. enableShutdownHooks
+  // wires the signal handling itself; we deliberately avoid a manual handler
+  // with process.exit() so it does not race the OTel SDK's async flush
+  // (registered in telemetry.ts) or mask a non-zero close failure.
+  app.enableShutdownHooks();
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

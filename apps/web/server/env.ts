@@ -47,12 +47,14 @@ export const serverEnv = {
   defaultUserId: process.env.ENGRAM_DEFAULT_USER_ID ?? null,
 
   /**
-   * Enables the email/password development credentials provider. Requires the
-   * explicit flag AND a non-production NODE_ENV, so it can never ship enabled
-   * even if the flag is mistakenly left set in a production environment.
+   * Enables the passwordless email development credentials provider. Requires
+   * the explicit flag AND `NODE_ENV === 'development'`. This is an allow-list,
+   * not a `!== 'production'` deny-list: staging, preview, and unset-NODE_ENV
+   * environments must NOT expose passwordless impersonation just because they
+   * are "not production".
    */
   devAuthEnabled:
-    readBool(process.env.ENGRAM_DASHBOARD_DEV_AUTH) && process.env.NODE_ENV !== 'production',
+    readBool(process.env.ENGRAM_DASHBOARD_DEV_AUTH) && process.env.NODE_ENV === 'development',
 
   isProduction: process.env.NODE_ENV === 'production',
 } as const;

@@ -18,6 +18,7 @@ describe('resolveCapabilities', () => {
       requiresQdrant: false,
       inProcessAdapters: true,
       persistent: false,
+      multiTenant: false,
     });
   });
 
@@ -29,6 +30,7 @@ describe('resolveCapabilities', () => {
       requiresQdrant: false,
       inProcessAdapters: false,
       persistent: true,
+      multiTenant: false,
     });
   });
 
@@ -40,6 +42,7 @@ describe('resolveCapabilities', () => {
       requiresQdrant: true,
       inProcessAdapters: false,
       persistent: true,
+      multiTenant: true,
     });
   });
 
