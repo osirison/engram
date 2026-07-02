@@ -12,6 +12,10 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
   {
+    // Fail (not just warn) on stale suppressions so they cannot drift (#96).
+    linterOptions: {
+      reportUnusedDisableDirectives: 'error',
+    },
     languageOptions: {
       globals: {
         ...globals.node,

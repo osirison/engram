@@ -1,5 +1,24 @@
+import type { PrismaService } from '@engram/database';
 import { PostgresCheckpointBackend } from './postgres-checkpoint.backend';
 import type { MigrationCheckpoint } from './migration.types';
+
+/** Shape of the transaction client handed to the `$transaction` callback. */
+interface TxStub {
+  migrationCheckpoint: {
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+  };
+}
+
+/** Typed stand-in for the slice of PrismaService the backend touches. */
+interface PrismaStub {
+  $transaction: jest.Mock;
+  migrationCheckpoint: {
+    findUnique: jest.Mock;
+    delete: jest.Mock;
+  };
+}
 
 function makeCheckpoint(
   overrides: Partial<MigrationCheckpoint> = {},
@@ -39,10 +58,8 @@ function makeRow(cp: MigrationCheckpoint): Record<string, unknown> {
 }
 
 describe('PostgresCheckpointBackend', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let tx: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let prisma: any;
+  let tx: TxStub;
+  let prisma: PrismaStub;
   let backend: PostgresCheckpointBackend;
 
   beforeEach(() => {
@@ -55,13 +72,13 @@ describe('PostgresCheckpointBackend', () => {
     };
     prisma = {
       // Simulate Prisma's $transaction by invoking the callback with tx.
-      $transaction: jest.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+      $transaction: jest.fn((cb: (t: TxStub) => Promise<unknown>) => cb(tx)),
       migrationCheckpoint: {
         findUnique: jest.fn(),
         delete: jest.fn(),
       },
     };
-    backend = new PostgresCheckpointBackend(prisma);
+    backend = new PostgresCheckpointBackend(prisma as unknown as PrismaService);
   });
 
   describe('save()', () => {
