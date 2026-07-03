@@ -76,6 +76,18 @@ describe('ApiKeysController', () => {
         expect(typeof tool.handler).toBe('function');
       }
     });
+
+    it('never marks the identity-mode key-management tools delegable (#200)', () => {
+      // Delegation is opt-in; these destructive credential tools must stay
+      // pinned to the caller's own tenant so an admin key cannot list or revoke
+      // another tenant's API keys by passing a foreign userId.
+      const tools = controller.getMcpTools();
+      for (const name of ['list_api_keys', 'revoke_api_key']) {
+        const tool = tools.find((t) => t.name === name);
+        expect(tool).toBeDefined();
+        expect(tool?.delegable).not.toBe(true);
+      }
+    });
   });
 
   describe('createApiKey', () => {

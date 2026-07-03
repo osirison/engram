@@ -12,6 +12,7 @@ import {
   type ListMemoriesResult,
   type MemoryDTO,
   type MemoryOwner,
+  type McpDelegationMode,
   type MemoryStats,
   type MemoryType,
   type MetricSnapshot,
@@ -91,6 +92,15 @@ interface PrismaBackendOptions {
   /** Injectable MCP client + fetch for testing; defaults derive from mcpUrl. */
   mcpClient?: McpToolClient | null;
   fetchImpl?: typeof fetch;
+  /** How long a resolved API-key delegation probe stays cached (ms). */
+  delegationCacheTtlMs?: number;
+}
+
+/** Resolved API-key access facts surfaced through `capabilities()`. */
+interface DelegationInfo {
+  mode: McpDelegationMode;
+  keyTenant: string | null;
+  limitation: string | null;
 }
 
 export class PrismaEngramBackend implements EngramBackend {
@@ -100,6 +110,8 @@ export class PrismaEngramBackend implements EngramBackend {
   private readonly mcp: McpToolClient | null;
   private readonly httpTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly delegationCacheTtlMs: number;
+  private delegationCache: { resolvedAt: number; info: DelegationInfo } | null = null;
 
   constructor(options: PrismaBackendOptions) {
     this.prisma = options.prisma;
@@ -112,11 +124,97 @@ export class PrismaEngramBackend implements EngramBackend {
         ? new McpToolClient({ baseUrl: options.mcpUrl, apiKey: options.mcpApiKey })
         : null);
     this.fetchImpl = options.fetchImpl ?? ((...args) => fetch(...args));
+    this.delegationCacheTtlMs = options.delegationCacheTtlMs ?? 60_000;
   }
 
-  capabilities(): BackendCapabilities {
+  async capabilities(): Promise<BackendCapabilities> {
     const configured = this.mcp !== null;
-    return { writes: configured, semanticSearch: configured, mcpConfigured: configured };
+    const delegation = configured
+      ? await this.resolveDelegation()
+      : { mode: 'unknown' as const, keyTenant: null, limitation: null };
+    return {
+      writes: configured,
+      semanticSearch: configured,
+      mcpConfigured: configured,
+      delegation: delegation.mode,
+      keyTenant: delegation.keyTenant,
+      limitation: delegation.limitation,
+    };
+  }
+
+  /**
+   * Work out whether the configured MCP credential can act on behalf of any
+   * data owner. The MCP server pins identity-mode tools (`recall`,
+   * `update_memory`, `delete_memory`) to the API key's own tenant unless the
+   * key holds the `admin` scope, so a non-admin key silently limits the whole
+   * console to a single owner — surface that instead of letting searches come
+   * back empty and writes fail as "not found".
+   *
+   * The key's scopes are resolved via `GET /auth/me` and cached briefly so
+   * `capabilities()` stays cheap.
+   */
+  private async resolveDelegation(): Promise<DelegationInfo> {
+    if (!this.mcpApiKey) {
+      // No credential is attached: the server sees anonymous calls and uses the
+      // request's userId as-is. That only works when the MCP server runs with
+      // auth disabled; if it enforces auth (AUTH_REQUIRED=true) every write and
+      // recall is rejected. We cannot tell the two apart from here (an anonymous
+      // /auth/me 401s either way), so surface the precondition instead of an
+      // unconditional green light.
+      return {
+        mode: 'unrestricted',
+        keyTenant: null,
+        limitation:
+          'No ENGRAM_API_KEY is set — cross-tenant writes and semantic search work only if the ENGRAM server runs with auth disabled. If it enforces auth, writes and recall will fail; set an admin-scoped ENGRAM_API_KEY to manage data owners securely.',
+      };
+    }
+
+    const cached = this.delegationCache;
+    if (cached && Date.now() - cached.resolvedAt < this.delegationCacheTtlMs) {
+      return cached.info;
+    }
+
+    const info = await this.probeDelegation();
+    // Never cache 'unknown' — a briefly unreachable server should not stick.
+    if (info.mode !== 'unknown') {
+      this.delegationCache = { resolvedAt: Date.now(), info };
+    }
+    return info;
+  }
+
+  private async probeDelegation(): Promise<DelegationInfo> {
+    const unknown: DelegationInfo = {
+      mode: 'unknown',
+      keyTenant: null,
+      limitation:
+        "Could not verify the ENGRAM_API_KEY scopes — cross-tenant writes and semantic search may be limited to the key's own tenant.",
+    };
+
+    const res = await this.fetchMcp('/auth/me');
+    if (!res || !res.ok) return unknown;
+
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      return unknown;
+    }
+    const user = (body as { user?: { userId?: unknown; scopes?: unknown } } | null)?.user;
+    const keyTenant = typeof user?.userId === 'string' ? user.userId : null;
+    const scopes = Array.isArray(user?.scopes)
+      ? user.scopes.filter((s): s is string => typeof s === 'string')
+      : [];
+
+    if (scopes.includes('admin')) {
+      return { mode: 'admin', keyTenant, limitation: null };
+    }
+    return {
+      mode: 'tenant-limited',
+      keyTenant,
+      limitation: `Writes and semantic search are limited to the API key's own tenant${
+        keyTenant ? ` ("${keyTenant}")` : ''
+      }. Use an admin-scoped ENGRAM_API_KEY to manage other data owners.`,
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -172,15 +172,40 @@ export interface MemoryOwner {
   lastActivityAt: string | null;
 }
 
+/**
+ * How the configured MCP credential maps dashboard requests onto data owners:
+ *  - `admin`: the API key holds the `admin` scope — the MCP server honours the
+ *    dashboard-supplied `userId` on the delegable memory tools
+ *    (`recall`/`update_memory`/`delete_memory`), so cross-tenant writes and
+ *    semantic search work for every owner in the scope switcher.
+ *  - `tenant-limited`: a non-admin key — the MCP server rewrites `userId` to
+ *    the key's own tenant, so writes/search only work for that single owner.
+ *  - `unrestricted`: no API key is sent; the server accepts the supplied
+ *    `userId` as-is (only viable against a server with auth disabled).
+ *  - `unknown`: no MCP server configured, or the key's scopes could not be
+ *    resolved (server unreachable or the credential was rejected).
+ */
+export type McpDelegationMode = 'admin' | 'tenant-limited' | 'unrestricted' | 'unknown';
+
 export interface BackendCapabilities {
   /** True when an MCP server is configured for writes + recall. */
   writes: boolean;
   semanticSearch: boolean;
   mcpConfigured: boolean;
+  /** See {@link McpDelegationMode}. */
+  delegation: McpDelegationMode;
+  /**
+   * The data owner the configured API key is bound to, when resolved (`admin`
+   * and `tenant-limited` modes); null otherwise. Exposed for programmatic tRPC
+   * consumers and diagnostics — the Settings UI surfaces it via `limitation`.
+   */
+  keyTenant: string | null;
+  /** Operator-facing warning when cross-tenant writes/search will not work. */
+  limitation: string | null;
 }
 
 export interface EngramBackend {
-  capabilities(): BackendCapabilities;
+  capabilities(): Promise<BackendCapabilities>;
 
   listMemories(params: ListMemoriesParams): Promise<ListMemoriesResult>;
   getMemory(userId: string, memoryId: string): Promise<MemoryDTO | null>;

@@ -101,6 +101,20 @@ export default function SettingsPage() {
                   label="Semantic search (recall)"
                 />
                 <Capability ok={capabilities.data.writes} label="Edit & delete memories" />
+                {capabilities.data.mcpConfigured && (
+                  <Capability
+                    ok={
+                      capabilities.data.delegation === 'admin' ||
+                      capabilities.data.delegation === 'unrestricted'
+                    }
+                    label="Cross-tenant writes & search"
+                  />
+                )}
+                {capabilities.data.limitation && (
+                  <p className="pt-1 text-xs text-[var(--warning)]">
+                    {capabilities.data.limitation}
+                  </p>
+                )}
                 {!capabilities.data.mcpConfigured && (
                   <p className="pt-1 text-xs text-muted-foreground">
                     Set <code className="font-mono">ENGRAM_MCP_URL</code> to enable semantic search

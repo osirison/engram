@@ -7,9 +7,14 @@ import { createCaller } from '../root';
 
 function makeBackend(overrides: Partial<EngramBackend> = {}): EngramBackend {
   return {
-    capabilities: vi
-      .fn()
-      .mockReturnValue({ writes: true, semanticSearch: true, mcpConfigured: true }),
+    capabilities: vi.fn().mockResolvedValue({
+      writes: true,
+      semanticSearch: true,
+      mcpConfigured: true,
+      delegation: 'admin',
+      keyTenant: null,
+      limitation: null,
+    }),
     listMemories: vi
       .fn()
       .mockResolvedValue({ items: [], totalCount: 0, nextCursor: null, hasMore: false }),
@@ -104,9 +109,34 @@ describe('health + analytics + meta routers', () => {
     await expect(api.health.status()).resolves.toMatchObject({ status: 'ok' });
   });
 
-  it('returns capabilities', async () => {
+  it('returns capabilities including the delegation mode', async () => {
     const api = caller(makeBackend());
-    await expect(api.meta.capabilities()).resolves.toMatchObject({ writes: true });
+    await expect(api.meta.capabilities()).resolves.toMatchObject({
+      writes: true,
+      delegation: 'admin',
+      limitation: null,
+    });
+  });
+
+  it('surfaces the tenant-limited warning for a non-admin key', async () => {
+    const api = caller(
+      makeBackend({
+        capabilities: vi.fn().mockResolvedValue({
+          writes: true,
+          semanticSearch: true,
+          mcpConfigured: true,
+          delegation: 'tenant-limited',
+          keyTenant: 'svc',
+          limitation:
+            'Writes and semantic search are limited to the API key\'s own tenant ("svc").',
+        }),
+      })
+    );
+    await expect(api.meta.capabilities()).resolves.toMatchObject({
+      delegation: 'tenant-limited',
+      keyTenant: 'svc',
+      limitation: expect.stringContaining('limited') as unknown,
+    });
   });
 
   it('delegates analytics activity with default window', async () => {

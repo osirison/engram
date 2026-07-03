@@ -18,10 +18,12 @@ export { McpHandler } from './mcp/mcp.handler';
 export type { McpServerConfig, McpServer, ServerInfo } from './mcp/types';
 export {
   registerTools,
+  resolveActingUserId,
   zodToJsonSchema,
   type Tool,
   type ToolAuthMode,
   type AuthPolicy,
+  type ActingUserDecision,
   type ToolInputJsonSchema,
 } from './mcp/tools/index';
 export { pingTool } from './mcp/tools/ping.tool';
