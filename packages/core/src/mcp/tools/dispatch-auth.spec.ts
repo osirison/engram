@@ -344,6 +344,20 @@ describe('resolveActingUserId', () => {
     });
   });
 
+  it('normalises a whitespace-padded requested userId to its trimmed value', () => {
+    // A padded copy of the own tenant must not be treated as a foreign target.
+    expect(resolveActingUserId('key-tenant', '  key-tenant  ', ['admin'], true)).toEqual({
+      effectiveUserId: 'key-tenant',
+      delegated: false,
+    });
+    // A padded foreign tenant delegates to the trimmed id, which is what
+    // downstream schema validation and lookups actually receive.
+    expect(resolveActingUserId('key-tenant', '  other  ', ['admin'], true)).toEqual({
+      effectiveUserId: 'other',
+      delegated: true,
+    });
+  });
+
   it('ignores requested userId entirely when scopes are empty', () => {
     expect(resolveActingUserId('key-tenant', 'other', [], true)).toEqual({
       effectiveUserId: 'key-tenant',

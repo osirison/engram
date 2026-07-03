@@ -60,8 +60,9 @@ describe('MCP delegation wiring — real memory tools (#200)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    process.env.MCP_ADMIN_TOKEN = 'test-admin-token-12345';
-
+    // No MCP_ADMIN_TOKEN is set here: this spec only exercises identity-mode
+    // tools (recall/update_memory/delete_memory), which never read it — so we
+    // avoid mutating (and leaking) shared process.env across jest files.
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MemoryController],
       providers: [

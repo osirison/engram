@@ -122,9 +122,12 @@ export function resolveActingUserId(
   scopes: readonly string[],
   toolAllowsDelegation: boolean
 ): ActingUserDecision {
+  // Normalise: use the trimmed value so a whitespace-only id counts as absent
+  // and a padded id ("  x  ") is compared/acted on as its real value ("x")
+  // rather than being treated as a distinct tenant that then fails validation.
   const requested =
     typeof requestedUserId === 'string' && requestedUserId.trim().length > 0
-      ? requestedUserId
+      ? requestedUserId.trim()
       : undefined;
   if (
     toolAllowsDelegation &&
