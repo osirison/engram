@@ -41,6 +41,8 @@ interface AdvertisedTool {
 describe('tools/list advertised JSON Schemas (wiring, issue #205)', () => {
   let registeredTools: Tool[];
   let advertisedTools: AdvertisedTool[];
+  let originalDeploymentProfile: string | undefined;
+  let originalAdminToken: string | undefined;
 
   /** Extract the request method literal from an SDK zod request schema. */
   const getRequestMethod = (schema: unknown): string | undefined => {
@@ -52,6 +54,11 @@ describe('tools/list advertised JSON Schemas (wiring, issue #205)', () => {
   };
 
   beforeAll(async () => {
+    // Snapshot the pre-existing values so this suite's env mutations can't
+    // leak into other test files run in the same Jest worker process.
+    originalDeploymentProfile = process.env.DEPLOYMENT_PROFILE;
+    originalAdminToken = process.env.MCP_ADMIN_TOKEN;
+
     // Enterprise profile (the default) exposes every tool.
     delete process.env.DEPLOYMENT_PROFILE;
     process.env.MCP_ADMIN_TOKEN = 'test-admin-token-12345';
@@ -118,7 +125,17 @@ describe('tools/list advertised JSON Schemas (wiring, issue #205)', () => {
   });
 
   afterAll(() => {
-    delete process.env.MCP_ADMIN_TOKEN;
+    if (originalDeploymentProfile === undefined) {
+      delete process.env.DEPLOYMENT_PROFILE;
+    } else {
+      process.env.DEPLOYMENT_PROFILE = originalDeploymentProfile;
+    }
+
+    if (originalAdminToken === undefined) {
+      delete process.env.MCP_ADMIN_TOKEN;
+    } else {
+      process.env.MCP_ADMIN_TOKEN = originalAdminToken;
+    }
   });
 
   const advertised = (name: string): AdvertisedTool => {
