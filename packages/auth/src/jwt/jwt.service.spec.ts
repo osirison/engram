@@ -49,6 +49,18 @@ describe('JwtService', () => {
     expect(a).not.toBe(b);
   });
 
+  it('returns claims.scopes as an independent snapshot of the input array', () => {
+    const svc = new JwtService({ secret: SECRET, expiresInSeconds: 100 });
+    const input = ['memories:read'];
+    const { token, claims } = svc.issueWithClaims({ userId: 'user-1', scopes: input }, 1_000_000);
+    // Mutating the caller's array must not leak into the returned claims…
+    input.push('memories:write');
+    expect(claims.scopes).toEqual(['memories:read']);
+    expect(claims.scopes).not.toBe(input);
+    // …and the returned claims still match the (already serialized) token.
+    expect(svc.verify(token, 1_000_001).scopes).toEqual(['memories:read']);
+  });
+
   it('defaults optional claims to null/empty', () => {
     const svc = new JwtService({ secret: SECRET });
     const claims = svc.verify(svc.issue({ userId: 'user-2' }));

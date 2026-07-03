@@ -143,7 +143,11 @@ export class JwtService {
       sub: input.userId,
       email: input.email ?? null,
       org: input.organizationId ?? null,
-      scopes: input.scopes ?? [],
+      // Copy the caller's array so the returned claims are an independent
+      // snapshot: issueWithClaims now exposes `claims`, and the sole caller
+      // passes a shared module constant (SESSION_SCOPES) — aliasing it would
+      // let a later mutation of claims.scopes corrupt every future login.
+      scopes: input.scopes ? [...input.scopes] : [],
       iss: this.issuer,
       iat: issuedAt,
       exp: issuedAt + this.expiresInSeconds,
