@@ -52,20 +52,23 @@ function mockFetch(responses: Record<string, { ok?: boolean; json?: unknown; tex
 }
 
 describe('PrismaEngramBackend.capabilities', () => {
-  it('reports disabled writes when no MCP client', () => {
+  it('reports disabled writes when no MCP client', async () => {
     const backend = new PrismaEngramBackend({
       prisma: makePrisma(),
       mcpUrl: null,
       mcpApiKey: null,
     });
-    expect(backend.capabilities()).toEqual({
+    await expect(backend.capabilities()).resolves.toEqual({
       writes: false,
       semanticSearch: false,
       mcpConfigured: false,
+      delegation: 'unknown',
+      keyTenant: null,
+      limitation: null,
     });
   });
 
-  it('reports enabled capabilities when an MCP client is present', () => {
+  it('reports enabled capabilities when an MCP client is present', async () => {
     const mcp = { call: vi.fn() } as unknown as McpToolClient;
     const backend = new PrismaEngramBackend({
       prisma: makePrisma(),
@@ -73,7 +76,130 @@ describe('PrismaEngramBackend.capabilities', () => {
       mcpApiKey: null,
       mcpClient: mcp,
     });
-    expect(backend.capabilities().writes).toBe(true);
+    await expect(backend.capabilities()).resolves.toMatchObject({ writes: true });
+  });
+
+  it('reports unrestricted delegation with a precondition caveat when no API key is configured', async () => {
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const caps = await backend.capabilities();
+    expect(caps.delegation).toBe('unrestricted');
+    expect(caps.keyTenant).toBeNull();
+    // The keyless-but-configured case only works against an auth-disabled
+    // server; the console cannot verify that, so it surfaces the caveat rather
+    // than a bare green light.
+    expect(caps.limitation).toContain('ENGRAM_API_KEY');
+    expect(caps.limitation).toContain('auth disabled');
+  });
+
+  it('reports admin delegation when the key holds the admin scope', async () => {
+    const fetchImpl = mockFetch({
+      '/auth/me': { json: { user: { userId: 'svc', scopes: ['admin'] } } },
+    });
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'eng_admin',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    await expect(backend.capabilities()).resolves.toMatchObject({
+      delegation: 'admin',
+      keyTenant: 'svc',
+      limitation: null,
+    });
+  });
+
+  it('reports tenant-limited delegation with a warning for a non-admin key', async () => {
+    const fetchImpl = mockFetch({
+      '/auth/me': {
+        json: {
+          user: { userId: 'svc', scopes: ['memories:read', 'memories:write', 'memories:delete'] },
+        },
+      },
+    });
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'eng_service',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    const caps = await backend.capabilities();
+    expect(caps.delegation).toBe('tenant-limited');
+    expect(caps.keyTenant).toBe('svc');
+    expect(caps.limitation).toContain('limited to the API key');
+    expect(caps.limitation).toContain('"svc"');
+  });
+
+  it('reports unknown delegation with a warning when /auth/me is unreachable', async () => {
+    const fetchImpl = mockFetch({}); // every path 404s
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'eng_service',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    const caps = await backend.capabilities();
+    expect(caps.delegation).toBe('unknown');
+    expect(caps.limitation).toContain('Could not verify');
+  });
+
+  it('caches a successful delegation probe but retries after unknown', async () => {
+    const okFetch = mockFetch({
+      '/auth/me': { json: { user: { userId: 'svc', scopes: ['admin'] } } },
+    });
+    const cachedBackend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'eng_admin',
+      mcpClient: { call: vi.fn() } as unknown as McpToolClient,
+      fetchImpl: okFetch,
+    });
+    await cachedBackend.capabilities();
+    await cachedBackend.capabilities();
+    expect(okFetch).toHaveBeenCalledTimes(1);
+
+    const failFetch = mockFetch({});
+    const retryBackend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'eng_admin',
+      mcpClient: { call: vi.fn() } as unknown as McpToolClient,
+      fetchImpl: failFetch,
+    });
+    await retryBackend.capabilities();
+    await retryBackend.capabilities();
+    expect(failFetch).toHaveBeenCalledTimes(2); // 'unknown' is never cached
+  });
+
+  it('re-probes once the delegation cache TTL has elapsed', async () => {
+    const okFetch = mockFetch({
+      '/auth/me': { json: { user: { userId: 'svc', scopes: ['admin'] } } },
+    });
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'eng_admin',
+      mcpClient: { call: vi.fn() } as unknown as McpToolClient,
+      fetchImpl: okFetch,
+      // TTL 0 means a cached result is always considered stale, so every
+      // capabilities() call must re-probe — proving the TTL check is load-bearing
+      // (a cache-that-never-expires bug would serve the first result and fail).
+      delegationCacheTtlMs: 0,
+    });
+    await backend.capabilities();
+    await backend.capabilities();
+    expect(okFetch).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -1138,6 +1138,9 @@ export class MemoryController {
         name: 'update_memory',
         description: 'Update existing memory',
         inputSchema: updateMemoryToolSchema,
+        // Delegable: an admin-scoped key (the operator console) may edit any
+        // data owner's memory by passing an explicit userId (#200).
+        delegable: true,
         handler: this.updateMemory.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1146,6 +1149,9 @@ export class MemoryController {
         name: 'delete_memory',
         description: 'Delete memory by ID',
         inputSchema: getMemoryToolSchema, // Reuse get_memory schema
+        // Delegable: an admin-scoped key (the operator console) may delete any
+        // data owner's memory by passing an explicit userId (#200).
+        delegable: true,
         handler: this.deleteMemory.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1163,6 +1169,9 @@ export class MemoryController {
         description:
           'Semantically recall the most relevant long-term memories for a natural-language query',
         inputSchema: recallToolSchema,
+        // Delegable: an admin-scoped key (the operator console) may run semantic
+        // search on behalf of any data owner by passing an explicit userId (#200).
+        delegable: true,
         handler: this.recall.bind(this) as (input: unknown) => Promise<unknown>,
       },
       {

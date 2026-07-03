@@ -14,7 +14,12 @@ import { pingTool } from './ping.tool.js';
  *   - `identity` (default): the tool acts on behalf of the caller. When the
  *     request is authenticated, the verified `userId` is injected into the tool
  *     input, overriding any client-supplied `userId` (a forged tenant cannot
- *     read another tenant's data).
+ *     read another tenant's data). Exception: on a tool that opts in with
+ *     `delegable: true`, a principal holding the `admin` scope may *delegate* —
+ *     explicitly pass another tenant's `userId` and have it honoured (see
+ *     {@link resolveActingUserId}); such calls are audited. Identity tools that
+ *     do not set `delegable` pin every caller, admin included, to their own
+ *     tenant.
  *   - `admin`: `userId` is a parameter chosen by an operator (e.g. issuing an
  *     API key *for* a user); it is never overwritten. These tools carry their
  *     own `adminToken` gate.
@@ -40,6 +45,19 @@ export interface Tool {
    * calls (no authInfo) to the `auth` enforcement above.
    */
   requiredScope?: string;
+  /**
+   * Opt this identity-mode tool into *delegation*: when set, a principal holding
+   * the `admin` scope may explicitly pass another tenant's `userId` and have it
+   * honoured instead of being pinned to its own tenant (the multi-tenant
+   * operator-console case; delegated calls are audited). Defaults to false, so
+   * identity tools pin every caller — admins included — to the verified tenant
+   * unless they opt in. Ignored for `admin`/`public` tools. Set true only on
+   * tools that genuinely need cross-tenant operation (e.g. the memory data tools
+   * `recall`/`update_memory`/`delete_memory`); leave destructive
+   * account/credential tools pinned so an admin key cannot act on other tenants'
+   * credentials by accident.
+   */
+  delegable?: boolean;
 }
 
 /**
@@ -76,6 +94,47 @@ function schemaAcceptsUserId(schema: z.ZodSchema): boolean {
   return (
     schema instanceof z.ZodObject && Object.prototype.hasOwnProperty.call(schema.shape, 'userId')
   );
+}
+
+/** Outcome of {@link resolveActingUserId} for an identity-mode tool call. */
+export interface ActingUserDecision {
+  /** The tenant the tool call will act on. */
+  effectiveUserId: string;
+  /** True when an admin-scoped principal explicitly targeted another tenant. */
+  delegated: boolean;
+}
+
+/**
+ * Decide which tenant an identity-mode tool acts on. The verified identity
+ * always wins for ordinary principals — the tenant boundary is the token, not
+ * the request body. The one exception is *delegation*, which requires BOTH
+ * conditions: the tool opts in (`toolAllowsDelegation`, from `Tool.delegable`)
+ * AND the principal holds the `admin` scope. Such a principal may then
+ * explicitly name another tenant in `userId` and have it honoured (the
+ * multi-tenant operator-console case). Everyone else — non-admins, and admins
+ * calling a non-delegable tool — is pinned back to their own tenant, preserving
+ * the pre-existing overwrite behavior. Keeping both gates here means the full
+ * cross-tenant decision lives in one auditable, unit-tested function.
+ */
+export function resolveActingUserId(
+  verifiedUserId: string,
+  requestedUserId: unknown,
+  scopes: readonly string[],
+  toolAllowsDelegation: boolean
+): ActingUserDecision {
+  const requested =
+    typeof requestedUserId === 'string' && requestedUserId.trim().length > 0
+      ? requestedUserId
+      : undefined;
+  if (
+    toolAllowsDelegation &&
+    requested &&
+    requested !== verifiedUserId &&
+    scopes.includes(ADMIN_SCOPE)
+  ) {
+    return { effectiveUserId: requested, delegated: true };
+  }
+  return { effectiveUserId: verifiedUserId, delegated: false };
 }
 
 /**
@@ -194,10 +253,27 @@ export function registerTools(
 
       // Build the effective input. For identity tools we trust the verified
       // userId over anything the client supplied — the tenant boundary is the
-      // token, not the request body.
+      // token, not the request body. The one exception is a tool that opts into
+      // delegation (`delegable`) called by an admin-scoped principal: it may act
+      // on behalf of another tenant (e.g. the multi-tenant operator console).
+      // Delegated calls are audited.
       let args: unknown = request.params.arguments ?? {};
       if (mode === 'identity' && userId && schemaAcceptsUserId(tool.inputSchema)) {
-        args = { ...(args as Record<string, unknown>), userId };
+        const record = args as Record<string, unknown>;
+        const decision = resolveActingUserId(
+          userId,
+          record.userId,
+          authenticatedScopes(extra),
+          tool.delegable === true
+        );
+        if (decision.delegated) {
+          const apiKeyId = extra?.authInfo?.extra?.apiKeyId;
+          logger.log(
+            `delegated_user_id tool=${toolName} actor=${userId} target=${decision.effectiveUserId}` +
+              (typeof apiKeyId === 'string' ? ` apiKeyId=${apiKeyId}` : '')
+          );
+        }
+        args = { ...record, userId: decision.effectiveUserId };
       }
 
       // Validate input with Zod

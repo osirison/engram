@@ -4,7 +4,10 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { z } from 'zod';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { McpHandler } from './mcp.handler';
+import type { Tool } from './tools/index';
 
 describe('McpHandler', () => {
   let handler: McpHandler;
@@ -97,6 +100,81 @@ describe('McpHandler', () => {
       expect(handler.getServer()).toBeDefined();
 
       consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('tool dispatch wiring (createConfiguredServer)', () => {
+    type CallRequest = { method: string; params: { name: string; arguments?: unknown } };
+    type CallExtra = { authInfo?: { scopes?: string[]; extra?: Record<string, unknown> } };
+    type CallResult = { content: Array<{ text: string }>; isError?: boolean };
+    type CallHandler = (request: CallRequest, extra?: CallExtra) => Promise<CallResult>;
+
+    const getRequestMethod = (schema: unknown): string | undefined =>
+      (schema as { def?: { shape?: { method?: { def?: { values?: string[] } } } } })?.def?.shape
+        ?.method?.def?.values?.[0];
+
+    const echoTool: Tool = {
+      name: 'echo_user',
+      description: 'echoes the acting userId',
+      inputSchema: z.object({ userId: z.string() }).strict(),
+      // Opts into delegation so the admin-scope end-to-end case can target another tenant.
+      delegable: true,
+      handler: (input): Promise<unknown> =>
+        Promise.resolve({ echoedUserId: (input as { userId: string }).userId }),
+    };
+
+    /**
+     * Wire an identity tool through the handler exactly the way the HTTP
+     * transport does (registerAdditionalTools → setAuthPolicy →
+     * createConfiguredServer) and capture the registered tools/call handler.
+     */
+    const captureCallHandler = (): CallHandler => {
+      let captured: CallHandler | undefined;
+      const spy = vi
+        .spyOn(Server.prototype, 'setRequestHandler')
+        .mockImplementation((schema, fn): void => {
+          if (getRequestMethod(schema) === 'tools/call') {
+            captured = fn as unknown as CallHandler;
+          }
+        });
+      handler.registerAdditionalTools([echoTool]);
+      handler.setAuthPolicy({ required: true });
+      handler.createConfiguredServer({ name: 'wiring-test', version: '0.0.0' });
+      spy.mockRestore();
+      if (!captured) throw new Error('tools/call handler was not registered');
+      return captured;
+    };
+
+    const parse = (result: CallResult): Record<string, unknown> =>
+      JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    it('honours a delegated userId from an admin-scoped key end-to-end', async () => {
+      const call = captureCallHandler();
+      const result = await call(
+        {
+          method: 'tools/call',
+          params: { name: 'echo_user', arguments: { userId: 'other-tenant' } },
+        },
+        { authInfo: { scopes: ['admin'], extra: { userId: 'key-tenant' } } }
+      );
+      expect(parse(result).echoedUserId).toBe('other-tenant');
+    });
+
+    it('pins a non-admin key back to its own tenant end-to-end', async () => {
+      const call = captureCallHandler();
+      const result = await call(
+        {
+          method: 'tools/call',
+          params: { name: 'echo_user', arguments: { userId: 'other-tenant' } },
+        },
+        {
+          authInfo: {
+            scopes: ['memories:read', 'memories:write', 'memories:delete'],
+            extra: { userId: 'key-tenant' },
+          },
+        }
+      );
+      expect(parse(result).echoedUserId).toBe('key-tenant');
     });
   });
 

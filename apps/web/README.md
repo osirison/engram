@@ -24,6 +24,16 @@ The dashboard talks to the ENGRAM backend through a single, mockable seam,
   endpoint, so the derived vector index stays in sync (a raw Prisma write would
   desync Qdrant/pgvector). Configure `ENGRAM_MCP_URL` to enable these; without
   it the console runs read-only with keyword search.
+
+  When the MCP server enforces auth (`AUTH_REQUIRED=true`), set
+  `ENGRAM_API_KEY`. The key's scopes decide how far the console reaches: an
+  **admin-scoped key** may act on behalf of any data owner (the MCP dispatcher
+  honours the console-supplied `userId` — delegated mode, audited server-side),
+  while a non-admin key is pinned to its own tenant, so writes and semantic
+  search only work for that single owner. `meta.capabilities` reports the
+  detected mode (`delegation`: `admin` / `tenant-limited` / `unrestricted` /
+  `unknown`) and the Settings page shows a warning when the console is
+  tenant-limited.
 - **Health & metrics — the MCP server HTTP endpoints** (`/health`,
   `/health/metrics`).
 
