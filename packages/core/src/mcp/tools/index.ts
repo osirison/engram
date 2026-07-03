@@ -84,46 +84,45 @@ function schemaAcceptsUserId(schema: z.ZodSchema): boolean {
 const builtInTools: Tool[] = [pingTool];
 
 /**
- * Convert Zod schema to JSON Schema format for MCP
+ * JSON Schema advertised for a tool's input via `tools/list`. MCP requires
+ * the top level to be an object schema (`"type": "object"`); everything else
+ * (properties, required, additionalProperties, $schema, …) is draft-07.
  */
-function zodToJsonSchema(schema: z.ZodSchema): {
-  type: 'object';
-  properties?: Record<string, unknown>;
-  required?: string[];
-} {
-  // For now, handle simple object schemas
-  // This is a basic implementation - can be extended later
-  if (schema instanceof z.ZodObject) {
-    const shape = schema.shape;
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
+export type ToolInputJsonSchema = { type: 'object' } & Record<string, unknown>;
 
-    for (const [key, value] of Object.entries(shape)) {
-      if (value instanceof z.ZodString) {
-        properties[key] = { type: 'string' };
-      } else if (value instanceof z.ZodNumber) {
-        properties[key] = { type: 'number' };
-      } else if (value instanceof z.ZodBoolean) {
-        properties[key] = { type: 'boolean' };
-      }
+/**
+ * Convert a tool's Zod input schema to the JSON Schema (draft-07) shape
+ * advertised to MCP clients via `tools/list`.
+ *
+ * Uses Zod v4's native `z.toJSONSchema()` so every construct tools actually
+ * use — enums, arrays, nested objects/records, `.default()`, `.nullable()`,
+ * `.optional()`, coerced numbers — produces a correct `properties` entry and
+ * an accurate `required` list. (The previous hand-rolled converter only
+ * emitted string/number/boolean properties and marked `ZodDefault` fields as
+ * required while omitting them from `properties`.)
+ */
+export function zodToJsonSchema(schema: z.ZodSchema): ToolInputJsonSchema {
+  const jsonSchema = z.toJSONSchema(schema, {
+    // MCP clients broadly understand draft-07.
+    target: 'draft-7',
+    // Describe what the *client sends*: a field with `.default()` is always
+    // present in the parsed output but optional on input, so it must appear
+    // in `properties` (with its default) and must NOT be listed in `required`.
+    io: 'input',
+    // Inputs with no JSON representation (e.g. `z.coerce.date()`) degrade to
+    // an unconstrained `{}` property instead of throwing; server-side Zod
+    // validation still enforces the real constraints on every call.
+    unrepresentable: 'any',
+  }) as Record<string, unknown>;
 
-      // Check if field is required (not optional)
-      if (!(value instanceof z.ZodOptional)) {
-        required.push(key);
-      }
-    }
-
-    return {
-      type: 'object',
-      properties: Object.keys(properties).length > 0 ? properties : undefined,
-      required: required.length > 0 ? required : undefined,
-    };
+  if (jsonSchema['type'] !== 'object') {
+    // MCP tool input schemas must be object-typed at the top level. All tools
+    // use `z.object(...).strict()`, so this is a defensive fallback for
+    // non-object schemas rather than advertising an invalid shape.
+    return { type: 'object' };
   }
 
-  // Default for empty schemas
-  return {
-    type: 'object',
-  };
+  return jsonSchema as ToolInputJsonSchema;
 }
 
 /**
