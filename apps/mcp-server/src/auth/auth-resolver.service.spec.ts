@@ -1,8 +1,24 @@
-import { JwtService } from '@engram/auth';
+import {
+  JwtRevocationService,
+  JwtService,
+  type JwtDenylistStore,
+} from '@engram/auth';
 import { AuthResolver } from './auth-resolver.service';
 import type { ApiKeysService } from '../api-keys/api-keys.service';
 
 const SECRET = 'unit-test-secret-at-least-32-characters-long';
+
+/** In-memory jti denylist store. */
+class FakeDenylistStore implements JwtDenylistStore {
+  public map = new Map<string, string>();
+  set(key: string, value: string): Promise<void> {
+    this.map.set(key, value);
+    return Promise.resolve();
+  }
+  get(key: string): Promise<string | null> {
+    return Promise.resolve(this.map.get(key) ?? null);
+  }
+}
 
 type VerifyResult = Awaited<ReturnType<ApiKeysService['verifyApiKey']>>;
 
@@ -126,5 +142,80 @@ describe('AuthResolver', () => {
     );
     const outcome = await resolver.authenticate({ 'x-api-key': 'eng_x' });
     expect(outcome.status).toBe('invalid');
+  });
+
+  describe('jti denylist (revocation)', () => {
+    it('rejects a revoked (logged-out) JWT', async () => {
+      const revocation = new JwtRevocationService(new FakeDenylistStore());
+      const resolver = new AuthResolver(
+        makeApiKeys(() => null),
+        jwt,
+        revocation,
+      );
+      const { token, claims } = jwt.issueWithClaims({ userId: 'user-2' });
+
+      // Valid before revocation…
+      const before = await resolver.authenticate({
+        authorization: `Bearer ${token}`,
+      });
+      expect(before.status).toBe('authenticated');
+
+      // …rejected after.
+      await revocation.revoke(claims);
+      const after = await resolver.authenticate({
+        authorization: `Bearer ${token}`,
+      });
+      expect(after).toEqual({
+        status: 'invalid',
+        reason: 'Token has been revoked',
+      });
+    });
+
+    it('fails closed when the denylist store errors', async () => {
+      const revocation = new JwtRevocationService({
+        set: () => Promise.reject(new Error('redis down')),
+        get: () => Promise.reject(new Error('redis down')),
+      });
+      const resolver = new AuthResolver(
+        makeApiKeys(() => null),
+        jwt,
+        revocation,
+      );
+      const outcome = await resolver.authenticate({
+        authorization: `Bearer ${jwt.issue({ userId: 'user-2' })}`,
+      });
+      expect(outcome).toEqual({
+        status: 'invalid',
+        reason: 'Token revocation check failed',
+      });
+    });
+
+    it('still authenticates without a revocation service (lite profile)', async () => {
+      const resolver = new AuthResolver(
+        makeApiKeys(() => null),
+        jwt,
+        undefined,
+      );
+      const outcome = await resolver.authenticate({
+        authorization: `Bearer ${jwt.issue({ userId: 'user-2' })}`,
+      });
+      expect(outcome.status).toBe('authenticated');
+    });
+
+    it('does not consult the denylist for API keys', async () => {
+      const store = new FakeDenylistStore();
+      const getSpy = jest.spyOn(store, 'get');
+      const revocation = new JwtRevocationService(store);
+      const resolver = new AuthResolver(
+        makeApiKeys(() => sampleKey()),
+        jwt,
+        revocation,
+      );
+      const outcome = await resolver.authenticate({
+        'x-api-key': 'eng_abcdef',
+      });
+      expect(outcome.status).toBe('authenticated');
+      expect(getSpy).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,5 +1,11 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { JwtService, type AuthIdentity } from '@engram/auth';
+import {
+  JwtError,
+  JwtRevocationService,
+  JwtService,
+  type AuthIdentity,
+  type JwtClaims,
+} from '@engram/auth';
 import { ApiKeysService } from '../api-keys/api-keys.service';
 
 export type AuthOutcome =
@@ -26,6 +32,10 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
  * presented but fails verification, and `authenticated` with the resolved
  * {@link AuthIdentity} otherwise. A presented-but-invalid credential is never
  * silently downgraded to anonymous.
+ *
+ * When a {@link JwtRevocationService} is wired (enterprise profile — requires
+ * Redis), verified JWTs are additionally checked against the `jti` denylist so
+ * logged-out tokens are rejected for their remaining lifetime.
  */
 @Injectable()
 export class AuthResolver {
@@ -34,6 +44,7 @@ export class AuthResolver {
   constructor(
     private readonly apiKeys: ApiKeysService,
     @Optional() private readonly jwt?: JwtService,
+    @Optional() private readonly revocation?: JwtRevocationService,
   ) {}
 
   async authenticate(headers: RequestHeaders): Promise<AuthOutcome> {
@@ -88,28 +99,46 @@ export class AuthResolver {
     };
   }
 
-  private authenticateJwt(token: string): AuthOutcome {
+  private async authenticateJwt(token: string): Promise<AuthOutcome> {
     if (!this.jwt) {
       return { status: 'invalid', reason: 'JWT auth is not configured' };
     }
+    let claims: JwtClaims;
     try {
-      const claims = this.jwt.verify(token);
-      return {
-        status: 'authenticated',
-        identity: {
-          userId: claims.sub,
-          organizationId: claims.org,
-          email: claims.email,
-          scopes: claims.scopes,
-          method: 'jwt',
-          apiKeyId: null,
-        },
-      };
+      claims = this.jwt.verify(token);
     } catch (error) {
       return {
         status: 'invalid',
         reason: error instanceof Error ? error.message : 'Invalid token',
       };
     }
+
+    // Revocation (jti denylist) check — present only when Redis is wired
+    // (enterprise). Fail-closed: a denylist store error rejects the token
+    // rather than accepting a possibly-revoked one, matching the API-key
+    // posture above where a verification error never authenticates.
+    if (this.revocation) {
+      try {
+        await this.revocation.assertNotRevoked(claims.jti);
+      } catch (error) {
+        if (error instanceof JwtError) {
+          return { status: 'invalid', reason: error.message };
+        }
+        this.logger.warn(`JWT revocation check error: ${String(error)}`);
+        return { status: 'invalid', reason: 'Token revocation check failed' };
+      }
+    }
+
+    return {
+      status: 'authenticated',
+      identity: {
+        userId: claims.sub,
+        organizationId: claims.org,
+        email: claims.email,
+        scopes: claims.scopes,
+        method: 'jwt',
+        apiKeyId: null,
+      },
+    };
   }
 }

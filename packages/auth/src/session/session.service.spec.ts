@@ -59,6 +59,42 @@ describe('SessionService', () => {
     expect(store.ttls.get(key!)).toBe(42);
   });
 
+  it('round-trips the paired JWT jti/exp when provided', async () => {
+    const store = new FakeStore();
+    const svc = new SessionService(store);
+    const id = await svc.createSession({
+      userId: 'user-1',
+      organizationId: null,
+      email: null,
+      scopes: [],
+      jti: 'jwt-id-1',
+      jwtExp: 1_234_567,
+    });
+    const data = await svc.getSession(id);
+    expect(data?.jti).toBe('jwt-id-1');
+    expect(data?.jwtExp).toBe(1_234_567);
+  });
+
+  it('still parses pre-existing sessions without jti/jwtExp', async () => {
+    const store = new FakeStore();
+    const svc = new SessionService(store);
+    await store.set(
+      'auth:session:legacy',
+      JSON.stringify({
+        userId: 'user-1',
+        organizationId: null,
+        email: null,
+        scopes: [],
+        createdAt: 1,
+      }),
+      60
+    );
+    const data = await svc.getSession('legacy');
+    expect(data?.userId).toBe('user-1');
+    expect(data?.jti).toBeUndefined();
+    expect(data?.jwtExp).toBeUndefined();
+  });
+
   it('returns null for unknown or malformed sessions', async () => {
     const store = new FakeStore();
     const svc = new SessionService(store);

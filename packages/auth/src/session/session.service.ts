@@ -14,6 +14,14 @@ export interface SessionData {
   email: string | null;
   scopes: string[];
   createdAt: number;
+  /**
+   * `jti` of the JWT minted alongside this session, when one was. Lets logout
+   * revoke the paired Bearer token even when only the session cookie is
+   * presented. Optional for backwards compatibility with pre-existing sessions.
+   */
+  jti?: string;
+  /** `exp` (seconds since epoch) of the paired JWT, for denylist TTL math. */
+  jwtExp?: number;
 }
 
 const sessionSchema = z
@@ -23,6 +31,8 @@ const sessionSchema = z
     email: z.string().nullable(),
     scopes: z.array(z.string()),
     createdAt: z.number().int(),
+    jti: z.string().min(1).optional(),
+    jwtExp: z.number().int().optional(),
   })
   .strip();
 

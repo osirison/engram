@@ -16,9 +16,11 @@ import {
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import {
+  JwtRevocationService,
   JwtService,
   OAuthService,
   SessionService,
+  type JwtClaims,
   type OAuthProviderName,
   type OAuthUserProfile,
 } from '@engram/auth';
@@ -55,6 +57,20 @@ function readSessionCookie(req: Request): string | undefined {
   return undefined;
 }
 
+/**
+ * Read a JWT presented as `Authorization: Bearer <token>`, if any. `eng_`
+ * API keys are not JWTs and are ignored here — they have their own
+ * `revokedAt`-based revocation.
+ */
+function readBearerJwt(req: Request): string | undefined {
+  const header = req.headers.authorization;
+  if (typeof header !== 'string') return undefined;
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  const token = match?.[1]?.trim();
+  if (!token || token.startsWith('eng_')) return undefined;
+  return token;
+}
+
 const callbackQuerySchema = z.object({
   code: z.string().min(1),
   state: z.string().min(1),
@@ -70,6 +86,7 @@ function isProviderName(value: string): value is OAuthProviderName {
  *   - `GET  /auth/:provider/callback` → exchange code, upsert user, issue JWT + session
  *   - `GET  /auth/me`                 → resolve the caller's identity
  *   - `POST /auth/logout`             → destroy the session named by its cookie
+ *                                       and revoke the paired JWT (jti denylist)
  */
 @Controller('auth')
 export class AuthController {
@@ -79,6 +96,7 @@ export class AuthController {
     private readonly oauth: OAuthService,
     private readonly sessions: SessionService,
     private readonly jwt: JwtService,
+    private readonly revocation: JwtRevocationService,
     private readonly users: UserService,
     private readonly resolver: AuthResolver,
     @Inject(OAUTH_REDIRECT_BASE_URL) private readonly redirectBase: string,
@@ -141,17 +159,21 @@ export class AuthController {
     }
 
     const user = await this.users.upsertByEmail(profile.email);
-    const token = this.jwt.issue({
+    const { token, claims } = this.jwt.issueWithClaims({
       userId: user.id,
       email: user.email,
       organizationId: user.organizationId,
       scopes: SESSION_SCOPES,
     });
+    // Bind the minted jti/exp to the session so logout can revoke the paired
+    // Bearer token even when only the httpOnly cookie is presented.
     const sessionId = await this.sessions.createSession({
       userId: user.id,
       organizationId: user.organizationId,
       email: user.email,
       scopes: SESSION_SCOPES,
+      jti: claims.jti,
+      jwtExp: claims.exp,
     });
 
     res.cookie(SESSION_COOKIE, sessionId, {
@@ -186,6 +208,13 @@ export class AuthController {
     return { user: outcome.identity };
   }
 
+  /**
+   * Logout invalidates *both* halves of the interactive credential pair:
+   * the Redis session named by the cookie, and the JWT via the `jti`
+   * denylist (entry TTL = remaining token lifetime). The JWT is found from
+   * the session record (which stores the paired `jti`/`exp`) and/or the
+   * `Authorization: Bearer` header on the logout request itself.
+   */
   @Post('logout')
   @HttpCode(204)
   async logout(
@@ -194,8 +223,40 @@ export class AuthController {
   ): Promise<void> {
     const sessionId = readSessionCookie(req);
     if (sessionId) {
+      const session = await this.sessions.getSession(sessionId);
+      // Sessions minted before jti-binding shipped carry no `jti`; a cookie-only
+      // logout of such a legacy session cannot denylist the paired JWT (its id
+      // was never stored), so that token stays valid until `exp`. This residual
+      // window self-heals within one token lifetime of deploy — every new login
+      // binds jti/jwtExp — and an API client that resends its Bearer on logout
+      // is still covered by the header path below.
+      if (session?.jti) {
+        await this.revocation.revoke({
+          jti: session.jti,
+          // Older sessions predate jwtExp; fall back to a safe upper bound
+          // (session creation + configured lifetime ≥ the token's real exp).
+          exp:
+            session.jwtExp ?? session.createdAt + this.jwt.tokenLifetimeSeconds,
+        });
+      }
       await this.sessions.destroySession(sessionId);
     }
+
+    const bearer = readBearerJwt(req);
+    if (bearer) {
+      let claims: JwtClaims | undefined;
+      try {
+        claims = this.jwt.verify(bearer);
+      } catch {
+        // Invalid/expired/foreign token — nothing to revoke; logout stays
+        // idempotent. Denylist *store* errors below still propagate (a 204
+        // must not falsely promise the token was revoked).
+      }
+      if (claims) {
+        await this.revocation.revoke(claims);
+      }
+    }
+
     res.clearCookie(SESSION_COOKIE);
   }
 }

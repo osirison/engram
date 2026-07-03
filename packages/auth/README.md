@@ -14,6 +14,7 @@ host app (`apps/mcp-server/src/auth`).
 | Building block                                | Responsibility                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `JwtService`                                  | Issue/verify HS256 JWTs (`node:crypto`, no external deps).                    |
+| `JwtRevocationService`                        | `jti` denylist over a `JwtDenylistStore` — makes issued JWTs revocable.       |
 | `OAuthService`                                | Registry of configured OAuth providers.                                       |
 | `GitHubOAuthProvider` / `GoogleOAuthProvider` | Authorization-URL build + code→profile exchange.                              |
 | `SessionService`                              | Redis-backed sessions + one-time OAuth `state` (CSRF), over a `SessionStore`. |
@@ -26,9 +27,14 @@ host app (`apps/mcp-server/src/auth`).
   Verification never reads the algorithm from the token to choose a strategy —
   it always computes an HMAC-SHA256 and compares in constant time — so it is
   structurally immune to algorithm-confusion (`none`/`RS256`) attacks.
-- **Stores are interfaces.** `SessionStore` and `RateLimitStore` are implemented
-  by the host (Redis in enterprise); the package ships only the logic, so unit
-  tests run with in-memory fakes and no external services.
+- **Stores are interfaces.** `SessionStore`, `RateLimitStore`, and
+  `JwtDenylistStore` are implemented by the host (Redis in enterprise); the
+  package ships only the logic, so unit tests run with in-memory fakes and no
+  external services.
+- **JWTs are revocable via a `jti` denylist.** Logout writes the token's `jti`
+  with a TTL equal to its remaining lifetime; the auth path checks the denylist
+  after signature/expiry verification. Revocation checks fail closed: a store
+  error rejects the token rather than accepting a possibly-revoked one.
 - **OAuth HTTP is injected** (`OAuthHttpClient`) so token exchange and profile
   fetches are mockable without network access. `FetchOAuthHttpClient` is the
   default platform-`fetch` implementation.

@@ -29,7 +29,8 @@ export type JwtErrorCode =
   | 'expired'
   | 'not-active'
   | 'issuer'
-  | 'claims';
+  | 'claims'
+  | 'revoked';
 
 /** Typed error thrown by {@link JwtService.verify}. */
 export class JwtError extends Error {
@@ -125,6 +126,18 @@ export class JwtService {
 
   /** Issue a signed token for the given principal. */
   issue(input: JwtIssueInput, issuedAt: number = nowSeconds()): string {
+    return this.issueWithClaims(input, issuedAt).token;
+  }
+
+  /**
+   * Issue a signed token and also return its claims, so callers can bind the
+   * minted `jti`/`exp` to server-side state (e.g. a session, for revocation on
+   * logout) without re-verifying the token they just produced.
+   */
+  issueWithClaims(
+    input: JwtIssueInput,
+    issuedAt: number = nowSeconds()
+  ): { token: string; claims: JwtClaims } {
     const header = { alg: ALG, typ: TOKEN_TYPE };
     const claims: JwtClaims = {
       sub: input.userId,
@@ -140,7 +153,7 @@ export class JwtService {
     const payloadPart = base64urlEncode(JSON.stringify(claims));
     const signingInput = `${headerPart}.${payloadPart}`;
     const signature = this.sign(signingInput);
-    return `${signingInput}.${signature}`;
+    return { token: `${signingInput}.${signature}`, claims };
   }
 
   /**
