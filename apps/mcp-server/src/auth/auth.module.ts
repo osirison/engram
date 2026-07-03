@@ -4,7 +4,12 @@ import {
   type Provider,
   type Type,
 } from '@nestjs/common';
-import { JwtService, OAuthService, SessionService } from '@engram/auth';
+import {
+  JwtRevocationService,
+  JwtService,
+  OAuthService,
+  SessionService,
+} from '@engram/auth';
 import { RedisModule } from '@engram/redis';
 import type { ProfileCapabilities } from '@engram/config';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
@@ -102,7 +107,17 @@ export class AuthModule {
       }
 
       // OAuth login endpoints require both sessions (Redis) and JWT issuance.
+      // The jti denylist (JWT revocation on logout) shares the Redis session
+      // store; without Redis (lite profile) JWTs are not revocable and the
+      // AuthResolver skips the denylist check.
       if (jwtConfig) {
+        providers.push({
+          provide: JwtRevocationService,
+          useFactory: (store: RedisSessionStore): JwtRevocationService =>
+            new JwtRevocationService(store),
+          inject: [RedisSessionStore],
+        });
+        exports.push(JwtRevocationService);
         controllers.push(AuthController);
       }
     }

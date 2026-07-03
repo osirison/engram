@@ -17,15 +17,18 @@
  * a large staged set.
  */
 module.exports = {
-  '*.{ts,tsx,js,jsx}': [
-    'eslint --fix --config apps/web/eslint.config.js',
-    'prettier --write',
-  ],
-  '*.{json,md,yml,yaml}': (filenames) =>
-    filenames
-      .filter((filename) => {
-        const basename = (filename.replace(/\\/g, '/').split('/').pop()) || '';
-        return basename !== 'pnpm-lock.yaml';
-      })
-      .map(() => 'prettier --write'),
+  '*.{ts,tsx,js,jsx}': ['eslint --fix --config apps/web/eslint.config.js', 'prettier --write'],
+  '*.{json,md,yml,yaml}': (filenames) => {
+    const files = filenames.filter((filename) => {
+      const basename = filename.replace(/\\/g, '/').split('/').pop() || '';
+      return basename !== 'pnpm-lock.yaml';
+    });
+    // Return ONE prettier invocation carrying the (quoted) filenames. The
+    // function form of a lint-staged task does not auto-append filenames, so
+    // mapping to a bare `prettier --write` would run it with no target and
+    // block forever reading stdin. Skip entirely when nothing remains.
+    return files.length
+      ? [`prettier --write ${files.map((f) => JSON.stringify(f)).join(' ')}`]
+      : [];
+  },
 };

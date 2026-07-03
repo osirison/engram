@@ -12,6 +12,8 @@ function build(
     consumeState?: () => unknown;
     exchange?: () => unknown;
     authenticate?: () => unknown;
+    getSession?: () => unknown;
+    verify?: () => unknown;
   } = {},
 ): {
   controller: AuthController;
@@ -20,9 +22,15 @@ function build(
     createOAuthState: jest.Mock;
     consumeOAuthState: jest.Mock;
     createSession: jest.Mock;
+    getSession: jest.Mock;
     destroySession: jest.Mock;
   };
-  jwt: { issue: jest.Mock; tokenLifetimeSeconds: number };
+  jwt: {
+    issueWithClaims: jest.Mock;
+    verify: jest.Mock;
+    tokenLifetimeSeconds: number;
+  };
+  revocation: { revoke: jest.Mock };
   users: { upsertByEmail: jest.Mock };
   resolver: { authenticate: jest.Mock };
 } {
@@ -57,9 +65,36 @@ function build(
           Promise.resolve({ provider: 'github', createdAt: 1 })),
     ),
     createSession: jest.fn(() => Promise.resolve('sess-1')),
+    getSession: jest.fn(
+      overrides.getSession ??
+        ((): Promise<unknown> =>
+          Promise.resolve({
+            userId: 'user-1',
+            organizationId: null,
+            email: 'octo@gh.com',
+            scopes: [],
+            createdAt: 100,
+            jti: 'session-jti',
+            jwtExp: 4100,
+          })),
+    ),
     destroySession: jest.fn(() => Promise.resolve(undefined)),
   };
-  const jwt = { issue: jest.fn(() => 'jwt-token'), tokenLifetimeSeconds: 3600 };
+  const jwt = {
+    issueWithClaims: jest.fn(() => ({
+      token: 'jwt-token',
+      claims: { jti: 'minted-jti', exp: 3700, iat: 100, sub: 'user-1' },
+    })),
+    verify: jest.fn(
+      overrides.verify ??
+        ((): { jti: string; exp: number } => ({
+          jti: 'bearer-jti',
+          exp: 5000,
+        })),
+    ),
+    tokenLifetimeSeconds: 3600,
+  };
+  const revocation = { revoke: jest.fn(() => Promise.resolve(true)) };
   const users = {
     upsertByEmail: jest.fn(() =>
       Promise.resolve({
@@ -86,11 +121,12 @@ function build(
     oauth as never,
     sessions as never,
     jwt as never,
+    revocation as never,
     users as never,
     resolver as never,
     'https://api.example.com',
   );
-  return { controller, oauth, sessions, jwt, users, resolver };
+  return { controller, oauth, sessions, jwt, revocation, users, resolver };
 }
 
 function mockRes(): Response {
@@ -132,8 +168,12 @@ describe('AuthController', () => {
       )) as { token: string; sessionId?: string };
       expect(sessions.consumeOAuthState).toHaveBeenCalledWith('state-1');
       expect(users.upsertByEmail).toHaveBeenCalledWith('octo@gh.com');
-      expect(jwt.issue).toHaveBeenCalled();
+      expect(jwt.issueWithClaims).toHaveBeenCalled();
       expect(result.token).toBe('jwt-token');
+      // The minted jti/exp are bound to the session for revocation on logout.
+      expect(sessions.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ jti: 'minted-jti', jwtExp: 3700 }),
+      );
       // The session id must NOT be echoed in the body — cookie only.
       expect(result.sessionId).toBeUndefined();
       expect(res.cookie).toHaveBeenCalledWith(
@@ -210,11 +250,159 @@ describe('AuthController', () => {
       expect(res.clearCookie).toHaveBeenCalledWith('engram_session');
     });
 
+    it('revokes the jti paired with the session on logout', async () => {
+      const { controller, revocation } = build();
+      await controller.logout(
+        { headers: { cookie: 'engram_session=sess-1' } } as never,
+        mockRes(),
+      );
+      expect(revocation.revoke).toHaveBeenCalledWith({
+        jti: 'session-jti',
+        exp: 4100,
+      });
+    });
+
+    it('falls back to createdAt + lifetime for legacy sessions without jwtExp', async () => {
+      const { controller, revocation } = build({
+        getSession: () =>
+          Promise.resolve({
+            userId: 'user-1',
+            organizationId: null,
+            email: null,
+            scopes: [],
+            createdAt: 100,
+            jti: 'legacy-jti',
+          }),
+      });
+      await controller.logout(
+        { headers: { cookie: 'engram_session=sess-1' } } as never,
+        mockRes(),
+      );
+      // exp = createdAt (100) + tokenLifetimeSeconds (3600)
+      expect(revocation.revoke).toHaveBeenCalledWith({
+        jti: 'legacy-jti',
+        exp: 3700,
+      });
+    });
+
+    it('revokes a Bearer JWT presented on the logout request', async () => {
+      const { controller, jwt, revocation } = build({
+        getSession: () => Promise.resolve(null),
+      });
+      await controller.logout(
+        {
+          headers: {
+            cookie: 'engram_session=sess-1',
+            authorization: 'Bearer some.jwt.token',
+          },
+        } as never,
+        mockRes(),
+      );
+      expect(jwt.verify).toHaveBeenCalledWith('some.jwt.token');
+      expect(revocation.revoke).toHaveBeenCalledWith({
+        jti: 'bearer-jti',
+        exp: 5000,
+      });
+    });
+
+    it('revokes both the session jti and a distinct Bearer jti presented together', async () => {
+      // Cookie names session-jti; the Authorization header carries a different
+      // token (bearer-jti). Both must be denylisted — guards against a
+      // regression that makes the Bearer branch an `else` of the session branch.
+      const { controller, revocation } = build();
+      await controller.logout(
+        {
+          headers: {
+            cookie: 'engram_session=sess-1',
+            authorization: 'Bearer some.jwt.token',
+          },
+        } as never,
+        mockRes(),
+      );
+      expect(revocation.revoke).toHaveBeenCalledWith({
+        jti: 'session-jti',
+        exp: 4100,
+      });
+      expect(revocation.revoke).toHaveBeenCalledWith({
+        jti: 'bearer-jti',
+        exp: 5000,
+      });
+      expect(revocation.revoke).toHaveBeenCalledTimes(2);
+    });
+
+    it('propagates a denylist store error on the session path (no false 204)', async () => {
+      // The logout contract: a 204 must never falsely promise revocation. When
+      // the denylist write fails, the handler rejects (→ 500) rather than
+      // resolving, and — because revoke precedes destroy/clear — the session is
+      // left intact so the client retries rather than believing it logged out.
+      const { controller, revocation, sessions } = build();
+      revocation.revoke.mockRejectedValue(new Error('redis down'));
+      const res = mockRes();
+      await expect(
+        controller.logout(
+          { headers: { cookie: 'engram_session=sess-1' } } as never,
+          res,
+        ),
+      ).rejects.toThrow('redis down');
+      expect(sessions.destroySession).not.toHaveBeenCalled();
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
+
+    it('propagates a denylist store error on the Bearer path (no false 204)', async () => {
+      const { controller, revocation } = build({
+        getSession: () => Promise.resolve(null),
+      });
+      revocation.revoke.mockRejectedValue(new Error('redis down'));
+      const res = mockRes();
+      await expect(
+        controller.logout(
+          { headers: { authorization: 'Bearer some.jwt.token' } } as never,
+          res,
+        ),
+      ).rejects.toThrow('redis down');
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
+
+    it('ignores an invalid Bearer token on logout (idempotent 204)', async () => {
+      const { controller, revocation, sessions } = build({
+        getSession: () => Promise.resolve(null),
+        verify: () => {
+          throw new Error('bad token');
+        },
+      });
+      const res = mockRes();
+      await controller.logout(
+        {
+          headers: {
+            cookie: 'engram_session=sess-1',
+            authorization: 'Bearer garbage',
+          },
+        } as never,
+        res,
+      );
+      expect(revocation.revoke).not.toHaveBeenCalled();
+      expect(sessions.destroySession).toHaveBeenCalledWith('sess-1');
+      expect(res.clearCookie).toHaveBeenCalledWith('engram_session');
+    });
+
+    it('does not treat an eng_ API key Bearer as a JWT on logout', async () => {
+      const { controller, jwt, revocation } = build({
+        getSession: () => Promise.resolve(null),
+      });
+      await controller.logout(
+        { headers: { authorization: 'Bearer eng_secretkey123' } } as never,
+        mockRes(),
+      );
+      expect(jwt.verify).not.toHaveBeenCalled();
+      expect(revocation.revoke).not.toHaveBeenCalled();
+    });
+
     it('is a no-op destroy when no session cookie is present', async () => {
-      const { controller, sessions } = build();
+      const { controller, sessions, revocation } = build();
       const res = mockRes();
       await controller.logout({ headers: {} } as never, res);
       expect(sessions.destroySession).not.toHaveBeenCalled();
+      expect(revocation.revoke).not.toHaveBeenCalled();
       expect(res.clearCookie).toHaveBeenCalledWith('engram_session');
     });
   });

@@ -31,6 +31,24 @@ describe('JwtService', () => {
     expect(claims.jti).toBeTruthy();
   });
 
+  it('issueWithClaims returns the exact claims embedded in the token', () => {
+    const svc = new JwtService({ secret: SECRET, expiresInSeconds: 100 });
+    const issuedAt = 1_000_000;
+    const { token, claims } = svc.issueWithClaims({ userId: 'user-1' }, issuedAt);
+    expect(claims.iat).toBe(issuedAt);
+    expect(claims.exp).toBe(issuedAt + 100);
+    expect(claims.jti).toBeTruthy();
+    // Verifying the token yields the same claims (same jti — no re-mint).
+    expect(svc.verify(token, issuedAt + 1)).toEqual(claims);
+  });
+
+  it('mints a unique jti per token', () => {
+    const svc = new JwtService({ secret: SECRET });
+    const a = svc.issueWithClaims({ userId: 'user-1' }).claims.jti;
+    const b = svc.issueWithClaims({ userId: 'user-1' }).claims.jti;
+    expect(a).not.toBe(b);
+  });
+
   it('defaults optional claims to null/empty', () => {
     const svc = new JwtService({ secret: SECRET });
     const claims = svc.verify(svc.issue({ userId: 'user-2' }));

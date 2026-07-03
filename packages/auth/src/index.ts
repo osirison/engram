@@ -16,6 +16,7 @@ export {
   type JwtIssueInput,
   type JwtServiceOptions,
 } from './jwt/jwt.service.js';
+export { JwtRevocationService, type JwtDenylistStore } from './jwt/jwt-revocation.service.js';
 
 export { OAuthService } from './oauth/oauth.service.js';
 export {
