@@ -23,12 +23,30 @@ describe('RedisRateLimitStore', () => {
 
     expect(result).toEqual({ count: 3, ttlSeconds: 42 });
     expect(evalMock).toHaveBeenCalledWith(
-      expect.stringContaining('INCR'),
+      expect.stringContaining('INCRBY'),
       1,
       'rl:user:1',
       60,
+      1,
     );
     expect(redis.incr).not.toHaveBeenCalled();
+  });
+
+  it('passes multi-unit increments through the Lua eval path', async () => {
+    const evalMock = jest.fn().mockResolvedValue([7, 42]);
+    const redis = makeRedis({}, { eval: evalMock });
+    const store = new RedisRateLimitStore(redis);
+
+    const result = await store.increment('rl:user:1', 60, 7);
+
+    expect(result).toEqual({ count: 7, ttlSeconds: 42 });
+    expect(evalMock).toHaveBeenCalledWith(
+      expect.stringContaining('INCRBY'),
+      1,
+      'rl:user:1',
+      60,
+      7,
+    );
   });
 
   it('falls back to discrete commands when eval throws', async () => {
@@ -53,6 +71,50 @@ describe('RedisRateLimitStore', () => {
       count: 1,
       ttlSeconds: 30,
     });
+  });
+
+  it('increments by units in the fallback path and anchors the window on first hit', async () => {
+    const incrMock = jest.fn().mockResolvedValue(5);
+    const redis = makeRedis({ incr: incrMock });
+    const store = new RedisRateLimitStore(redis);
+
+    // Fresh window: counter equals the increment amount → TTL is applied.
+    expect(await store.increment('k', 30, 5)).toEqual({
+      count: 5,
+      ttlSeconds: 30,
+    });
+    expect(incrMock).toHaveBeenCalledWith('k', 5);
+    expect(redis.expire).toHaveBeenCalledWith('k', 30);
+  });
+
+  it('does not re-anchor the window on subsequent multi-unit hits', async () => {
+    const redis = makeRedis({
+      incr: jest.fn().mockResolvedValue(9), // 4 existing + 5 new ≠ 5 → not first hit
+      ttl: jest.fn().mockResolvedValue(21),
+    });
+    const store = new RedisRateLimitStore(redis);
+
+    expect(await store.increment('k', 60, 5)).toEqual({
+      count: 9,
+      ttlSeconds: 21,
+    });
+    expect(redis.expire).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes non-positive units to a single unit', async () => {
+    const evalMock = jest.fn().mockResolvedValue([1, 60]);
+    const redis = makeRedis({}, { eval: evalMock });
+    const store = new RedisRateLimitStore(redis);
+
+    await store.increment('k', 60, 0);
+
+    expect(evalMock).toHaveBeenCalledWith(
+      expect.stringContaining('INCRBY'),
+      1,
+      'k',
+      60,
+      1,
+    );
   });
 
   it('returns the existing TTL on subsequent hits within the window', async () => {

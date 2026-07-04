@@ -14,9 +14,13 @@ export interface RateLimitIncrementResult {
 
 export interface RateLimitStore {
   /**
-   * Atomically increment the counter at `key`. The window TTL must be applied
-   * on the first increment (when the counter becomes 1) and left untouched
-   * thereafter, giving a fixed window anchored at the first request.
+   * Atomically increment the counter at `key` by `units` (a positive integer,
+   * defaulting to 1). The window TTL must be applied on the first increment of
+   * a window (when the counter transitions from absent to `units`) and left
+   * untouched thereafter, giving a fixed window anchored at the first request.
+   *
+   * Multi-unit increments let the limiter meter by actual work: a request that
+   * fans out into N downstream operations charges N units in one atomic step.
    */
-  increment(key: string, windowSeconds: number): Promise<RateLimitIncrementResult>;
+  increment(key: string, windowSeconds: number, units?: number): Promise<RateLimitIncrementResult>;
 }

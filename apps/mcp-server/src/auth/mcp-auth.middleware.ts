@@ -42,21 +42,37 @@ function toAuthInfo(identity: AuthIdentity): McpAuthInfo {
   };
 }
 
-/** Extract the names of every `tools/call` in a JSON-RPC body (single or batch). */
-export function toolCallNames(body: unknown): string[] {
+/** One `tools/call` occurrence in a JSON-RPC body: tool name plus raw arguments. */
+export interface ToolCallEntry {
+  name: string;
+  /** Raw, not-yet-validated `params.arguments` (used for work-proportional rate costs). */
+  arguments: unknown;
+}
+
+/** Extract every `tools/call` in a JSON-RPC body (single or batch) with its arguments. */
+export function toolCallEntries(body: unknown): ToolCallEntry[] {
   const entries = Array.isArray(body) ? body : [body];
-  const names: string[] = [];
+  const calls: ToolCallEntry[] = [];
   for (const entry of entries) {
     if (
       entry &&
       typeof entry === 'object' &&
       (entry as { method?: unknown }).method === 'tools/call'
     ) {
-      const name = (entry as { params?: { name?: unknown } }).params?.name;
-      if (typeof name === 'string') names.push(name);
+      const params = (
+        entry as { params?: { name?: unknown; arguments?: unknown } }
+      ).params;
+      if (typeof params?.name === 'string') {
+        calls.push({ name: params.name, arguments: params.arguments });
+      }
     }
   }
-  return names;
+  return calls;
+}
+
+/** Extract the names of every `tools/call` in a JSON-RPC body (single or batch). */
+export function toolCallNames(body: unknown): string[] {
+  return toolCallEntries(body).map((entry) => entry.name);
 }
 
 function jsonRpcError(res: Response, status: number, message: string): void {

@@ -10,13 +10,17 @@ class FakeStore implements RateLimitStore {
   increment(
     key: string,
     windowSeconds: number,
+    units = 1,
   ): Promise<RateLimitIncrementResult> {
     const existing = this.counters.get(key);
     if (!existing || existing.expiresAt <= this.now) {
-      this.counters.set(key, { count: 1, expiresAt: this.now + windowSeconds });
-      return Promise.resolve({ count: 1, ttlSeconds: windowSeconds });
+      this.counters.set(key, {
+        count: units,
+        expiresAt: this.now + windowSeconds,
+      });
+      return Promise.resolve({ count: units, ttlSeconds: windowSeconds });
     }
-    existing.count += 1;
+    existing.count += units;
     return Promise.resolve({
       count: existing.count,
       ttlSeconds: existing.expiresAt - this.now,
@@ -165,5 +169,133 @@ describe('McpRateLimitMiddleware', () => {
     const res = mockRes();
     await mw.handle(batchReq(), res, jest.fn());
     expect(res.statusCode).toBe(429);
+  });
+
+  describe('work-proportional metering for ingest_conversation (#204)', () => {
+    const ingestReq = (
+      turns: Array<{ role: string; content: string }>,
+    ): Request =>
+      ({
+        headers: {},
+        body: {
+          method: 'tools/call',
+          params: {
+            name: 'ingest_conversation',
+            arguments: { userId: 'cjld2cyuq0000t3rmniod1foy', turns },
+          },
+        },
+        auth: authInfo(),
+      }) as unknown as Request;
+
+    const shortTurns = (n: number): Array<{ role: string; content: string }> =>
+      Array.from({ length: n }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `turn ${i}`,
+      }));
+
+    it('charges one unit per chunk instead of one per request', async () => {
+      const mw = new McpRateLimitMiddleware(
+        new FakeStore(),
+        config({ userRpm: 10 }),
+      );
+
+      // 3 short turns → 3 chunks → 3 units of the 10-unit budget.
+      const res = mockRes();
+      await mw.handle(ingestReq(shortTurns(3)), res, jest.fn());
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-RateLimit-Remaining']).toBe('7');
+    });
+
+    it('blocks an ingest whose chunk cost exceeds the remaining budget', async () => {
+      const mw = new McpRateLimitMiddleware(
+        new FakeStore(),
+        config({ userRpm: 10 }),
+      );
+
+      // 3 units consumed...
+      await mw.handle(ingestReq(shortTurns(3)), mockRes(), jest.fn());
+      // ...then 8 more units exceed the 10-unit budget → 429.
+      const blocked = mockRes();
+      await mw.handle(ingestReq(shortTurns(8)), blocked, jest.fn());
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.headers['Retry-After']).toBeDefined();
+    });
+
+    it('charges oversized turns per 10 KB chunk, not per turn', async () => {
+      const mw = new McpRateLimitMiddleware(
+        new FakeStore(),
+        config({ userRpm: 2 }),
+      );
+
+      // One turn of ~30 KB splits into ≥3 chunks → exceeds a 2-unit budget in
+      // a single request even though it is only one turn.
+      const oneBigTurn = [{ role: 'user', content: 'X'.repeat(30_720) }];
+      const res = mockRes();
+      await mw.handle(ingestReq(oneBigTurn), res, jest.fn());
+      expect(res.statusCode).toBe(429);
+    });
+
+    it('drains the organization budget proportionally as well', async () => {
+      const mw = new McpRateLimitMiddleware(
+        new FakeStore(),
+        config({ userRpm: 100, orgRpm: 5 }),
+      );
+      const req = (): Request =>
+        ({
+          ...(ingestReq(shortTurns(6)) as object),
+          auth: authInfo({ organizationId: 'org-1' }),
+        }) as unknown as Request;
+
+      const res = mockRes();
+      await mw.handle(req(), res, jest.fn());
+      // 6 chunks > 5-unit org budget → blocked by the org bucket.
+      expect(res.statusCode).toBe(429);
+    });
+
+    it('still charges a single unit when ingest arguments are malformed', async () => {
+      const mw = new McpRateLimitMiddleware(
+        new FakeStore(),
+        config({ userRpm: 10 }),
+      );
+      const malformed = {
+        headers: {},
+        body: {
+          method: 'tools/call',
+          params: { name: 'ingest_conversation', arguments: { turns: 'nope' } },
+        },
+        auth: authInfo(),
+      } as unknown as Request;
+
+      const res = mockRes();
+      await mw.handle(malformed, res, jest.fn());
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-RateLimit-Remaining']).toBe('9');
+    });
+
+    it('meters ingest chunks in unauthenticated (per-IP) buckets too', async () => {
+      const mw = new McpRateLimitMiddleware(
+        new FakeStore(),
+        config({ ipRpm: 4 }),
+      );
+      const anonReq = {
+        headers: {},
+        ip: '9.9.9.9',
+        body: {
+          method: 'tools/call',
+          params: {
+            name: 'ingest_conversation',
+            arguments: {
+              userId: 'cjld2cyuq0000t3rmniod1foy',
+              turns: shortTurns(5),
+            },
+          },
+        },
+      } as unknown as Request;
+
+      const res = mockRes();
+      await mw.handle(anonReq, res, jest.fn());
+      // 5 chunks > 4-unit IP budget → blocked in one request.
+      expect(res.statusCode).toBe(429);
+    });
   });
 });
