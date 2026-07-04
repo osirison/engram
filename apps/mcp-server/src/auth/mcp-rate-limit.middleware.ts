@@ -6,7 +6,8 @@ import {
   type RateLimitStore,
 } from '@engram/auth';
 import type { RateLimitConfig } from './auth.config';
-import { toolCallNames, type AuthedRequest } from './mcp-auth.middleware';
+import { toolCallEntries, type AuthedRequest } from './mcp-auth.middleware';
+import { toolCallUnits } from './tool-call-cost';
 
 function clientIp(req: Request): string {
   // req.ip is the direct TCP peer unless Express `trust proxy` is configured.
@@ -66,9 +67,19 @@ export class McpRateLimitMiddleware {
     // its tools/call entries, so charging only the first would let a single
     // batched request bypass the limit. Requests with no tools/call (e.g.
     // initialize) are charged once against the default bucket.
-    const names = toolCallNames(req.body);
-    const calls: Array<string | undefined> =
-      names.length > 0 ? names : [undefined];
+    //
+    // Each call is charged its work-proportional cost: ordinary tools cost one
+    // unit, while `ingest_conversation` costs one unit per 10 KB chunk it will
+    // store — a single metered request can no longer drive hundreds of
+    // embedding/DB operations (#204).
+    const entries = toolCallEntries(req.body);
+    const calls: Array<{ tool?: string; units: number }> =
+      entries.length > 0
+        ? entries.map((entry) => ({
+            tool: entry.name,
+            units: toolCallUnits(entry.name, entry.arguments),
+          }))
+        : [{ tool: undefined, units: 1 }];
 
     // Meter per-key for API keys (independent budget per key) and per-user for
     // interactive JWT sessions — satisfying #132's "per tenant/key".
@@ -77,21 +88,26 @@ export class McpRateLimitMiddleware {
       : `user:${auth?.extra.userId}`;
 
     const results: RateLimitResult[] = [];
-    for (const tool of calls) {
+    for (const { tool, units } of calls) {
       if (auth) {
         results.push(
-          await this.userLimiter.consume({ key: principalKey, tool }),
+          await this.userLimiter.consume({ key: principalKey, tool, units }),
         );
         if (auth.extra.organizationId) {
           results.push(
             await this.orgLimiter.consume({
               key: `org:${auth.extra.organizationId}`,
+              units,
             }),
           );
         }
       } else {
         results.push(
-          await this.ipLimiter.consume({ key: `ip:${clientIp(req)}`, tool }),
+          await this.ipLimiter.consume({
+            key: `ip:${clientIp(req)}`,
+            tool,
+            units,
+          }),
         );
       }
     }

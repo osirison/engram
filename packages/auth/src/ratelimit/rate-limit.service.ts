@@ -22,6 +22,14 @@ export interface ConsumeParams {
   key: string;
   /** MCP tool being invoked, when known (enables per-tool overrides). */
   tool?: string;
+  /**
+   * Work units this request represents (default 1). Tool calls that fan out
+   * into many downstream operations (e.g. `ingest_conversation` storing N
+   * chunks, each an embedding + vector search + DB write) charge one unit per
+   * operation, so a single metered request cannot amplify into unmetered
+   * work. Non-finite or sub-1 values are normalized to 1.
+   */
+  units?: number;
 }
 
 export interface RateLimitResult {
@@ -57,6 +65,7 @@ export class RateLimitService {
   async consume(params: ConsumeParams): Promise<RateLimitResult> {
     const override = params.tool != null ? this.toolOverrides[params.tool] : undefined;
     const rule = override ?? this.defaultRule;
+    const units = RateLimitService.normalizeUnits(params.units);
 
     // Overridden tools get a dedicated counter so their stricter budget is
     // tracked separately from the caller's general request budget.
@@ -64,7 +73,7 @@ export class RateLimitService {
       ? `${KEY_PREFIX}${params.key}:tool:${params.tool}`
       : `${KEY_PREFIX}${params.key}`;
 
-    const { count, ttlSeconds } = await this.store.increment(redisKey, rule.windowSeconds);
+    const { count, ttlSeconds } = await this.store.increment(redisKey, rule.windowSeconds, units);
 
     const allowed = count <= rule.limit;
     const remaining = Math.max(0, rule.limit - count);
@@ -79,5 +88,11 @@ export class RateLimitService {
       resetSeconds,
       retryAfterSeconds: allowed ? 0 : resetSeconds,
     };
+  }
+
+  /** Clamp `units` to a positive integer; anything unusable charges 1. */
+  private static normalizeUnits(units: number | undefined): number {
+    if (units == null || !Number.isFinite(units)) return 1;
+    return Math.max(1, Math.floor(units));
   }
 }

@@ -4,6 +4,7 @@ import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
 import { MemoryLtmService, ImportanceScoringService } from '@engram/memory-ltm';
 import type { LtmMemory } from '@engram/memory-ltm';
 import type { Memory } from '@engram/database';
+import { INGEST_MAX_CHUNKS } from './conversation-chunking';
 
 const USER_ID = 'clm0000000000000000000000';
 const MEM_ID = 'clm1111111111111111111111';
@@ -800,6 +801,28 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
       expect(result.total).toBe(100);
       expect(result.ingested + result.skipped + result.failed).toBe(100);
       expect(result.memoryIds).toHaveLength(100);
+    });
+
+    it('throws before any remember() when the conversation exceeds the chunk cap (#204)', async () => {
+      // Defense in depth behind the tool-schema cap: a caller that bypasses the
+      // Zod schema still cannot amplify one request into hundreds of remember()
+      // calls. 501 short turns → 501 chunks → over INGEST_MAX_CHUNKS (500).
+      const turns = Array.from({ length: INGEST_MAX_CHUNKS + 1 }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `turn ${i}`,
+      }));
+
+      await expect(
+        service.ingestConversation({
+          userId: USER_ID,
+          turns,
+          concurrency: 5,
+          tags: [],
+        }),
+      ).rejects.toThrow(/exceeding the maximum of 500/);
+
+      // Rejected before fan-out — no embedding/DB writes were attempted.
+      expect(mockLtmService.create).not.toHaveBeenCalled();
     });
   });
 
