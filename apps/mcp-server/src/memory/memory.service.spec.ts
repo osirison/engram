@@ -10,6 +10,8 @@ import {
   MemoryLtmService,
   LtmMemory,
   LtmMemoryNotFoundError,
+  LtmMemoryQuotaExceededError,
+  DEFAULT_LTM_CONFIG,
 } from '@engram/memory-ltm';
 
 describe('MemoryService', () => {
@@ -127,6 +129,22 @@ describe('MemoryService', () => {
         metadata: undefined,
         tags: ['test'],
       });
+    });
+
+    it('propagates LtmMemoryQuotaExceededError from LTM create unchanged', async () => {
+      const quotaError = new LtmMemoryQuotaExceededError(
+        'user-1',
+        DEFAULT_LTM_CONFIG.maxMemoriesPerUser,
+      );
+      ltmService.create.mockRejectedValue(quotaError);
+
+      await expect(
+        service.createMemory({
+          userId: 'user-1',
+          content: 'over quota',
+          type: 'long-term',
+        }),
+      ).rejects.toBe(quotaError);
     });
   });
 
@@ -589,6 +607,18 @@ describe('MemoryService', () => {
         undefined,
       );
     });
+
+    it('propagates LtmMemoryQuotaExceededError from LTM promote unchanged', async () => {
+      const quotaError = new LtmMemoryQuotaExceededError(
+        'user-1',
+        DEFAULT_LTM_CONFIG.maxMemoriesPerUser,
+      );
+      ltmService.promote.mockRejectedValue(quotaError);
+
+      await expect(service.promoteMemory('user-1', 'stm-123')).rejects.toBe(
+        quotaError,
+      );
+    });
   });
 
   describe('recall', () => {
@@ -695,6 +725,106 @@ describe('MemoryService', () => {
       await service.reindex({ recreate: true });
 
       expect(ltmService.reindex).toHaveBeenCalledWith({ recreate: true });
+    });
+  });
+
+  describe('atomic LTM quota wiring (#203)', () => {
+    // End-to-end through the seam: a REAL MemoryLtmService (prisma mocked)
+    // behind MemoryService, exercising the advisory-lock quota transaction.
+    const wiredUserId = 'cldx4k8xp000108l83h4y8v2q';
+
+    type PrismaMock = {
+      memory: {
+        count: jest.Mock;
+        create: jest.Mock;
+        findFirst: jest.Mock;
+      };
+      $executeRaw: jest.Mock;
+      $transaction: jest.Mock;
+    };
+
+    async function buildWiredService(): Promise<{
+      wired: MemoryService;
+      prisma: PrismaMock;
+    }> {
+      const prisma: PrismaMock = {
+        memory: {
+          count: jest.fn(),
+          create: jest.fn(),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        $transaction: jest.fn(),
+      };
+      prisma.$transaction.mockImplementation(
+        async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma),
+      );
+
+      const realLtmService = new MemoryLtmService(prisma as never);
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          MemoryService,
+          { provide: MemoryStmService, useValue: { create: jest.fn() } },
+          { provide: MemoryLtmService, useValue: realLtmService },
+        ],
+      }).compile();
+
+      return { wired: module.get<MemoryService>(MemoryService), prisma };
+    }
+
+    it('creates through the advisory-lock transaction when under quota', async () => {
+      const { wired, prisma } = await buildWiredService();
+      prisma.memory.count.mockResolvedValue(0);
+      prisma.memory.create.mockResolvedValue({
+        id: 'cldx4k8xp000208l84b5c9w3r',
+        userId: wiredUserId,
+        organizationId: null,
+        scope: null,
+        content: 'wired create',
+        metadata: {},
+        tags: [],
+        type: 'long-term',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        embedding: [],
+      });
+
+      const result = await wired.createMemory({
+        userId: wiredUserId,
+        content: 'wired create',
+        type: 'long-term',
+      });
+
+      expect(result.type).toBe('long-term');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      // Tagged-template call shape: [templateStrings, ...boundParams]
+      const lockCall = prisma.$executeRaw.mock.calls[0] as [
+        ReadonlyArray<string>,
+        number,
+        string,
+      ];
+      expect(lockCall[0].join('?')).toContain('pg_advisory_xact_lock');
+      expect(lockCall[2]).toBe(wiredUserId);
+    });
+
+    it('surfaces the friendly quota error when the transaction loses the race', async () => {
+      const { wired, prisma } = await buildWiredService();
+      prisma.memory.count
+        .mockResolvedValueOnce(0) // fast-fail pre-check passes
+        .mockResolvedValueOnce(DEFAULT_LTM_CONFIG.maxMemoriesPerUser); // in-tx count sees the cap
+
+      await expect(
+        wired.createMemory({
+          userId: wiredUserId,
+          content: 'lost the race',
+          type: 'long-term',
+        }),
+      ).rejects.toMatchObject({
+        name: 'LtmMemoryQuotaExceededError',
+        message: `Long-term memory quota exceeded for user ${wiredUserId}. Limit: ${DEFAULT_LTM_CONFIG.maxMemoriesPerUser} memories`,
+      });
+      expect(prisma.memory.create).not.toHaveBeenCalled();
     });
   });
 });

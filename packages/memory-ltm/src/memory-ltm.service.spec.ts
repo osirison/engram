@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MemoryLtmService } from './memory-ltm.service';
+import { MemoryLtmService, LTM_QUOTA_LOCK_NAMESPACE } from './memory-ltm.service';
 import {
   LtmMemoryNotFoundError,
   LtmMemoryQuotaExceededError,
@@ -60,8 +60,15 @@ describe('MemoryLtmService', () => {
         findMany: vi.fn(),
         count: vi.fn(),
       },
+      $executeRaw: vi.fn().mockResolvedValue(1),
       $transaction: vi.fn(),
     };
+    // Default: run the interactive-transaction callback against the mock
+    // itself so tx.memory.* / tx.$executeRaw hit the same spies.
+    mockPrismaService.$transaction.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (callback: (tx: any) => Promise<unknown>) => callback(mockPrismaService)
+    );
 
     const mockStmService = {
       findById: vi.fn(),
@@ -554,18 +561,9 @@ describe('MemoryLtmService', () => {
     it('should successfully promote memory from STM to LTM', async () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockResolvedValue(undefined);
-
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
-        const mockTx = {
-          memory: {
-            count: vi.fn().mockResolvedValue(0),
-            create: vi.fn().mockResolvedValue(mockMemory),
-          },
-        };
-        return callback(mockTx);
-      });
-
-      prismaService.$transaction.mockImplementation(mockTransaction);
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.create.mockResolvedValue(mockMemory);
 
       const result = await service.promote(mockUserId, mockMemoryId);
 
@@ -604,37 +602,18 @@ describe('MemoryLtmService', () => {
       // Mock the main prisma service to return quota exceeded count
       prismaService.memory.count.mockResolvedValue(DEFAULT_LTM_CONFIG.maxMemoriesPerUser);
 
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
-        const mockTx = {
-          memory: {
-            create: vi.fn(),
-          },
-        };
-        return callback(mockTx);
-      });
-
-      prismaService.$transaction.mockImplementation(mockTransaction);
-
       await expect(service.promote(mockUserId, mockMemoryId)).rejects.toThrow(
         LtmMemoryQuotaExceededError
       );
+      expect(prismaService.memory.create).not.toHaveBeenCalled();
     });
 
     it('should continue if STM deletion fails after successful LTM creation', async () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockRejectedValue(new Error('STM delete failed'));
-
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
-        const mockTx = {
-          memory: {
-            count: vi.fn().mockResolvedValue(0),
-            create: vi.fn().mockResolvedValue(mockMemory),
-          },
-        };
-        return callback(mockTx);
-      });
-
-      prismaService.$transaction.mockImplementation(mockTransaction);
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.create.mockResolvedValue(mockMemory);
 
       const result = await service.promote(mockUserId, mockMemoryId);
 
@@ -645,6 +624,125 @@ describe('MemoryLtmService', () => {
         })
       );
       // Should not throw even though STM deletion failed
+    });
+  });
+
+  describe('atomic quota enforcement (#203 TOCTOU)', () => {
+    const createInput = { userId: mockUserId, content: 'racing memory' };
+
+    it('runs the LTM insert inside a transaction that takes the per-user advisory lock first', async () => {
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.create.mockResolvedValue(mockMemory);
+
+      await service.create(createInput);
+
+      expect(prismaService.$transaction).toHaveBeenCalledTimes(1);
+      // Tagged-template call shape: [templateStrings, ...boundParams]
+      const [sqlParts, namespace, lockUser] = prismaService.$executeRaw.mock.calls[0];
+      const sql = sqlParts.join('?');
+      expect(sql).toContain('pg_advisory_xact_lock');
+      expect(sql).toContain('hashtext');
+      expect(namespace).toBe(LTM_QUOTA_LOCK_NAMESPACE);
+      expect(lockUser).toBe(mockUserId);
+      // The lock is acquired before the row is written.
+      expect(prismaService.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaService.memory.create.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('rejects a create that loses the race: quota filled between pre-check and transaction', async () => {
+      prismaService.memory.count
+        .mockResolvedValueOnce(0) // fast-fail pre-check passes
+        .mockResolvedValueOnce(DEFAULT_LTM_CONFIG.maxMemoriesPerUser); // in-tx authoritative count sees the cap
+      prismaService.memory.create.mockResolvedValue(mockMemory);
+
+      await expect(service.create(createInput)).rejects.toThrow(LtmMemoryQuotaExceededError);
+      expect(prismaService.memory.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the friendly quota error shape identical when thrown from inside the transaction', async () => {
+      prismaService.memory.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(DEFAULT_LTM_CONFIG.maxMemoriesPerUser);
+
+      const error = await service.create(createInput).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(LtmMemoryQuotaExceededError);
+      expect((error as Error).name).toBe('LtmMemoryQuotaExceededError');
+      expect((error as Error).message).toBe(
+        `Long-term memory quota exceeded for user ${mockUserId}. Limit: ${DEFAULT_LTM_CONFIG.maxMemoriesPerUser} memories`
+      );
+    });
+
+    it('admits only as many concurrent creates as there are free quota slots', async () => {
+      const cap = DEFAULT_LTM_CONFIG.maxMemoriesPerUser;
+      let committed = cap - 2; // two free slots left
+      prismaService.memory.count.mockImplementation(async () => committed);
+      prismaService.memory.create.mockImplementation(async () => {
+        committed += 1;
+        return { ...mockMemory, id: `race-${committed}` };
+      });
+      // Serialize transaction callbacks the way the per-user advisory lock
+      // would in Postgres: one critical section at a time.
+      let chain: Promise<unknown> = Promise.resolve();
+      prismaService.$transaction.mockImplementation(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (callback: (tx: any) => Promise<unknown>) => {
+          const run = chain.then(() => callback(prismaService));
+          chain = run.catch(() => undefined);
+          return run;
+        }
+      );
+
+      const results = await Promise.allSettled([
+        service.create({ userId: mockUserId, content: 'race one' }),
+        service.create({ userId: mockUserId, content: 'race two' }),
+        service.create({ userId: mockUserId, content: 'race three' }),
+        service.create({ userId: mockUserId, content: 'race four' }),
+      ]);
+
+      const fulfilled = results.filter((result) => result.status === 'fulfilled');
+      const rejected = results.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected'
+      );
+      expect(fulfilled).toHaveLength(2);
+      expect(rejected).toHaveLength(2);
+      for (const failure of rejected) {
+        expect(failure.reason).toBeInstanceOf(LtmMemoryQuotaExceededError);
+      }
+      // The cap is never exceeded: exactly the free slots were written.
+      expect(prismaService.memory.create).toHaveBeenCalledTimes(2);
+      expect(committed).toBe(cap);
+    });
+
+    it('rejects a promote that loses the race inside the transaction and leaves STM intact', async () => {
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.count
+        .mockResolvedValueOnce(0) // step-2 pre-check passes
+        .mockResolvedValueOnce(DEFAULT_LTM_CONFIG.maxMemoriesPerUser); // in-tx count sees the cap
+
+      await expect(service.promote(mockUserId, mockMemoryId)).rejects.toThrow(
+        LtmMemoryQuotaExceededError
+      );
+      expect(prismaService.memory.create).not.toHaveBeenCalled();
+      // The STM copy must survive a failed promotion.
+      expect(stmService.delete).not.toHaveBeenCalled();
+    });
+
+    it('takes the per-user advisory lock for promote inserts as well', async () => {
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      stmService.delete.mockResolvedValue(undefined);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.create.mockResolvedValue(mockMemory);
+
+      await service.promote(mockUserId, mockMemoryId);
+
+      expect(prismaService.$transaction).toHaveBeenCalledTimes(1);
+      const [sqlParts, namespace, lockUser] = prismaService.$executeRaw.mock.calls[0];
+      expect(sqlParts.join('?')).toContain('pg_advisory_xact_lock');
+      expect(namespace).toBe(LTM_QUOTA_LOCK_NAMESPACE);
+      expect(lockUser).toBe(mockUserId);
     });
   });
 
@@ -763,17 +861,6 @@ describe('MemoryLtmService', () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockResolvedValue(undefined);
 
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
-        const mockTx = {
-          memory: {
-            count: vi.fn().mockResolvedValue(0),
-            create: vi.fn().mockResolvedValue(mockMemory),
-          },
-        };
-        return callback(mockTx);
-      });
-      prismaService.$transaction.mockImplementation(mockTransaction);
-
       await serviceWithVector.promote(mockUserId, mockMemoryId);
 
       expect(vectorStore.upsert).toHaveBeenCalledWith([
@@ -792,17 +879,6 @@ describe('MemoryLtmService', () => {
       stmService.findById.mockResolvedValue(mockStmMemory);
       stmService.delete.mockResolvedValue(undefined);
       vectorStore.upsert.mockRejectedValueOnce(new Error('store down'));
-
-      const mockTransaction = vi.fn().mockImplementation(async (callback) => {
-        const mockTx = {
-          memory: {
-            count: vi.fn().mockResolvedValue(0),
-            create: vi.fn().mockResolvedValue(mockMemory),
-          },
-        };
-        return callback(mockTx);
-      });
-      prismaService.$transaction.mockImplementation(mockTransaction);
 
       await expect(serviceWithVector.promote(mockUserId, mockMemoryId)).resolves.toBeDefined();
     });

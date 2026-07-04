@@ -41,6 +41,15 @@ import {
   validateLtmQueryOptions,
 } from './types';
 
+/**
+ * Advisory-lock namespace for per-user LTM quota serialization (first int of
+ * the two-int `pg_advisory_xact_lock` key; the second is `hashtext(userId)`).
+ * The value is arbitrary ("ENGR" as int32) but MUST stay stable across
+ * releases so every writer — including older deployments during a rolling
+ * upgrade — serializes on the same lock.
+ */
+export const LTM_QUOTA_LOCK_NAMESPACE = 0x454e4752;
+
 // Type for Prisma Memory result - temporary until Prisma types are properly configured
 type PrismaMemory = {
   id: string;
@@ -56,6 +65,12 @@ type PrismaMemory = {
   expiresAt: Date | null;
   embedding: number[];
 };
+
+// Input shape for an LTM row insert: mirrors PrismaMemory but with the
+// server-defaulted columns (id/createdAt/updatedAt) optional. Keeps the single
+// insert choke point (createRowWithQuota) strongly typed against its callers.
+type LtmMemoryCreateData = Omit<PrismaMemory, 'id' | 'createdAt' | 'updatedAt'> &
+  Partial<Pick<PrismaMemory, 'id' | 'createdAt' | 'updatedAt'>>;
 
 @Injectable()
 export class MemoryLtmService {
@@ -95,7 +110,9 @@ export class MemoryLtmService {
     const validatedInput = validateCreateLtmMemory(input);
 
     try {
-      // Check if user has exceeded quota
+      // Fast-fail pre-check only: avoids the embedding/dedup cost when the
+      // user is already over quota. The authoritative, race-free check runs
+      // inside createRowWithQuota() below.
       await this.checkQuota(validatedInput.userId);
 
       // ── Steps 1–6: pre-write pipeline ────────────────────────────────────
@@ -194,21 +211,17 @@ export class MemoryLtmService {
         accessCount: 0,
       });
 
-      // ── Step 7: PostgresWrite ──────────────────────────────────────────
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const memory = await (this.prisma as any).memory.create({
-        data: {
-          userId: validatedInput.userId,
-          organizationId: validatedInput.organizationId ?? null,
-          scope: validatedInput.scope ?? null,
-          content: processedContent,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          metadata: metadata as any,
-          tags: processedTags,
-          type: MemoryType.LONG_TERM,
-          expiresAt: null,
-          embedding,
-        },
+      // ── Step 7: PostgresWrite (atomic quota + insert) ──────────────────
+      const memory = await this.createRowWithQuota(validatedInput.userId, {
+        userId: validatedInput.userId,
+        organizationId: validatedInput.organizationId ?? null,
+        scope: validatedInput.scope ?? null,
+        content: processedContent,
+        metadata,
+        tags: processedTags,
+        type: MemoryType.LONG_TERM,
+        expiresAt: null,
+        embedding,
       });
 
       this.logger.debug(`LTM memory created: ${memory.id}`);
@@ -729,30 +742,21 @@ export class MemoryLtmService {
         lastAccessedAt: stmMemory.updatedAt,
       });
 
-      // Step 4: Begin database transaction for atomic operation
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (this.prisma as any).$transaction(async (prisma: any) => {
-        // Re-check quota inside transaction to guard against races.
-        await this.checkQuota(userId);
-
-        // Create memory in LTM, preserving the org scope from STM.
-        return await prisma.memory.create({
-          data: {
-            id: stmMemory.id,
-            userId: stmMemory.userId,
-            organizationId: resolvedOrgId,
-            scope: resolvedScope,
-            content: stmMemory.content,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            metadata: metadata as any,
-            tags: stmMemory.tags,
-            type: MemoryType.LONG_TERM,
-            createdAt: stmMemory.createdAt,
-            updatedAt: new Date(),
-            expiresAt: null,
-            embedding,
-          },
-        });
+      // Step 4: Atomic quota check + insert (serialized per user via a
+      // Postgres advisory lock), preserving the org scope from STM.
+      const result = await this.createRowWithQuota(userId, {
+        id: stmMemory.id,
+        userId: stmMemory.userId,
+        organizationId: resolvedOrgId,
+        scope: resolvedScope,
+        content: stmMemory.content,
+        metadata,
+        tags: stmMemory.tags,
+        type: MemoryType.LONG_TERM,
+        createdAt: stmMemory.createdAt,
+        updatedAt: new Date(),
+        expiresAt: null,
+        embedding,
       });
 
       // Step 5: Delete from STM storage (only after successful LTM creation)
@@ -782,7 +786,60 @@ export class MemoryLtmService {
   }
 
   /**
-   * Check if user has exceeded memory quota
+   * Atomically enforce the per-user LTM quota and insert the memory row.
+   *
+   * A plain `count` followed by `create` is a TOCTOU race: under READ
+   * COMMITTED, N concurrent writers can all observe a count below the cap and
+   * all insert, turning `maxMemoriesPerUser` into a soft limit. This helper
+   * runs both steps in one transaction that first takes a per-user
+   * `pg_advisory_xact_lock`, so same-user writers serialize: the lock is held
+   * until commit/rollback, and each subsequent writer's `count` (a fresh
+   * READ COMMITTED snapshot per statement) observes the previous writer's
+   * committed insert. Different users hash to different lock keys and do not
+   * contend. Throws {@link LtmMemoryQuotaExceededError} — same shape as the
+   * pre-check — when the cap is reached; the transaction rolls back and no
+   * row is written.
+   */
+  private async createRowWithQuota(
+    userId: string,
+    data: LtmMemoryCreateData
+  ): Promise<PrismaMemory> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await (this.prisma as any).$transaction(async (tx: any) => {
+      // Per-user advisory lock: released automatically at commit/rollback.
+      // Use $executeRaw, not $queryRaw: pg_advisory_xact_lock() returns `void`,
+      // which Prisma's $queryRaw result deserializer rejects ("Failed to
+      // deserialize column of type 'void'"). $executeRaw runs the statement for
+      // its side effect (acquiring the lock) and returns an affected-row count
+      // without deserializing the column.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LTM_QUOTA_LOCK_NAMESPACE}::int4, hashtext(${userId})::int4)`;
+
+      const currentCount: number = await tx.memory.count({
+        where: {
+          userId: userId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
+
+      this.logger.debug(
+        `Atomic quota check for user ${userId}: ${currentCount}/${this.config.maxMemoriesPerUser}`
+      );
+
+      if (currentCount >= this.config.maxMemoriesPerUser) {
+        throw new LtmMemoryQuotaExceededError(userId, this.config.maxMemoriesPerUser);
+      }
+
+      return (await tx.memory.create({ data })) as PrismaMemory;
+    });
+  }
+
+  /**
+   * Fast-fail quota pre-check.
+   *
+   * NOT race-safe on its own — it exists only to skip expensive work (embedding
+   * generation, dedup searches) for users who are already over quota. The
+   * authoritative enforcement is the advisory-lock transaction in
+   * {@link createRowWithQuota}, which every LTM insert path goes through.
    */
   private async checkQuota(userId: string): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

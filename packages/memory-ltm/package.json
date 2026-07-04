@@ -23,6 +23,7 @@
   "license": "MIT",
   "devDependencies": {
     "@nestjs/testing": "^11.1.24",
+    "@prisma/adapter-pg": "7.8.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^25.9.1",
