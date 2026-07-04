@@ -94,7 +94,10 @@ describe('MemoryLtmService — tenant isolation', () => {
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi.fn(),
       },
-      $transaction: vi.fn(),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      // Interactive transactions run against the mock itself (the advisory-lock
+      // quota transaction in create/promote needs tx.$executeRaw + tx.memory.*).
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

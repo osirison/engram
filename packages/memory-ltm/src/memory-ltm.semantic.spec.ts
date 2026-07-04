@@ -48,7 +48,10 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
         findMany: vi.fn(),
         count: vi.fn().mockResolvedValue(0),
       },
-      $transaction: vi.fn(),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      // Interactive transactions run against the mock itself (the advisory-lock
+      // quota transaction in create/promote needs tx.$executeRaw + tx.memory.*).
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
     };
     embeddings = {
       generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),

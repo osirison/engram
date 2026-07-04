@@ -78,7 +78,7 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
 
   function buildPrisma(rows: Row[]): Record<string, unknown> {
     db = rows;
-    return {
+    const prismaMock: Record<string, unknown> = {
       memory: {
         findFirst: vi.fn(({ where }) =>
           Promise.resolve(db.find((r) => whereMatches(r, where)) ?? null)
@@ -92,8 +92,14 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
         ),
         count: vi.fn().mockResolvedValue(0),
       },
-      $transaction: vi.fn(),
+      $executeRaw: vi.fn().mockResolvedValue(1),
     };
+    // Interactive transactions run against the mock itself (the advisory-lock
+    // quota transaction in create/promote needs tx.$executeRaw + tx.memory.*).
+    prismaMock.$transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback(prismaMock)
+    );
+    return prismaMock;
   }
 
   const embeddings = {

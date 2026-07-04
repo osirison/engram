@@ -29,6 +29,10 @@ describe('MemoryLtmModule integration', () => {
           })
         ),
       },
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      // Interactive transactions run against the mock itself (the advisory-lock
+      // quota transaction in create/promote needs tx.$executeRaw + tx.memory.*).
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
     };
 
     embeddings = {

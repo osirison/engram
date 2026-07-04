@@ -820,6 +820,9 @@ importers:
       '@nestjs/testing':
         specifier: ^11.1.24
         version: 11.1.24(@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24)(@nestjs/platform-express@11.1.24)
+      '@prisma/adapter-pg':
+        specifier: 7.8.0
+        version: 7.8.0
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
