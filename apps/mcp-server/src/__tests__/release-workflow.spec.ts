@@ -243,6 +243,21 @@ describe('release workflow (.github/workflows/release.yml)', () => {
       expect(release?.run).toContain('--verify-tag');
       expect(release?.run).toContain('--generate-notes');
     });
+
+    it('checks out the repo before creating the release', () => {
+      // `gh release create --verify-tag` shells out to local `git`, so the
+      // job needs a working tree — removing this checkout regressed the
+      // release job in #217 ("fatal: not a git repository"). The checkout
+      // must precede the `gh release create` step.
+      const checkoutIndex = githubRelease.steps.findIndex((step) =>
+        usesAction(step, 'actions/checkout'),
+      );
+      const releaseIndex = githubRelease.steps.findIndex(
+        (step) => step.run?.includes('gh release create') ?? false,
+      );
+      expect(checkoutIndex).toBeGreaterThanOrEqual(0);
+      expect(releaseIndex).toBeGreaterThan(checkoutIndex);
+    });
   });
 });
 

@@ -146,9 +146,14 @@ jobs:
       contents: write # create the release + generated notes
 
     steps:
-      # No checkout: `gh release` talks to the GitHub API and reads
-      # GITHUB_REPOSITORY; it needs no working tree. `--verify-tag` checks
-      # the tag server-side.
+      # Load-bearing — do not remove. `gh release create --verify-tag`
+      # shells out to local `git` to resolve the tag, so it needs a
+      # checkout; without one the step dies with "fatal: not a git
+      # repository" (regressed once in #217, fixed here). A checkout on a
+      # tag push also materialises refs/tags/<tag> for --verify-tag to find.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Create release with generated notes
         env:
           GH_TOKEN: ${{ github.token }}
