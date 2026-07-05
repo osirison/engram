@@ -151,16 +151,76 @@ can be added via `@opentelemetry/api` in service code.
 
 ## Image in CI
 
-The `docker-build` job in `.github/workflows/ci.yml` builds the image on
-every push to `main` and on pull requests. The image is not pushed unless
-`REGISTRY_TOKEN` is set in repository secrets.
+The `docker-build` job in `.github/workflows/ci.yml` builds and smoke-tests
+the image on every push to `main` and on pull requests, but **never pushes
+it** (`push: false`) — CI is build validation only. Published images come
+exclusively from the release workflow below.
+
+---
+
+## Releases (publishing to GHCR)
+
+The release workflow (`.github/workflows/release.yml`) publishes
+`ghcr.io/osirison/engram/mcp-server` — the image that
+`docker-compose.prod.yml` pulls. It runs when a git tag matching `v*` is
+pushed and authenticates with the workflow's own `GITHUB_TOKEN`
+(`packages: write`); no extra registry secret is required.
+
+### Cutting a release
+
+```bash
+git checkout main && git pull
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The workflow then:
+
+1. Builds the image and smoke-tests it (boots the `memory` profile and
+   polls `/health`) before anything is published.
+2. Pushes the image with BuildKit **provenance** and **SBOM** attestations
+   attached to the manifest.
+3. Records a GitHub build-provenance attestation for the pushed digest.
+4. Creates a GitHub release for the tag with auto-generated notes
+   (tags containing a `-`, e.g. `v1.3.0-rc.1`, are marked pre-release).
+
+### Published image tags
+
+| Tag                       | Example        | Notes                                  |
+| ------------------------- | -------------- | -------------------------------------- |
+| `<major>.<minor>.<patch>` | `1.2.3`        | Exact release                          |
+| `<major>.<minor>`         | `1.2`          | Latest patch of the minor line         |
+| `<major>`                 | `1`            | Latest release of the major line       |
+| `sha-<commit>`            | `sha-6c93444…` | Immutable; pins the exact build source |
+| `latest`                  | `latest`       | Non-prerelease releases only           |
+
+### Selecting a version in production
+
+`docker-compose.prod.yml` uses `image: ghcr.io/osirison/engram/mcp-server:${IMAGE_TAG:-latest}`.
+Pin a specific version in `.env.prod` instead of relying on `latest`:
+
+```bash
+IMAGE_TAG=1.2.3
+```
+
+### Verifying a pulled image
+
+```bash
+# GitHub build-provenance attestation
+gh attestation verify oci://ghcr.io/osirison/engram/mcp-server:1.2.3 \
+  --repo osirison/engram
+
+# BuildKit provenance / SBOM attached to the manifest
+docker buildx imagetools inspect ghcr.io/osirison/engram/mcp-server:1.2.3 \
+  --format '{{ json .Provenance }}'
+```
 
 ---
 
 ## Updating
 
 ```bash
-# Pull latest image or rebuild
+# Pull the released image (set IMAGE_TAG in .env.prod to move versions)
 docker compose -f docker-compose.prod.yml pull mcp-server
 docker compose -f docker-compose.prod.yml up -d mcp-server
 
