@@ -117,6 +117,14 @@ deliverable's Risks section. -->
   (177 bytes) — no provenance link between deployed artifact and commit.
 - **A5** — Dev tooling ships to production visitors: TweaksPanel + `window.__haze`
   debug handle + a `postMessage` to `window.parent` on every page load.
+- **A16** — No published artifact backs the install promise: the site implies
+  one-command setup but no npm package or MCP registry entry named `engram` exists.
+  Go-to-market gap, not copy — needs a published package or explicit self-hosted
+  framing.
+- **A17** — Marketing site is intentionally excluded from the pnpm workspace
+  (`pnpm-workspace.yaml:3`, `!apps/marketing-site`) and therefore from all monorepo
+  CI (lint/typecheck/audit). The exclusion is undocumented; dependency
+  vulnerabilities or breaking changes there surface nowhere.
 
 ### From WP2 (memory UI)
 
