@@ -71,15 +71,28 @@ if [[ -n "${REDIS_URL:-}" ]]; then
   fi
 
   redis-cli "${REDIS_CLI_ARGS[@]}" BGSAVE
-  # Wait for the background save to finish. INFO persistence is authoritative
-  # (LASTSAVE polling raced when the save completed within one second).
+  # Wait for the background save to finish, then confirm it succeeded. INFO
+  # persistence is authoritative (LASTSAVE polling raced when the save
+  # completed within one second).
+  BGSAVE_INFO=""
   for _ in {1..30}; do
-    if redis-cli "${REDIS_CLI_ARGS[@]}" INFO persistence \
-      | grep -q 'rdb_bgsave_in_progress:0'; then
+    BGSAVE_INFO="$(redis-cli "${REDIS_CLI_ARGS[@]}" INFO persistence)"
+    if grep -q 'rdb_bgsave_in_progress:0' <<<"${BGSAVE_INFO}"; then
       break
     fi
+    BGSAVE_INFO=""
     sleep 1
   done
+  # Never copy a stale/partial RDB: abort if the save did not finish in time,
+  # or finished but reported a failure.
+  if [[ -z "${BGSAVE_INFO}" ]]; then
+    echo "[backup] error: redis BGSAVE did not complete within 30s — aborting" >&2
+    exit 1
+  fi
+  if ! grep -q 'rdb_last_bgsave_status:ok' <<<"${BGSAVE_INFO}"; then
+    echo "[backup] error: redis BGSAVE reported failure (rdb_last_bgsave_status) — aborting" >&2
+    exit 1
+  fi
 
   # Copy RDB file out of the container (or locally if running bare-metal).
   # Precedence: explicit REDIS_CONTAINER → running compose service → local FS.
