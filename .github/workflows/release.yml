@@ -1,0 +1,164 @@
+name: Release
+
+# Tag-driven release pipeline (#201).
+#
+# `ci.yml`'s docker-build job intentionally never pushes (`push: false`) —
+# it only validates that the image builds and boots. This workflow is the
+# single publisher of ghcr.io/osirison/engram/mcp-server, which
+# docker-compose.prod.yml pulls via `image: ...:${IMAGE_TAG:-latest}`.
+#
+# Cutting a release:
+#   git tag v1.2.3
+#   git push origin v1.2.3
+#
+# Published tags (docker/metadata-action): full semver (1.2.3), 1.2, 1,
+# sha-<full commit sha>, and `latest` for non-prerelease versions. Images
+# carry BuildKit provenance + SBOM attestations plus a GitHub
+# build-provenance attestation. See docs/deploy.md for the consumer side.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Least-privilege default; jobs elevate only what they need.
+permissions:
+  contents: read
+
+env:
+  # Must match the `image:` reference in docker-compose.prod.yml and
+  # docs/deploy.md (release-workflow.spec.ts asserts this wiring).
+  IMAGE_NAME: ghcr.io/osirison/engram/mcp-server
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a half-finished publish: a cancelled push can leave the
+  # semver tags pointing at a manifest without its attestations.
+  cancel-in-progress: false
+
+jobs:
+  build-push:
+    name: Build, smoke-test & push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push image + attestation manifests to GHCR
+      id-token: write # keyless Sigstore signing for the provenance attestation
+      attestations: write # actions/attest-build-provenance
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        # GITHUB_TOKEN with packages:write is sufficient — no extra
+        # registry secret (there never was a REGISTRY_TOKEN; see #201).
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata (semver + sha tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          # Default flavor `latest=auto` also tags `latest` for
+          # non-prerelease semver tags, which docker-compose.prod.yml
+          # falls back to when IMAGE_TAG is unset.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,format=long
+
+      - name: Build image for smoke test
+        # Separate load-only build: buildx cannot `load` a manifest list
+        # that carries provenance/SBOM attestations, so boot-test a plain
+        # single-arch build first. The push build below reuses the layer
+        # cache, so this costs seconds, not a second full build.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp-server/Dockerfile
+          push: false
+          load: true
+          tags: engram-mcp-server:release-smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test image (memory profile)
+        # Same boot check as ci.yml's docker-build job: never publish an
+        # image that cannot even start and serve /health.
+        run: |
+          docker run -d \
+            -e DEPLOYMENT_PROFILE=memory \
+            -e MCP_TRANSPORT=streamable-http \
+            -e EMBEDDING_PROVIDER=local \
+            -p 13000:3000 \
+            --name engram-release-smoke \
+            engram-mcp-server:release-smoke
+          ok=""
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:13000/health; then ok=1; break; fi
+            sleep 2
+          done
+          echo
+          echo "--- container logs ---"
+          docker logs engram-release-smoke
+          docker rm -f engram-release-smoke || true
+          test -n "$ok"
+
+      - name: Build and push image (provenance + SBOM)
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp-server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # In-toto SLSA provenance + SPDX SBOM attached to the image
+          # manifest (inspect with `docker buildx imagetools inspect`).
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+
+      - name: Attest build provenance (GitHub attestation)
+        # Publishes a GitHub-signed build-provenance attestation for the
+        # pushed digest, verifiable with:
+        #   gh attestation verify oci://<image>:<tag> --repo osirison/engram
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs: build-push
+    permissions:
+      contents: write # create the release + generated notes
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create release with generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; skipping."
+            exit 0
+          fi
+          args=(--verify-tag --generate-notes --title "$GITHUB_REF_NAME")
+          case "$GITHUB_REF_NAME" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" "${args[@]}"
