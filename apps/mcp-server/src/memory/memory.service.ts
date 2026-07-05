@@ -1065,8 +1065,11 @@ export class MemoryService {
         charCount: context.length,
       };
     }
-    // Frame the entries as untrusted content (#206). Reserve the envelope's
-    // length from maxChars so the assembled block still respects the budget.
+    // Frame the entries as untrusted content (#206). Reserve the framing
+    // envelope's length from maxChars and budget only the entries against the
+    // remainder, so the assembled block stays within maxChars. The framing is a
+    // fixed, mandatory cost (~210 chars); the tool DTOs floor maxChars at 512 so
+    // `entriesBudget` is always positive and there is room for real content.
     const openText = `## Memory Context\n${UNTRUSTED_CONTENT_NOTICE}\n\n${UNTRUSTED_CONTENT_OPEN}\n`;
     const closeText = `${UNTRUSTED_CONTENT_CLOSE}\n`;
     const entriesBudget = maxChars - openText.length - closeText.length;
@@ -1100,7 +1103,10 @@ export class MemoryService {
       }
     }
 
-    const context = `${openText}${lines.join('\n')}${closeText}`;
+    // Join with '' (each entry already ends in '\n') so charCount is exactly
+    // openText + used + closeText ≤ maxChars — no extra separator can nudge it
+    // over the budget.
+    const context = `${openText}${lines.join('')}${closeText}`;
     return {
       context,
       memoryCount: included,
