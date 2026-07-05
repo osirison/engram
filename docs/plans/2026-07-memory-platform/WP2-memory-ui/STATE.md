@@ -30,18 +30,18 @@ Order respects the dependency graph (server foundations before UI consumers); se
 in one worktree because tasks overlap heavily on shared files (parallel worktrees would
 collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
 
-| #        | Task                                                       | Depends  | Status | Commit                                              |
-| -------- | ---------------------------------------------------------- | -------- | ------ | --------------------------------------------------- |
-| SHARED-2 | `Memory.version` + `MemoryAudit` schema + migration        | none     | ✅     | migration `20260705190357_memory_version_and_audit` |
-| T2       | STM read path: delegation, type filter, structured results | none     | ✅     | server+web; mcp 626 / web 86 green                  |
-| T1       | Keyset pagination                                          | none     | ✅     | cursor.ts + listMemories; walk verified on real PG  |
-| T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ⬜     |                                                     |
-| T7       | Re-embed integrity (`embeddingStale` + `reembed_memory`)   | (T4)     | ⬜     |                                                     |
-| T5       | Persistent audit trail + restore (`ToolCallContext`)       | SHARED-2 | ⬜     |                                                     |
-| T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ⬜     |                                                     |
-| T3       | STM UI (live tier, TTL, promote)                           | T2       | ⬜     |                                                     |
-| T8       | Optimistic delete UX                                       | T2       | ⬜     |                                                     |
-| T9       | Proportionate authz (operator→tenant binding)              | (last)   | ⬜     |                                                     |
+| #        | Task                                                       | Depends  | Status | Commit                                                                |
+| -------- | ---------------------------------------------------------- | -------- | ------ | --------------------------------------------------------------------- |
+| SHARED-2 | `Memory.version` + `MemoryAudit` schema + migration        | none     | ✅     | migration `20260705190357_memory_version_and_audit`                   |
+| T2       | STM read path: delegation, type filter, structured results | none     | 🟨     | logic + unit/wiring green; LIVE STM round-trip pending (do before T3) |
+| T1       | Keyset pagination                                          | none     | ✅     | cursor.ts + listMemories; walk verified on real PG                    |
+| T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ⬜     |                                                                       |
+| T7       | Re-embed integrity (`embeddingStale` + `reembed_memory`)   | (T4)     | ⬜     |                                                                       |
+| T5       | Persistent audit trail + restore (`ToolCallContext`)       | SHARED-2 | ⬜     |                                                                       |
+| T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ⬜     |                                                                       |
+| T3       | STM UI (live tier, TTL, promote)                           | T2       | ⬜     |                                                                       |
+| T8       | Optimistic delete UX                                       | T2       | ⬜     |                                                                       |
+| T9       | Proportionate authz (operator→tenant binding)              | (last)   | ⬜     |                                                                       |
 
 ## Decisions / notes log
 
@@ -53,3 +53,15 @@ collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
   `pnpm db:migrate`, verify SQL has no destructive statements; never `db:reset` the shared DB.
 - Per-task gate: affected package tests + `pnpm build` + `pnpm typecheck`; full `pnpm test`
   at milestones (post-SHARED-2, post-server-tasks, end).
+- **T2 live-verification debt** (advisor): T2 is entirely mock-verified. Its acceptance
+  criteria need a live STM round-trip (web → `list_memories(type:'short-term')` → real
+  Redis SCAN → paged back), proving: the loosened SCAN cursor survives the schema +
+  re-enters `stm.list` across pages, the real `StmMemory` JSON shape matches
+  `mapMcpMemory`, and delegation injects `userId` end-to-end. Redis is up (`engram-redis`).
+  Add a Redis-backed paging integration test (mirroring T1's 60-row walk) BEFORE T3, which
+  builds the STM UI on this seam.
+- Commit bodies: footer counts toward commitlint `body-max-length` (300) — target ≤~215
+  chars of body text on first write to avoid retries.
+- T4 seams to thread: `MemoryDTO.version`, `memorySelect` + `mapRow` in prisma-backend (none
+  carry `version` yet), and confirm STM `create` stamps `version:1` into the Redis payload
+  (CAS compares against it).
