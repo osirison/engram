@@ -159,3 +159,39 @@ deliverable's Risks section. -->
 - **A15** — `packages/memory-interchange` must stay Prisma/NestJS-free so importers
   (WP4) can depend on it without pulling in the server; metadata→edge mapping belongs
   in the app layer.
+
+### From WP4 (agent-memory import)
+
+- **A18** — The MCP import tool reads the _server's_ filesystem and bulk-writes:
+  admin-token gating is necessary but not sufficient — path-traversal/allowlist
+  constraints on the server-side `path` argument are unspecified (ties to G1).
+- **A19** — No import undo: without soft-delete (G5) a bad bulk import has no clean
+  revert. The `MemoryImportSource` ledger enables a "delete this importBatchId"
+  path — worth an explicit task.
+- **A20** — AGENTS.md is a shared de-facto standard across tools: the Codex and
+  generic adapters can double-import the same file; handled by explicit `source`
+  selection, but fragile without operator discipline.
+- **A21** — The plan sends everything to LTM; genuinely ephemeral session-scoped
+  memory from some tools may not belong in a durable store at all.
+- **A22** — A multi-source merged memory needs an agreed `provenance.sources[]`
+  shape so WP3 export can round-trip it back to N source files (open question
+  flagged for WP3/WP4 reconciliation).
+
+### From WP5 (primary-memory integration)
+
+- **A23** — Memory poisoning / inbound prompt-injection: auto-captured untrusted
+  transcript or file content gets recalled later as "fact" and acted on. Distinct
+  from G2 (outbound secrets). Needs trust-level provenance, untrusted-data framing
+  on recall, and a human-review gate for imports from cloned repos.
+- **A24** — Cross-agent scope-key alignment: the shared store only shares if all
+  five agents compute `project:<slug>` identically — `basename(cwd)` vs git-root
+  divergence silently fragments recall. WP5 D2 standardizes on
+  `basename(git rev-parse --show-toplevel)`.
+- **A25** — Multi-writer contradiction _amplification_: agent A stores a wrong
+  fact, agent B recalls and re-stores it reinforced — G3 escalates into a loop
+  that is new to the multi-agent-writer setup.
+- **A26** — Key distribution/onboarding toil: five agents × N machines with no
+  provisioning automation; per-machine secret sprawl and key rotation unhandled.
+- **A27** — Distillation model dependency: the SessionEnd backstop needs an LLM to
+  distill transcripts; which provider/model, its cost, and the privacy of sending
+  transcripts to it are open policy questions.

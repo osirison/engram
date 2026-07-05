@@ -15,15 +15,15 @@ transcript. Read `CLAUDE.md` and `AGENTS.md` at repo root before executing any W
 
 ## Status
 
-| WP  | Deliverable                                       | State                                   |
-| --- | ------------------------------------------------- | --------------------------------------- |
-| WP1 | `WP1-marketing-site-validation/REPORT.md`         | done — 26 findings (3 critical), R1–R13 |
-| WP2 | `WP2-memory-ui/PLAN.md`                           | done — SHARED-2 + T1–T8                 |
-| WP3 | `WP3-markdown-export/PLAN.md`                     | done — SHARED-1 + T1–T9                 |
-| WP4 | `WP4-agent-memory-import/PLAN.md`                 | pending                                 |
-| WP5 | `WP5-primary-memory-integration/PLAN.md`          | pending                                 |
-| WP6 | `WP6-developer-docs/PLAN.md`                      | pending                                 |
-| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A15 (agents' finds)  |
+| WP  | Deliverable                                       | State                                             |
+| --- | ------------------------------------------------- | ------------------------------------------------- |
+| WP1 | `WP1-marketing-site-validation/REPORT.md`         | done — 26 findings (3 critical), R1–R13           |
+| WP2 | `WP2-memory-ui/PLAN.md`                           | done — SHARED-2 + T1–T8                           |
+| WP3 | `WP3-markdown-export/PLAN.md`                     | done — SHARED-1 + T1–T9                           |
+| WP4 | `WP4-agent-memory-import/PLAN.md`                 | done — SHARED-1 + T1–T16 (6 adapters in parallel) |
+| WP5 | `WP5-primary-memory-integration/PLAN.md`          | done — D1–D8, T1–T13                              |
+| WP6 | `WP6-developer-docs/PLAN.md`                      | pending                                           |
+| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A27 (agents' finds)            |
 
 ## Dependency graph (for executors)
 
@@ -42,9 +42,13 @@ schema tasks are numbered globally here; apply migrations serially (one PR each)
 everything else parallelizes.
 
 - **SHARED-1 — `MemoryLink` schema + migration**: typed memory→memory edges.
-  Defined in `WP3-markdown-export/PLAN.md` §5; consumed by WP3 export and WP4 import.
+  **Canonical model: `SHARED-1-memory-link.md`** — it reconciles the divergent
+  WP3 §5 and WP4 §6 drafts (both carry supersession notes). Consumed by WP3
+  export, WP4 import, WP2 UI.
 - **SHARED-2 — `MemoryAuditLog` table + migration**: audit trail for destructive
   ops. Defined in `WP2-memory-ui/PLAN.md` (Schema changes section).
+- _(WP4-local)_ `MemoryImportSource` ledger — defined in WP4 §6; serialize its
+  migration with the SHARED tasks like any other schema change.
 
 ## Conventions every executor must follow
 

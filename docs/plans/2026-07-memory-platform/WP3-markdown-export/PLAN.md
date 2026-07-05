@@ -367,6 +367,10 @@ only. This makes the test pass _by construction_ instead of fighting volatility.
 
 ### SHARED-1: `MemoryLink` schema + migration _(shared prerequisite)_
 
+> **Superseded:** WP3 and WP4 drafted divergent `MemoryLink` models. Implement the
+> reconciled canonical model in [`../SHARED-1-memory-link.md`](../SHARED-1-memory-link.md)
+> instead of the draft below (kept for rationale).
+
 > **Same task name every WP uses.** WP2 (authored links UI), WP3 (export, reads),
 > WP4 (import, writes) all consume `MemoryLink`. Per `../README.md`, apply schema
 > migrations **serially** across WPs; everything else runs in parallel. **WP3's
