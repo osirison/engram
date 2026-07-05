@@ -30,6 +30,10 @@ import {
   UpdateMemoryToolInput,
 } from './dto/update-memory.dto';
 import { recallToolSchema, RecallToolInput } from './dto/recall.dto';
+import {
+  reembedMemoryToolSchema,
+  ReembedMemoryToolInput,
+} from './dto/reembed.dto';
 import { reindexToolSchema, ReindexToolInput } from './dto/reindex.dto';
 import {
   reindexQueueToolSchema,
@@ -71,13 +75,14 @@ import {
 /**
  * MCP Memory Tools Controller
  *
- * Implements 20 MCP tools for memory management:
+ * Implements 21 MCP tools for memory management:
  * 1.  create_memory          - Create short-term or long-term memory
  * 2.  get_memory             - Retrieve memory by ID
  * 3.  list_memories          - List memories with pagination
  * 4.  update_memory          - Update existing memory
  * 5.  delete_memory          - Delete memory by ID
  * 6.  promote_memory         - Convert STM memory to LTM
+ * 6a. reembed_memory         - Regenerate a long-term memory's vector (repair drift)
  * 7.  recall                 - Semantic (vector) recall over long-term memories
  * 8.  reindex_memories       - Backfill/rebuild the vector store from Postgres
  * 9.  queue_reindex_memories - Queue resumable reindex processing as a job
@@ -427,6 +432,60 @@ export class MemoryController {
     } catch (error) {
       this.logger.error('Error in promote_memory tool:', error);
       throw toClientError(error, 'Failed to promote memory');
+    }
+  }
+
+  /**
+   * MCP Tool: reembed_memory
+   * Regenerate the vector for a long-term memory's current content and clear its
+   * `embeddingStale` flag (WP2 T7). Repairs drift left by a content edit that
+   * happened while the embeddings provider was unavailable.
+   */
+  async reembedMemory(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('reembed_memory tool called');
+
+      const validatedInput: ReembedMemoryToolInput =
+        reembedMemoryToolSchema.parse(input);
+
+      const memory = await this.memoryService.reembedMemory(
+        validatedInput.userId,
+        validatedInput.memoryId,
+        validatedInput.scope,
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Re-embedded memory ${memory.id}: ${JSON.stringify(memory, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in reembed_memory tool:', error);
+      // Provider unavailable / STM guard carry client-safe messages; forward them
+      // (checked by name to avoid coupling to the store + Nest exception types).
+      if (
+        error instanceof Error &&
+        error.name === 'LtmEmbeddingUnavailableError'
+      ) {
+        throw toClientError(
+          new ClientFacingError(
+            'the embeddings provider is unavailable; retry once it is back',
+          ),
+          'Failed to re-embed memory',
+        );
+      }
+      if (error instanceof Error && error.name === 'BadRequestException') {
+        throw toClientError(
+          new ClientFacingError(error.message),
+          'Failed to re-embed memory',
+        );
+      }
+      throw toClientError(error, 'Failed to re-embed memory');
     }
   }
 
@@ -1178,6 +1237,17 @@ export class MemoryController {
         ) => Promise<unknown>,
       },
       {
+        name: 'reembed_memory',
+        description:
+          "Regenerate the vector for a long-term memory's current content and clear its embeddingStale flag. Repairs recall drift left by a content edit made while the embeddings provider was unavailable.",
+        inputSchema: reembedMemoryToolSchema,
+        // Delegable: the operator console repairs any data owner's memory (#200).
+        delegable: true,
+        handler: this.reembedMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
         name: 'recall',
         description:
           'Semantically recall the most relevant long-term memories for a natural-language query',
@@ -1323,6 +1393,7 @@ export class MemoryController {
       create_memory: 'memories:write',
       update_memory: 'memories:write',
       promote_memory: 'memories:write',
+      reembed_memory: 'memories:write',
       remember: 'memories:write',
       ingest_conversation: 'memories:write',
       delete_memory: 'memories:delete',

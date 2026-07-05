@@ -270,6 +270,18 @@ export class LtmMemoryNotFoundError extends Error {
 }
 
 /**
+ * Raised by `reembed()` when the embeddings provider is unavailable or its
+ * generation fails (WP2 T7/D10). The staleness flag stays set so the repair can
+ * be retried once the provider is back.
+ */
+export class LtmEmbeddingUnavailableError extends Error {
+  constructor(memoryId: string) {
+    super(`Cannot re-embed memory ${memoryId}: the embeddings provider is unavailable`);
+    this.name = 'LtmEmbeddingUnavailableError';
+  }
+}
+
+/**
  * Raised when an update's `expectedVersion` no longer matches the stored version
  * (WP2 T4/G4 — optimistic concurrency). Carries the current version so the caller
  * can reload and re-diff.

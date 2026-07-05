@@ -324,7 +324,9 @@ describe('MemoryLtmService', () => {
         },
         data: {
           content: updateInput.content,
-          metadata: updateInput.metadata,
+          // Content changed but this service has no embeddings provider, so the
+          // stored vector is now stale (WP2 T7).
+          metadata: { ...updateInput.metadata, embeddingStale: true },
           tags: updateInput.tags,
           // Version is always bumped, even without an expectedVersion (WP2 T4).
           version: { increment: 1 },
@@ -419,6 +421,104 @@ describe('MemoryLtmService', () => {
           }),
         }),
       });
+    });
+  });
+
+  describe('embeddingStale + reembed (WP2 T7)', () => {
+    const stubStm = () => ({ findById: vi.fn(), delete: vi.fn() });
+    const stubEmbeddings = (embedding: number[] | null) => ({
+      generate: vi
+        .fn()
+        .mockResolvedValue(embedding ? { embedding, model: 'm', cached: false } : null),
+    });
+    const stubVectorStore = () => ({
+      backend: 'qdrant' as const,
+      upsert: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      search: vi.fn().mockResolvedValue([]),
+      ensureReady: vi.fn().mockResolvedValue(undefined),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const withEmbeddings = (embedding: number[] | null, vs?: any) =>
+      new MemoryLtmService(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        prismaService as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stubStm() as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stubEmbeddings(embedding) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (vs ?? stubVectorStore()) as any
+      );
+
+    it('marks embeddingStale when a content edit cannot be re-embedded', async () => {
+      // The default `service` has no embeddings provider → a content edit leaves
+      // the old vector in place and must flag the drift.
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      await service.update(mockUserId, mockMemoryId, { content: 'changed text' });
+
+      const data = prismaService.memory.update.mock.calls[0][0].data;
+      expect(data.metadata).toMatchObject({ embeddingStale: true });
+    });
+
+    it('clears embeddingStale (and writes the new vector) when re-embedding succeeds', async () => {
+      const svc = withEmbeddings([0.1, 0.2, 0.3]);
+      prismaService.memory.findFirst.mockResolvedValue({
+        ...mockMemory,
+        metadata: { test: 'data', embeddingStale: true },
+      });
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      await svc.update(mockUserId, mockMemoryId, { content: 'changed text' });
+
+      const data = prismaService.memory.update.mock.calls[0][0].data;
+      expect(data.embedding).toEqual([0.1, 0.2, 0.3]);
+      expect(data.metadata.embeddingStale).toBeUndefined();
+    });
+
+    it('reembed regenerates the vector, clears the flag, and does NOT bump version', async () => {
+      const vs = stubVectorStore();
+      const svc = withEmbeddings([0.4, 0.5], vs);
+      prismaService.memory.findFirst.mockResolvedValue({
+        ...mockMemory,
+        version: 5,
+        metadata: { test: 'data', embeddingStale: true },
+      });
+      prismaService.memory.update.mockResolvedValue({ ...mockMemory, version: 5 });
+
+      await svc.reembed(mockUserId, mockMemoryId);
+
+      const call = prismaService.memory.update.mock.calls[0][0];
+      expect(call.data.embedding).toEqual([0.4, 0.5]);
+      expect(call.data.metadata.embeddingStale).toBeUndefined();
+      // Critical (WP2 T7/D10): no version bump, so a repair never trips T4 CAS.
+      expect(call.data.version).toBeUndefined();
+      expect(vs.upsert).toHaveBeenCalled();
+    });
+
+    it('reembed throws LtmEmbeddingUnavailableError with no provider', async () => {
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      await expect(service.reembed(mockUserId, mockMemoryId)).rejects.toMatchObject({
+        name: 'LtmEmbeddingUnavailableError',
+      });
+    });
+
+    it('reembed throws LtmEmbeddingUnavailableError when generation fails', async () => {
+      const svc = withEmbeddings(null);
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      await expect(svc.reembed(mockUserId, mockMemoryId)).rejects.toMatchObject({
+        name: 'LtmEmbeddingUnavailableError',
+      });
+    });
+
+    it('reembed throws not-found when the memory is absent', async () => {
+      const svc = withEmbeddings([0.1]);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      await expect(svc.reembed(mockUserId, mockMemoryId)).rejects.toBeInstanceOf(
+        LtmMemoryNotFoundError
+      );
     });
   });
 

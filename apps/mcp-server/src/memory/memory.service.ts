@@ -1,10 +1,15 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
+import {
+  MemoryStmService,
+  StmMemoryExpiredError,
+  StmMemoryNotFoundError,
+} from '@engram/memory-stm';
 import {
   MemoryLtmService,
   LtmMemoryNotFoundError,
@@ -118,6 +123,12 @@ type LtmServiceContract = {
     },
   ) => Promise<MemoryListResult>;
   promote: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory>;
+  reembed: (
     userId: string,
     memoryId: string,
     organizationId?: string,
@@ -638,6 +649,43 @@ export class MemoryService {
     // Use LTM service's promote method which handles the transfer. Scope is
     // forwarded so a namespaced caller cannot promote a foreign-scope memory.
     return await this.ltm.promote(userId, memoryId, undefined, scope);
+  }
+
+  /**
+   * Regenerate the vector for a long-term memory's current content and clear its
+   * staleness flag (WP2 T7). Short-term memories are never vector-indexed, so a
+   * reembed of an STM id is a clear error rather than a silent no-op.
+   */
+  async reembedMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<Memory> {
+    this.logger.debug(`Re-embedding memory ${memoryId} for user: ${userId}`);
+
+    // Guard: if this id lives in STM, there is no vector index to repair.
+    let inStm = false;
+    try {
+      await this.stm.findById(userId, memoryId, undefined, scope);
+      inStm = true;
+    } catch (error) {
+      // Not-found / expired both mean "not a live STM memory" — fall through to
+      // LTM (which will 404 if the id is unknown there too). Anything else is a
+      // real fault and propagates.
+      if (
+        !(error instanceof StmMemoryNotFoundError) &&
+        !(error instanceof StmMemoryExpiredError)
+      ) {
+        throw error;
+      }
+    }
+    if (inStm) {
+      throw new BadRequestException(
+        `Memory ${memoryId} is short-term and is not vector-indexed; re-embedding applies to long-term memories only`,
+      );
+    }
+
+    return await this.ltm.reembed(userId, memoryId, undefined, scope);
   }
 
   /**

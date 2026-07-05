@@ -121,6 +121,12 @@ export const memoryRouter = router({
     })
   ),
 
+  reembed: protectedProcedure
+    .input(z.object({ userId, memoryId, scope: z.string().max(256).nullish() }))
+    .mutation(({ ctx, input }) =>
+      ctx.backend.reembedMemory(input.userId, input.memoryId, input.scope ?? undefined)
+    ),
+
   delete: protectedProcedure.input(deleteInput).mutation(async ({ ctx, input }) => {
     const result = await ctx.backend.deleteMemory({
       userId: input.userId,
