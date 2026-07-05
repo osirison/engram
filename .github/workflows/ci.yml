@@ -264,19 +264,45 @@ jobs:
           docker rm -f engram-ci-smoke || true
           test -n "$ok"
 
+      - name: Install trivy (pinned + cached)
+        # Standalone setup-trivy instead of trivy-action's built-in installer
+        # (#208): trivy-action v0.33.1 defaults to trivy v0.65.0, whose release
+        # assets were removed upstream, so the built-in install 404s on every
+        # run (the "flaky download" was actually a permanent 404). Pin a live
+        # version here and cache the binary via actions/cache so post-warmup
+        # runs never touch the GitHub release download at all.
+        # When bumping `version`, keep it to a tag that still has release
+        # assets: https://github.com/aquasecurity/trivy/releases
+        uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          version: v0.72.0
+          cache: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Scan image for vulnerabilities (trivy)
-        # Report-only for now (see #208): the scan is informational until the
-        # preexisting base-image/dep CVEs are triaged, and `continue-on-error`
-        # keeps a flaky binary download (unauthenticated GitHub rate limit)
-        # from gating an otherwise-green build. Flip exit-code to '1' and drop
-        # continue-on-error once #208 is resolved.
+        # Blocking (#208): fails the build on fixable CRITICAL/HIGH findings in
+        # the production image. Base-image and dep CVEs were triaged before the
+        # flip (npm's vendored picomatch/sigstore CVEs are dropped from the
+        # runtime image in apps/mcp-server/Dockerfile). `ignore-unfixed` keeps
+        # unpatchable OS findings from reddening builds we cannot act on.
         uses: aquasecurity/trivy-action@v0.33.1
-        continue-on-error: true
         env:
           TRIVY_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Primary DB mirror plus ghcr fallback so an anonymous-pull rate
+          # limit on one registry cannot fail the (now blocking) scan.
+          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
         with:
           image-ref: engram-mcp-server:ci-${{ github.sha }}
           format: table
-          exit-code: '0'
+          exit-code: '1'
           ignore-unfixed: true
           severity: CRITICAL,HIGH
+          # Scope the (now blocking) gate to vuln scanning — exactly what was
+          # triaged for #208. trivy-action leaves `scanners` empty by default,
+          # which lets trivy enable secret scanning too; a secret finding is
+          # CRITICAL and not covered by `ignore-unfixed`, so an unrelated PR
+          # could red CI on a false positive with no allow-rule infra here.
+          # Pinning it also makes the gate immune to trivy default-scanner drift.
+          scanners: vuln
+          # Trivy is already installed (pinned + cached) by setup-trivy above.
+          skip-setup-trivy: true
