@@ -4,8 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryHaze } from './memory-haze.js';
 import {
   useTweaks, TweaksPanel, TweakSection,
-  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
-  TweakNumber, TweakButton,
+  TweakSlider, TweakToggle, TweakSelect,
 } from './tweaks-panel.jsx';
 import './smooth-scroll.js';
 

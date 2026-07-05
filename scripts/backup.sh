@@ -10,6 +10,9 @@
 #   REDIS_URL           redis connection string
 #   QDRANT_URL          qdrant HTTP URL (default: http://localhost:6333)
 #   COMPOSE_FILE        docker-compose file for exec commands
+#   REDIS_CONTAINER     docker container id/name running redis; when set the
+#                       RDB is copied with `docker exec` instead of compose
+#                       (used by CI service containers and bare `docker run`)
 
 set -euo pipefail
 
@@ -68,16 +71,38 @@ if [[ -n "${REDIS_URL:-}" ]]; then
   fi
 
   redis-cli "${REDIS_CLI_ARGS[@]}" BGSAVE
-  # Wait for BGSAVE to complete (polls LASTSAVE).
-  LAST_SAVE="$(redis-cli "${REDIS_CLI_ARGS[@]}" LASTSAVE)"
+  # Wait for the background save to finish, then confirm it succeeded. INFO
+  # persistence is authoritative (LASTSAVE polling raced when the save
+  # completed within one second).
+  BGSAVE_INFO=""
   for _ in {1..30}; do
+    BGSAVE_INFO="$(redis-cli "${REDIS_CLI_ARGS[@]}" INFO persistence)"
+    if grep -q 'rdb_bgsave_in_progress:0' <<<"${BGSAVE_INFO}"; then
+      break
+    fi
+    BGSAVE_INFO=""
     sleep 1
-    NEW_SAVE="$(redis-cli "${REDIS_CLI_ARGS[@]}" LASTSAVE)"
-    if [[ "${NEW_SAVE}" -gt "${LAST_SAVE}" ]]; then break; fi
   done
+  # Never copy a stale/partial RDB: abort if the save did not finish in time,
+  # or finished but reported a failure.
+  if [[ -z "${BGSAVE_INFO}" ]]; then
+    echo "[backup] error: redis BGSAVE did not complete within 30s — aborting" >&2
+    exit 1
+  fi
+  if ! grep -q 'rdb_last_bgsave_status:ok' <<<"${BGSAVE_INFO}"; then
+    echo "[backup] error: redis BGSAVE reported failure (rdb_last_bgsave_status) — aborting" >&2
+    exit 1
+  fi
 
   # Copy RDB file out of the container (or locally if running bare-metal).
-  if docker compose -f "${COMPOSE_FILE}" ps redis &>/dev/null 2>&1; then
+  # Precedence: explicit REDIS_CONTAINER → running compose service → local FS.
+  if [[ -n "${REDIS_CONTAINER:-}" ]]; then
+    docker exec "${REDIS_CONTAINER}" cat /data/dump.rdb \
+      > "${BACKUP_PATH}/redis.rdb"
+  elif [[ -n "$(docker compose -f "${COMPOSE_FILE}" ps -q redis 2>/dev/null)" ]]; then
+    # `ps -q` prints a container id only when the service is actually running
+    # (`ps <service>` exits 0 even when nothing is up, so its exit code is not
+    # a reliable signal).
     docker compose -f "${COMPOSE_FILE}" exec -T redis \
       cat /data/dump.rdb > "${BACKUP_PATH}/redis.rdb"
   elif [[ -f /var/lib/redis/dump.rdb ]]; then

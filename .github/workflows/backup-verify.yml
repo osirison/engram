@@ -1,0 +1,198 @@
+name: Backup verification
+
+# Nightly end-to-end verification of the backup/restore path across ALL THREE
+# stores (Postgres, Redis, Qdrant) plus the retention policy. The regular CI
+# suite (backup-restore.spec.ts) only exercises the Postgres leg; this
+# workflow proves the Redis (BGSAVE/RDB) and Qdrant (snapshot) legs actually
+# round-trip, so a broken restore path is caught within a day instead of
+# during an incident. See docs/ops/backup-runbook.md.
+
+on:
+  schedule:
+    # Nightly at 03:17 UTC (off the :00 congestion window).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-restore-roundtrip:
+    name: Backup → restore round-trip (Postgres + Redis + Qdrant)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: engram_backup_verify
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.13.6
+        ports:
+          - 6333:6333
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/engram_backup_verify
+      REDIS_URL: redis://localhost:6379
+      QDRANT_URL: http://127.0.0.1:6333
+      BACKUP_OUT: ${{ github.workspace }}/.backup-verify
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve redis service container id
+        # backup.sh / restore.sh copy the RDB through `docker exec` /
+        # `docker stop|cp|start` on this container (there is no compose project
+        # on the runner — service containers are plain docker containers). The
+        # `job` context is unavailable in job-level env, so export it in a step.
+        run: echo "REDIS_CONTAINER=${{ job.services.redis.id }}" >> "$GITHUB_ENV"
+
+      - name: Install PostgreSQL 17 client + redis-cli
+        # The runner ships pg_dump 16, but the postgres service is pg17 and
+        # pg_dump/pg_restore refuse a newer server (same rationale as ci.yml).
+        # redis-tools provides the redis-cli that backup.sh drives BGSAVE with.
+        run: |
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17 redis-tools
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for Qdrant
+        run: |
+          echo "Waiting for Qdrant to be ready..."
+          timeout 60 bash -c 'until curl -sf http://127.0.0.1:6333/collections; do sleep 2; done'
+          echo "Qdrant is ready"
+
+      - name: Seed Postgres
+        run: |
+          psql "$DATABASE_URL" <<'SQL'
+          CREATE TABLE backup_verify (id serial PRIMARY KEY, data text NOT NULL);
+          INSERT INTO backup_verify (data) VALUES ('pg-round-trip-sentinel');
+          SQL
+
+      - name: Seed Redis
+        run: |
+          redis-cli -h localhost -p 6379 SET engram:backup-verify:sentinel 'redis-round-trip-sentinel'
+          redis-cli -h localhost -p 6379 RPUSH engram:backup-verify:list a b c
+
+      - name: Seed Qdrant
+        run: |
+          curl -sf -X PUT "$QDRANT_URL/collections/memories" \
+            -H 'Content-Type: application/json' \
+            -d '{"vectors":{"size":4,"distance":"Cosine"}}'
+          curl -sf -X PUT "$QDRANT_URL/collections/memories/points?wait=true" \
+            -H 'Content-Type: application/json' \
+            -d '{"points":[
+                  {"id":1,"vector":[0.1,0.2,0.3,0.4],"payload":{"content":"alpha"}},
+                  {"id":2,"vector":[0.9,0.8,0.7,0.6],"payload":{"content":"beta"}}
+                ]}'
+
+      - name: Run backup.sh (all three stores)
+        run: ./scripts/backup.sh --out "$BACKUP_OUT"
+
+      - name: Assert archive contains all three stores
+        run: |
+          ARCHIVE="$(ls "$BACKUP_OUT"/engram_backup_*.tar.gz | head -1)"
+          echo "archive: $ARCHIVE"
+          LISTING="$(tar -tzf "$ARCHIVE")"
+          echo "$LISTING"
+          echo "$LISTING" | grep -q 'postgres\.pgdump'
+          echo "$LISTING" | grep -q 'redis\.rdb'
+          echo "$LISTING" | grep -q 'qdrant_memories\.snapshot'
+
+      - name: Destroy live data (prove restore does the work)
+        run: |
+          psql "$DATABASE_URL" -c 'DROP TABLE backup_verify;'
+          redis-cli -h localhost -p 6379 FLUSHALL
+          curl -sf -X DELETE "$QDRANT_URL/collections/memories"
+          # Sanity: everything is really gone.
+          test "$(redis-cli -h localhost -p 6379 GET engram:backup-verify:sentinel)" = ""
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$QDRANT_URL/collections/memories")" = "404"
+
+      - name: Run restore.sh (all three stores)
+        run: |
+          ARCHIVE="$(ls "$BACKUP_OUT"/engram_backup_*.tar.gz | head -1)"
+          ./scripts/restore.sh --archive "$ARCHIVE" --no-confirm
+
+      - name: Verify Postgres round-trip
+        run: |
+          RESULT="$(psql "$DATABASE_URL" -t -A -c \
+            "SELECT data FROM backup_verify WHERE data = 'pg-round-trip-sentinel'")"
+          echo "postgres sentinel: $RESULT"
+          test "$RESULT" = "pg-round-trip-sentinel"
+
+      - name: Verify Redis round-trip
+        run: |
+          # restore.sh restarted the redis container — wait for it to accept
+          # connections again before asserting.
+          for _ in $(seq 1 30); do
+            redis-cli -h localhost -p 6379 ping >/dev/null 2>&1 && break
+            sleep 1
+          done
+          SENTINEL="$(redis-cli -h localhost -p 6379 GET engram:backup-verify:sentinel)"
+          LIST="$(redis-cli -h localhost -p 6379 LRANGE engram:backup-verify:list 0 -1 | tr '\n' ' ')"
+          echo "redis sentinel: $SENTINEL"
+          echo "redis list:     $LIST"
+          test "$SENTINEL" = "redis-round-trip-sentinel"
+          test "$LIST" = "a b c "
+
+      - name: Verify Qdrant round-trip
+        run: |
+          COUNT="$(curl -sf -X POST "$QDRANT_URL/collections/memories/points/count" \
+            -H 'Content-Type: application/json' -d '{"exact":true}' \
+            | grep -oE '"count":[0-9]+' | cut -d: -f2)"
+          echo "qdrant point count: $COUNT"
+          test "$COUNT" = "2"
+          PAYLOADS="$(curl -sf -X POST "$QDRANT_URL/collections/memories/points/scroll" \
+            -H 'Content-Type: application/json' -d '{"limit":10,"with_payload":true}')"
+          echo "$PAYLOADS"
+          echo "$PAYLOADS" | grep -q '"content":"alpha"'
+          echo "$PAYLOADS" | grep -q '"content":"beta"'
+
+      - name: Exercise retention policy (GFS pruning)
+        run: |
+          RET_DIR="$RUNNER_TEMP/retention-verify"
+          mkdir -p "$RET_DIR"
+          # Fake aged archives around the policy boundaries:
+          #   recent  → inside 30-day daily window → kept
+          #   week A/B → same ISO week, inside 12-week weekly window →
+          #             exactly one kept (the older sorts first and wins)
+          #   ancient → beyond the weekly window → deleted
+          RECENT="engram_backup_$(date -d '2 days ago' +%Y%m%d)_010101.tar.gz"
+          WEEK_A="engram_backup_$(date -d '45 days ago' +%Y%m%d)_010101.tar.gz"
+          WEEK_B="engram_backup_$(date -d '45 days ago' +%Y%m%d)_020202.tar.gz"
+          ANCIENT="engram_backup_$(date -d '120 days ago' +%Y%m%d)_010101.tar.gz"
+          touch "$RET_DIR/$RECENT" "$RET_DIR/$WEEK_A" "$RET_DIR/$WEEK_B" "$RET_DIR/$ANCIENT"
+
+          ./scripts/retention.sh --dir "$RET_DIR" --days 30 --weeks 12
+
+          ls -la "$RET_DIR"
+          test -f "$RET_DIR/$RECENT"        # daily keep
+          test -f "$RET_DIR/$WEEK_A"        # weekly keep (one per week)
+          test ! -f "$RET_DIR/$WEEK_B"      # same-week duplicate pruned
+          test ! -f "$RET_DIR/$ANCIENT"     # beyond weekly window pruned

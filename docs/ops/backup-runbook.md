@@ -32,6 +32,15 @@ DATABASE_URL=... REDIS_URL=... QDRANT_URL=http://localhost:6333 \
   ./scripts/restore.sh --archive /var/backups/engram/engram_backup_20260601_020000.tar.gz
 ```
 
+Both scripts locate the Redis RDB automatically. Precedence:
+
+1. `REDIS_CONTAINER=<id|name>` — copy through `docker exec` / `docker
+stop|cp|start` on that container. Use this for bare `docker run`
+   deployments and CI service containers (no compose project).
+2. A running `redis` service in `COMPOSE_FILE` (default
+   `docker-compose.prod.yml`).
+3. Bare-metal `/var/lib/redis/dump.rdb` (backup only).
+
 ---
 
 ## Retention policy
@@ -52,9 +61,68 @@ to skip the daily window and go straight to weekly rotation.
 # Daily backup at 02:00
 0 2 * * * DATABASE_URL=... REDIS_URL=... /opt/engram/scripts/backup.sh --out /var/backups/engram >> /var/log/engram-backup.log 2>&1
 
+# Offsite sync at 02:30 (after the backup, before local pruning)
+30 2 * * * rclone sync /var/backups/engram remote:engram-backups --include "engram_backup_*.tar.gz" >> /var/log/engram-offsite.log 2>&1
+
 # Retention cleanup at 03:00
 0 3 * * * BACKUP_DIR=/var/backups/engram /opt/engram/scripts/retention.sh >> /var/log/engram-retention.log 2>&1
 ```
+
+Order matters: sync offsite **before** `retention.sh` prunes locally, so an
+archive is never deleted from the only copy that has it.
+
+---
+
+## Offsite replication (3-2-1)
+
+`backup.sh` writes to local disk only. A disk or host loss therefore takes
+the backups down with the data unless archives are replicated offsite. Aim
+for 3-2-1: three copies, two media, one offsite.
+
+Sync the archive directory to object storage after every backup run, e.g.:
+
+```bash
+# rclone (any S3/GCS/B2/Azure remote)
+rclone sync /var/backups/engram remote:engram-backups \
+  --include "engram_backup_*.tar.gz"
+
+# or the AWS CLI
+aws s3 sync /var/backups/engram s3://<bucket>/engram-backups \
+  --exclude '*' --include 'engram_backup_*.tar.gz'
+```
+
+Recommendations:
+
+- **Retention at the destination** — apply lifecycle rules on the bucket (or
+  run `retention.sh` against a synced mirror); `rclone sync` propagates local
+  deletions, so a bucket with versioning/lifecycle is the safety net.
+- **Encrypt before upload** when the bucket is not already encrypted with a
+  customer-managed key: `age -r <recipient> -o <archive>.age <archive>`
+  (or `gpg --encrypt`). Postgres dumps contain user memory content.
+- **Restrict credentials** — the sync job only needs write/list on the
+  backup prefix; use a scoped key, never the deployment's admin credentials.
+- **Verify restorability, not just existence** — the nightly
+  [backup verification workflow](#continuous-verification-in-ci) proves the
+  scripts round-trip; periodically restore an offsite archive into a
+  scratch environment to prove the offsite copies do too.
+
+---
+
+## Continuous verification in CI
+
+Two layers of automated coverage:
+
+- **Every PR / push** — `backup-restore.spec.ts` (mcp-server suite) checks
+  the Postgres leg: `backup.sh` produces an archive and `restore.sh
+--pg-only` round-trips data. `retention.sh` pruning is covered by
+  `backup-scripts.spec.ts` against fake aged archives.
+- **Nightly** — [`backup-verify.yml`](../../.github/workflows/backup-verify.yml)
+  (cron + manual `workflow_dispatch`) runs the full `backup.sh` →
+  `restore.sh` path against throwaway Postgres, Redis, and Qdrant service
+  containers: seeds all three stores, backs up, destroys the live data,
+  restores, asserts every sentinel round-trips, and exercises the
+  `retention.sh` GFS policy. A red run means the restore path is broken —
+  treat it like a production incident, not a flaky test.
 
 ---
 

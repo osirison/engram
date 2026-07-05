@@ -448,18 +448,18 @@
         op *= (1 - hide);  // kill the baseline opacity floor over words — fully invisible there
         const scale = (0.66 + f.z * 0.46) * (0.96 + clarity * 0.12);
 
-        // only write styles when meaningfully changed (perf)
-        if (Math.abs(blur - f._b) > 0.25 || Math.abs(op - f._o) > 0.03 || true) {
-          f.el.style.transform = `translate(${X}px, ${Y}px) translate(-50%,-50%) scale(${scale.toFixed(3)})`;
-          f.el.style.filter = blur > 0.15 ? `blur(${blur.toFixed(2)}px)` : "none";
-          f.el.style.opacity = op.toFixed(3);
-          f.el.style.textShadow = clarity > 0.55
-            ? `0 0 22px rgba(236,234,228,${(clarity * 0.22).toFixed(2)})` : "none";
-          f.el.style.zIndex = String(10 + Math.round(f.z * 30));
-          f.dot.style.boxShadow = clarity > 0.5
-            ? `0 0 ${(clarity * 10).toFixed(0)}px rgba(${TONES[f.tone].join(",")},${(clarity * 0.6).toFixed(2)})` : "none";
-          f._b = blur; f._o = op;
-        }
+        // Style writes are unconditional: the delta-based perf gate that used
+        // to wrap this block had been disabled with `|| true`, so it is
+        // removed rather than kept as dead code (behavior unchanged).
+        f.el.style.transform = `translate(${X}px, ${Y}px) translate(-50%,-50%) scale(${scale.toFixed(3)})`;
+        f.el.style.filter = blur > 0.15 ? `blur(${blur.toFixed(2)}px)` : "none";
+        f.el.style.opacity = op.toFixed(3);
+        f.el.style.textShadow = clarity > 0.55
+          ? `0 0 22px rgba(236,234,228,${(clarity * 0.22).toFixed(2)})` : "none";
+        f.el.style.zIndex = String(10 + Math.round(f.z * 30));
+        f.dot.style.boxShadow = clarity > 0.5
+          ? `0 0 ${(clarity * 10).toFixed(0)}px rgba(${TONES[f.tone].join(",")},${(clarity * 0.6).toFixed(2)})` : "none";
+        f._b = blur; f._o = op;
       }
 
       // ---- draw canvas: motes + lines ----
