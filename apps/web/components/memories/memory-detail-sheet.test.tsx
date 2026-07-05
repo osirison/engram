@@ -1,8 +1,17 @@
+import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RouterOutputs } from '@/server/trpc/root';
-import { MemoryDetailSheet } from './memory-detail-sheet';
+import { MemoryDetailSheet, evictMemoryFromCacheData } from './memory-detail-sheet';
+
+// The component calls useQueryClient() at render (optimistic delete, WP2 T8), so
+// every render needs a provider. getQueryKey works on the mocked trpc proxy.
+function renderWithClient(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 // Capture the update mutation's callbacks/mutate so the test can drive them.
 const h = vi.hoisted(() => ({
@@ -84,7 +93,7 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
 
   it('shows a stale-vector badge and a Re-embed action that calls the mutation', () => {
     h.memory = fixture({ embeddingStale: true });
-    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
     expect(screen.getByText(/Stale — content changed but the vector/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Re-embed'));
     expect(h.reembedMutate).toHaveBeenCalledWith(
@@ -94,12 +103,12 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
 
   it('does not offer Re-embed when the vector is healthy', () => {
     h.memory = fixture({ embeddingStale: false, hasEmbedding: true });
-    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
     expect(screen.queryByText('Re-embed')).not.toBeInTheDocument();
   });
 
   it('sends expectedVersion from the loaded memory on save', async () => {
-    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
     fireEvent.click(screen.getByText('Edit'));
     fireEvent.click(screen.getByText('Save changes'));
     expect(h.updateMutate).toHaveBeenCalledWith(
@@ -108,7 +117,7 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
   });
 
   it('shows the conflict panel with a Reload button when the save returns CONFLICT', async () => {
-    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
     fireEvent.click(screen.getByText('Edit'));
     fireEvent.click(screen.getByText('Save changes'));
 
@@ -123,7 +132,7 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
 
   it('preserves the operator’s unsaved text after reloading the latest version', async () => {
     h.refetch.mockResolvedValue({ data: fixture({ content: 'server content', version: 4 }) });
-    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
     fireEvent.click(screen.getByText('Edit'));
     const textarea = screen.getByLabelText('Memory content');
     fireEvent.change(textarea, { target: { value: 'my unsaved edit' } });
@@ -138,5 +147,34 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
     // The stashed draft is shown; the editor now holds the server's latest text.
     expect(screen.getByText('my unsaved edit')).toBeInTheDocument();
     expect(screen.getByLabelText('Memory content')).toHaveValue('server content');
+  });
+});
+
+describe('evictMemoryFromCacheData — optimistic-delete surgery (WP2 T8)', () => {
+  it('removes the id from every page of an infinite-list cache', () => {
+    const infinite = {
+      pageParams: [undefined, 'c1'],
+      pages: [
+        { items: [{ id: 'a' }, { id: 'b' }], nextCursor: 'c1' },
+        { items: [{ id: 'b' }, { id: 'c' }], nextCursor: null },
+      ],
+    };
+    const next = evictMemoryFromCacheData(infinite, 'b') as typeof infinite;
+    expect(next.pages[0]!.items).toEqual([{ id: 'a' }]);
+    expect(next.pages[1]!.items).toEqual([{ id: 'c' }]);
+    // pageParams and other fields are preserved.
+    expect(next.pageParams).toEqual([undefined, 'c1']);
+  });
+
+  it('removes the id from a single-shot search cache', () => {
+    const search = { count: 2, semantic: true, items: [{ id: 'x' }, { id: 'y' }] };
+    const next = evictMemoryFromCacheData(search, 'x') as typeof search;
+    expect(next.items).toEqual([{ id: 'y' }]);
+    expect(next.semantic).toBe(true);
+  });
+
+  it('leaves unrelated / empty cache data untouched', () => {
+    expect(evictMemoryFromCacheData(undefined, 'x')).toBeUndefined();
+    expect(evictMemoryFromCacheData({ foo: 1 }, 'x')).toEqual({ foo: 1 });
   });
 });

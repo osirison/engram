@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { Copy, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { getQueryKey } from '@trpc/react-query';
 
 import { TagInput } from '@/components/memories/tag-input';
 import { ErrorState } from '@/components/states';
@@ -23,6 +25,35 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { absoluteTime, formatPercent, memoryTypeLabel, relativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/react';
+
+/** Minimal shapes for the optimistic-delete cache surgery (WP2 T8). */
+type EvictItem = { id: string };
+type InfinitePages = { pages: Array<{ items: EvictItem[] }>; pageParams: unknown[] };
+
+/**
+ * Remove a memory id from a cached query's data (WP2 T8), handling both the
+ * infinite-list shape (`{ pages: [{ items }] }`) and the single-shot search shape
+ * (`{ items }`). Returns the input untouched for anything else. Pure, so the
+ * optimistic-delete eviction is unit-testable without a live query client.
+ */
+export function evictMemoryFromCacheData(data: unknown, memoryId: string): unknown {
+  if (!data || typeof data !== 'object') return data;
+  if ('pages' in data && Array.isArray((data as InfinitePages).pages)) {
+    const inf = data as InfinitePages;
+    return {
+      ...inf,
+      pages: inf.pages.map((p) => ({
+        ...p,
+        items: p.items.filter((it) => it.id !== memoryId),
+      })),
+    };
+  }
+  if ('items' in data && Array.isArray((data as { items: EvictItem[] }).items)) {
+    const s = data as { items: EvictItem[] };
+    return { ...s, items: s.items.filter((it) => it.id !== memoryId) };
+  }
+  return data;
+}
 
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -47,6 +78,7 @@ export function MemoryDetailSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const capabilities = trpc.meta.capabilities.useQuery(undefined, { staleTime: 5 * 60_000 });
   const canWrite = capabilities.data?.writes ?? false;
 
@@ -86,6 +118,7 @@ export function MemoryDetailSheet({
   const invalidate = async () => {
     await Promise.all([
       utils.memory.list.invalidate(),
+      utils.memory.listStm.invalidate(),
       utils.memory.search.invalidate(),
       utils.analytics.invalidate(),
       memoryId ? utils.memory.get.invalidate({ userId, memoryId }) : Promise.resolve(),
@@ -124,13 +157,45 @@ export function MemoryDetailSheet({
     setConflict(false);
   };
 
+  // Optimistic single-delete (WP2 T8/D7): evict the row from every list/listStm
+  // infinite cache and close the sheet immediately; roll the exact snapshots back
+  // on error (incl. the truthful NOT_FOUND from T2). Edits stay server-confirmed.
   const remove = trpc.memory.delete.useMutation({
-    onSuccess: async () => {
-      toast.success('Memory deleted');
+    onMutate: async (vars) => {
+      const listKey = getQueryKey(trpc.memory.list);
+      const stmKey = getQueryKey(trpc.memory.listStm);
+      const searchKey = getQueryKey(trpc.memory.search);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: listKey }),
+        queryClient.cancelQueries({ queryKey: stmKey }),
+        queryClient.cancelQueries({ queryKey: searchKey }),
+      ]);
+      // Snapshot every affected query so onError can restore exactly.
+      const snapshot = [
+        ...queryClient.getQueriesData({ queryKey: listKey }),
+        ...queryClient.getQueriesData({ queryKey: stmKey }),
+        ...queryClient.getQueriesData({ queryKey: searchKey }),
+      ];
+      for (const [key] of snapshot) {
+        queryClient.setQueryData(key, (d: unknown) => evictMemoryFromCacheData(d, vars.memoryId));
+      }
       onOpenChange(false);
+      return { snapshot };
+    },
+    onError: (error, _vars, context) => {
+      // Restore the exact pre-delete caches, then surface the failure. A truthful
+      // NOT_FOUND (row already gone) also lands here and is rolled back cleanly.
+      for (const [key, data] of context?.snapshot ?? []) {
+        queryClient.setQueryData(key, data);
+      }
+      toast.error('Delete failed', { description: error.message });
+    },
+    onSuccess: () => {
+      toast.success('Memory deleted');
+    },
+    onSettled: async () => {
       await invalidate();
     },
-    onError: (error) => toast.error('Delete failed', { description: error.message }),
   });
 
   // Repair a stale vector by regenerating the embedding for current content (T7).

@@ -129,6 +129,9 @@ export function MemoryNavigator() {
   const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
   const selectionContext = `${filters.type}|${filters.scope}|${filters.tags.join(',')}|${filters.q}`;
   React.useEffect(() => {
+    // Reset selection when the filter/search context changes (canonical
+    // reset-state-on-prop-change effect).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIds(new Set());
   }, [selectionContext, userId]);
 
