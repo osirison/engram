@@ -10,3 +10,7 @@ pnpm-lock.yaml
 # Env files (no parser)
 .env
 .env.*
+
+# Standalone marketing site — excluded from the pnpm workspace and self-linted
+# via its own eslint.config.js; keep its hand-tuned source out of root prettier.
+apps/marketing-site/

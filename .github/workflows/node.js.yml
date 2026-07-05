@@ -1,7 +1,17 @@
 name: Deploy marketing site to GitHub Pages
 
+# The marketing site is intentionally excluded from the pnpm workspace, so the
+# root CI pipeline never lints or builds it. This workflow gates the Pages
+# deploy behind its own `verify` job (npm ci + lint + build) and also runs
+# that job on pull requests touching the site, so breakage is caught before
+# main instead of during the production deploy.
+
 on:
   push:
+    branches: ['main']
+    paths:
+      - 'apps/marketing-site/**'
+  pull_request:
     branches: ['main']
     paths:
       - 'apps/marketing-site/**'
@@ -9,45 +19,63 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: 'pages'
-  cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  verify:
+    name: Lint & build (marketing-site)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-        with:
-          cname: engram.events
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/marketing-site/package-lock.json
 
       - name: Install dependencies
         working-directory: apps/marketing-site
         run: npm ci
+
+      - name: Lint
+        working-directory: apps/marketing-site
+        run: npm run lint
 
       - name: Build
         working-directory: apps/marketing-site
         run: npm run build
 
       - name: Upload artifact
+        # Upload from the gated build so the deploy job ships exactly what
+        # passed lint/build (deploys only happen on push/dispatch below).
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: apps/marketing-site/dist
+
+  deploy:
+    # Production Pages deploy is gated on the verify job and never runs for
+    # pull requests.
+    needs: verify
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: 'pages'
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          cname: engram.events
 
       - name: Deploy to GitHub Pages
         id: deployment

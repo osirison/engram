@@ -11,6 +11,13 @@
 #   --redis-only         restore only redis
 #   --qdrant-only        restore only qdrant
 #   --no-confirm         skip interactive confirmation prompt
+#
+# Environment:
+#   DATABASE_URL         postgres connection string (postgres restore)
+#   QDRANT_URL           qdrant HTTP URL (default: http://localhost:6333)
+#   REDIS_CONTAINER      docker container id/name running redis; when set the
+#                        RDB is restored with docker stop/cp/start instead of
+#                        compose (CI service containers, bare `docker run`)
 
 set -euo pipefail
 
@@ -87,7 +94,17 @@ if [[ "${PG_ONLY}" != "true" && "${QDRANT_ONLY}" != "true" ]]; then
   RDB="${BACKUP_DIR}/redis.rdb"
   if [[ -f "${RDB}" ]]; then
     echo "[restore] restoring redis …"
-    if docker compose -f "${COMPOSE_FILE}" ps redis &>/dev/null 2>&1; then
+    # Precedence: explicit REDIS_CONTAINER → running compose service.
+    if [[ -n "${REDIS_CONTAINER:-}" ]]; then
+      # Stop first so redis does not overwrite the restored RDB on shutdown,
+      # then load it on the next start. `docker cp` works on stopped containers.
+      docker stop "${REDIS_CONTAINER}" >/dev/null
+      docker cp "${RDB}" "${REDIS_CONTAINER}:/data/dump.rdb"
+      docker start "${REDIS_CONTAINER}" >/dev/null
+      echo "[restore] redis done ✓"
+    elif [[ -n "$(docker compose -f "${COMPOSE_FILE}" ps -q redis 2>/dev/null)" ]]; then
+      # `ps -q` prints a container id only when the service is actually
+      # running (`ps <service>` exits 0 even when nothing is up).
       docker compose -f "${COMPOSE_FILE}" stop redis
       docker compose -f "${COMPOSE_FILE}" cp "${RDB}" redis:/data/dump.rdb
       docker compose -f "${COMPOSE_FILE}" start redis
@@ -106,10 +123,16 @@ if [[ "${PG_ONLY}" != "true" && "${REDIS_ONLY}" != "true" ]]; then
   SNAPSHOT="$(find "${BACKUP_DIR}" -name "qdrant_*.snapshot" | head -1)"
   if [[ -n "${SNAPSHOT}" && -f "${SNAPSHOT}" ]]; then
     echo "[restore] restoring qdrant …"
-    UPLOAD_RESP="$(curl -sf -X POST \
-      "${QDRANT_URL}/collections/${COLLECTION}/snapshots/upload" \
-      -H 'Content-Type: application/octet-stream' \
-      --data-binary "@${SNAPSHOT}" || echo '{}')"
+    # The snapshot upload endpoint requires multipart/form-data with the file
+    # in a `snapshot` field (a raw octet-stream body is rejected by Qdrant).
+    # `priority=snapshot` makes the uploaded data win over any existing
+    # collection state, and recreates the collection when it is missing.
+    if ! UPLOAD_RESP="$(curl -sf -X POST \
+      "${QDRANT_URL}/collections/${COLLECTION}/snapshots/upload?priority=snapshot" \
+      -F "snapshot=@${SNAPSHOT}")"; then
+      echo "[restore] error: qdrant snapshot upload failed (${QDRANT_URL})" >&2
+      exit 1
+    fi
     echo "[restore] qdrant response: ${UPLOAD_RESP}"
     echo "[restore] qdrant done ✓"
   else
