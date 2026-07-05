@@ -57,6 +57,13 @@ LABEL org.opencontainers.image.title="engram-mcp-server" \
 # Non-root user for least-privilege runtime.
 RUN addgroup -S engram && adduser -S -G engram engram
 
+# Drop the npm CLI from the runtime image. The app runs plain `node
+# dist/main.js` (npm/npx are never invoked at runtime), and npm's vendored
+# node_modules ship fixable HIGH CVEs (picomatch CVE-2026-33671, sigstore
+# CVE-2026-48815) that would trip the blocking trivy CI gate (#208). Removing
+# the CLI also shrinks the image and its attack surface.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 WORKDIR /app
 
 # Copy the pruned production artefact from builder.
