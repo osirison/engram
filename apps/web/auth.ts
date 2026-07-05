@@ -4,7 +4,7 @@ import GitHub from 'next-auth/providers/github';
 import Google from 'next-auth/providers/google';
 
 import { isAllowedOperator, serverEnv } from '@/server/env';
-import { isProviderEmailVerified } from '@/lib/oauth-verify';
+import { isGithubEmailVerified, isProviderEmailVerified } from '@/lib/oauth-verify';
 
 /**
  * NextAuth.js v5 (Auth.js) configuration for the dashboard.
@@ -69,13 +69,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       : []),
   ],
   callbacks: {
-    signIn({ user, account, profile }) {
+    async signIn({ user, account, profile }) {
       // The dev provider is its own gate; OAuth logins must pass the allow-list.
       if (account?.provider === 'credentials') return true;
-      // Reject unverified provider emails before the allow-list: an attacker
-      // can set an *unverified* Google/GitHub account email to an allow-listed
-      // operator address and would otherwise pass isAllowedOperator().
-      if (!isProviderEmailVerified(account?.provider, profile)) return false;
+      // Reject unverified provider emails before the allow-list: an attacker can
+      // set an *unverified* account email to an allow-listed operator address
+      // and would otherwise pass isAllowedOperator(). Google carries the
+      // authoritative `email_verified` claim; GitHub has none on the profile, so
+      // confirm the address against /user/emails (default-deny) — see #206.
+      const emailVerified =
+        account?.provider === 'github'
+          ? await isGithubEmailVerified(
+              user.email,
+              typeof account.access_token === 'string' ? account.access_token : undefined
+            )
+          : isProviderEmailVerified(account?.provider, profile);
+      if (!emailVerified) return false;
       return isAllowedOperator(user.email);
     },
     jwt({ token, account }) {

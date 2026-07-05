@@ -1,5 +1,4 @@
 import { Controller, Injectable, Logger } from '@nestjs/common';
-import { ZodError } from 'zod';
 import type { Tool } from '@engram/core';
 import { ApiKeysService } from './api-keys.service';
 import {
@@ -15,6 +14,10 @@ import {
   type RevokeApiKeyToolInput,
 } from './dto/revoke-api-key.dto';
 import { constantTimeStringEqual } from '../security/admin-token.util';
+import {
+  ClientFacingError,
+  toClientError,
+} from '../security/client-error.util';
 
 type McpTextResponse = { content: Array<{ type: 'text'; text: string }> };
 
@@ -28,18 +31,11 @@ export class ApiKeysController {
   private assertAdminAuthorized(adminToken: string): void {
     const expected = process.env.MCP_ADMIN_TOKEN;
     if (!expected) {
-      throw new Error('MCP_ADMIN_TOKEN is not configured');
+      throw new ClientFacingError('MCP_ADMIN_TOKEN is not configured');
     }
     if (!constantTimeStringEqual(adminToken, expected)) {
-      throw new Error('Unauthorized: invalid admin token');
+      throw new ClientFacingError('Unauthorized: invalid admin token');
     }
-  }
-
-  private static errorMessage(error: unknown): string {
-    if (error instanceof ZodError) {
-      return error.issues.map((i) => i.message).join('; ');
-    }
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 
   /** MCP Tool: create_api_key — issue a new API key (shown once). */
@@ -78,9 +74,7 @@ export class ApiKeysController {
       };
     } catch (error) {
       this.logger.error('Error in create_api_key tool:', error);
-      throw new Error(
-        `Failed to create API key: ${ApiKeysController.errorMessage(error)}`,
-      );
+      throw toClientError(error, 'Failed to create API key');
     }
   }
 
@@ -115,9 +109,7 @@ export class ApiKeysController {
       };
     } catch (error) {
       this.logger.error('Error in list_api_keys tool:', error);
-      throw new Error(
-        `Failed to list API keys: ${ApiKeysController.errorMessage(error)}`,
-      );
+      throw toClientError(error, 'Failed to list API keys');
     }
   }
 
@@ -164,9 +156,7 @@ export class ApiKeysController {
       };
     } catch (error) {
       this.logger.error('Error in revoke_api_key tool:', error);
-      throw new Error(
-        `Failed to revoke API key: ${ApiKeysController.errorMessage(error)}`,
-      );
+      throw toClientError(error, 'Failed to revoke API key');
     }
   }
 

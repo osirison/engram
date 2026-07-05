@@ -19,14 +19,17 @@ export const compressContextToolSchema = z
     /** Maximum memories to retrieve (default 10, max 30) */
     limit: z.coerce.number().int().min(1).max(30).optional().default(10),
     /**
-     * Approximate character budget for the entire context block.
-     * Individual memory snippets will be truncated to fit.
+     * Approximate character budget for the entire context block, including the
+     * fixed untrusted-content framing (notice + fence markers, ~210 chars, see
+     * #206). Individual memory snippets are truncated to fit. The 512 floor
+     * guarantees the framing plus meaningful content fit within the budget — a
+     * smaller value could not hold the mandatory framing.
      * Default 4000 chars (~1000 tokens at 4 chars/token).
      */
     maxChars: z.coerce
       .number()
       .int()
-      .min(100)
+      .min(512)
       .max(32000)
       .optional()
       .default(4000),
@@ -52,13 +55,15 @@ export const loadContextToolSchema = z
   .object({
     userId: userIdSchema,
     /**
-     * Approximate character budget for the entire context block.
+     * Approximate character budget for the entire context block, including the
+     * fixed untrusted-content framing (notice + fence markers, ~210 chars, see
+     * #206). The 512 floor guarantees the framing plus meaningful content fit.
      * Default 6000 chars (~1500 tokens).
      */
     maxChars: z.coerce
       .number()
       .int()
-      .min(100)
+      .min(512)
       .max(32000)
       .optional()
       .default(6000),

@@ -89,7 +89,21 @@ function authenticatedScopes(extra: ToolCallExtra): string[] {
 /** The `admin` scope is a universal grant. */
 const ADMIN_SCOPE = 'admin';
 
-/** Whether a tool's input schema declares a `userId` we can safely inject. */
+/**
+ * Whether a tool's input schema declares a `userId` we can safely inject.
+ *
+ * SECURITY: identity-tool userId injection (the tenant boundary) depends on
+ * this returning true for every identity tool that carries a `userId`. It is
+ * intentionally introspective, and that is a latent trap — a schema built with
+ * `.transform()`/`.pipe()`, or `.refine()` on a Zod build where that yields a
+ * `ZodEffects` instead of a `ZodObject`, is NOT `instanceof z.ZodObject`, so
+ * injection would silently skip and a client-supplied `userId` would flow
+ * through unchecked. Today the `recall` tool uses `.strict().refine(...)` and
+ * Zod v4 keeps that a `ZodObject`, so it is covered. The guard test
+ * `injects userId into a .refine()-wrapped identity schema` in
+ * dispatch-auth.spec.ts pins that behaviour so a Zod downgrade or a new
+ * effects-wrapped tool fails CI here instead of leaking cross-tenant.
+ */
 function schemaAcceptsUserId(schema: z.ZodSchema): boolean {
   return (
     schema instanceof z.ZodObject && Object.prototype.hasOwnProperty.call(schema.shape, 'userId')

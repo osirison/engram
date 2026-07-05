@@ -63,6 +63,10 @@ import {
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { constantTimeStringEqual } from '../security/admin-token.util';
+import {
+  ClientFacingError,
+  toClientError,
+} from '../security/client-error.util';
 
 /**
  * MCP Memory Tools Controller
@@ -119,13 +123,13 @@ export class MemoryController {
       this.logger.warn(
         `admin_auth_denied operation=${operation} reason=missing_mcp_admin_token target=${target ?? 'n/a'}`,
       );
-      throw new Error('MCP_ADMIN_TOKEN is not configured');
+      throw new ClientFacingError('MCP_ADMIN_TOKEN is not configured');
     }
     if (!constantTimeStringEqual(adminToken, expected)) {
       this.logger.warn(
         `admin_auth_denied operation=${operation} reason=invalid_token target=${target ?? 'n/a'}`,
       );
-      throw new Error('Unauthorized maintenance operation');
+      throw new ClientFacingError('Unauthorized maintenance operation');
     }
     this.logger.log(
       `admin_auth_ok operation=${operation} target=${target ?? 'n/a'}`,
@@ -170,9 +174,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in create_memory tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to create memory: ${errorMessage}`);
+      throw toClientError(error, 'Failed to create memory');
     }
   }
 
@@ -218,9 +220,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in get_memory tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to get memory: ${errorMessage}`);
+      throw toClientError(error, 'Failed to get memory');
     }
   }
 
@@ -273,9 +273,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in list_memories tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to list memories: ${errorMessage}`);
+      throw toClientError(error, 'Failed to list memories');
     }
   }
 
@@ -319,9 +317,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in update_memory tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to update memory: ${errorMessage}`);
+      throw toClientError(error, 'Failed to update memory');
     }
   }
 
@@ -358,9 +354,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in delete_memory tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to delete memory: ${errorMessage}`);
+      throw toClientError(error, 'Failed to delete memory');
     }
   }
 
@@ -395,9 +389,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in promote_memory tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to promote memory: ${errorMessage}`);
+      throw toClientError(error, 'Failed to promote memory');
     }
   }
 
@@ -448,9 +440,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in recall tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to recall memories: ${errorMessage}`);
+      throw toClientError(error, 'Failed to recall memories');
     }
   }
 
@@ -497,9 +487,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in reindex_memories tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to reindex memories: ${errorMessage}`);
+      throw toClientError(error, 'Failed to reindex memories');
     }
   }
 
@@ -514,7 +502,7 @@ export class MemoryController {
       this.logger.debug('queue_reindex_memories tool called');
 
       if (!this.reindexQueue) {
-        throw new Error(
+        throw new ClientFacingError(
           'Reindex queue is not available in this deployment profile',
         );
       }
@@ -552,9 +540,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in queue_reindex_memories tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to queue reindex job: ${errorMessage}`);
+      throw toClientError(error, 'Failed to queue reindex job');
     }
   }
 
@@ -568,7 +554,7 @@ export class MemoryController {
     try {
       this.logger.debug('get_reindex_status tool called');
       if (!this.reindexQueue) {
-        throw new Error(
+        throw new ClientFacingError(
           'Reindex queue is not available in this deployment profile',
         );
       }
@@ -607,9 +593,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in get_reindex_status tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to get reindex status: ${errorMessage}`);
+      throw toClientError(error, 'Failed to get reindex status');
     }
   }
 
@@ -623,7 +607,7 @@ export class MemoryController {
     try {
       this.logger.debug('cancel_reindex_job tool called');
       if (!this.reindexQueue) {
-        throw new Error(
+        throw new ClientFacingError(
           'Reindex queue is not available in this deployment profile',
         );
       }
@@ -662,9 +646,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in cancel_reindex_job tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to cancel reindex job: ${errorMessage}`);
+      throw toClientError(error, 'Failed to cancel reindex job');
     }
   }
 
@@ -678,7 +660,7 @@ export class MemoryController {
     try {
       this.logger.debug('retry_reindex_job tool called');
       if (!this.reindexQueue) {
-        throw new Error(
+        throw new ClientFacingError(
           'Reindex queue is not available in this deployment profile',
         );
       }
@@ -717,9 +699,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in retry_reindex_job tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to retry reindex job: ${errorMessage}`);
+      throw toClientError(error, 'Failed to retry reindex job');
     }
   }
 
@@ -761,9 +741,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in consolidate_memories tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to run consolidation: ${errorMessage}`);
+      throw toClientError(error, 'Failed to run consolidation');
     }
   }
 
@@ -810,9 +788,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in remember tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to remember: ${errorMessage}`);
+      throw toClientError(error, 'Failed to remember');
     }
   }
 
@@ -857,9 +833,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in forget tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to forget: ${errorMessage}`);
+      throw toClientError(error, 'Failed to forget');
     }
   }
 
@@ -893,9 +867,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in reflect tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to reflect: ${errorMessage}`);
+      throw toClientError(error, 'Failed to reflect');
     }
   }
 
@@ -942,9 +914,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in compress_context tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to compress context: ${errorMessage}`);
+      throw toClientError(error, 'Failed to compress context');
     }
   }
 
@@ -991,9 +961,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in load_context tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to load context: ${errorMessage}`);
+      throw toClientError(error, 'Failed to load context');
     }
   }
 
@@ -1038,9 +1006,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in ingest_conversation tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to ingest conversation: ${errorMessage}`);
+      throw toClientError(error, 'Failed to ingest conversation');
     }
   }
 
@@ -1092,9 +1058,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in prompt_context tool:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`Failed to assemble prompt context: ${errorMessage}`);
+      throw toClientError(error, 'Failed to assemble prompt context');
     }
   }
 
