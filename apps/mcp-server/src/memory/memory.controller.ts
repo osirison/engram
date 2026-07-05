@@ -200,8 +200,18 @@ export class MemoryController {
       );
 
       if (!memory) {
+        // Machine-readable first item so programmatic callers (the web console —
+        // mcp-client.ts parses the first text item as JSON) stop string-matching
+        // prose; the human sentence stays as a second item (WP2 T2/D2).
         return {
           content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                found: false,
+                memoryId: validatedInput.memoryId,
+              }),
+            },
             {
               type: 'text',
               text: `Memory ${validatedInput.memoryId} not found`,
@@ -247,6 +257,9 @@ export class MemoryController {
           scope: validatedInput.scope,
           tags: validatedInput.tags,
           search: validatedInput.search,
+          // Honour the tier filter (previously dropped — WP2 T2/A29): a typed
+          // call queries exactly one tier, which is what stable pagination needs.
+          type: validatedInput.type,
         },
       );
 
@@ -342,8 +355,18 @@ export class MemoryController {
         validatedInput.scope,
       );
 
+      // Machine-readable first item so callers get the real outcome (the web
+      // backend previously reported {deleted:true} unconditionally — A10); the
+      // human sentence stays as a second item (WP2 T2/D2).
       return {
         content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              deleted,
+              memoryId: validatedInput.memoryId,
+            }),
+          },
           {
             type: 'text',
             text: deleted
@@ -1086,6 +1109,11 @@ export class MemoryController {
         name: 'get_memory',
         description: 'Retrieve memory by ID',
         inputSchema: getMemoryToolSchema,
+        // Delegable: an admin-scoped key (the operator console) may read any data
+        // owner's memory — incl. its live STM tier — by passing an explicit
+        // userId (#200). Without this, console STM reads silently target the
+        // key's own tenant (WP2 T2/A28).
+        delegable: true,
         handler: this.getMemory.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1094,6 +1122,9 @@ export class MemoryController {
         name: 'list_memories',
         description: 'List memories with pagination and filtering',
         inputSchema: listMemoriesToolSchema,
+        // Delegable: an admin-scoped key may enumerate any data owner's memories,
+        // incl. the short-term tier via type:'short-term' (#200, WP2 T2/A28).
+        delegable: true,
         handler: this.listMemories.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
@@ -1124,6 +1155,10 @@ export class MemoryController {
         name: 'promote_memory',
         description: 'Promote short-term memory to long-term storage',
         inputSchema: getMemoryToolSchema, // Reuse get_memory schema
+        // Delegable: an admin-scoped key (the operator console) may promote any
+        // data owner's short-term memory by passing an explicit userId
+        // (#200, WP2 T2/A28).
+        delegable: true,
         handler: this.promoteMemory.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,

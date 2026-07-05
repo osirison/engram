@@ -101,6 +101,45 @@ describe('memory router', () => {
       expect.objectContaining({ userId: 'qp', query: 'hello', limit: 20 })
     );
   });
+
+  it('delegates listStm with parsed defaults', async () => {
+    const listStmMemories = vi
+      .fn()
+      .mockResolvedValue({ items: [], totalCount: 0, nextCursor: null, hasMore: false });
+    const backend = makeBackend({ listStmMemories });
+    const api = caller(backend);
+    await api.memory.listStm({ userId: 'qp' });
+    expect(listStmMemories).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'qp', limit: 25 })
+    );
+  });
+
+  it('rejects unauthenticated listStm callers', async () => {
+    const api = caller(makeBackend(), false);
+    await expect(api.memory.listStm({ userId: 'qp' })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('maps a truthful {deleted:false} to NOT_FOUND (A10)', async () => {
+    const backend = makeBackend({
+      deleteMemory: vi.fn().mockResolvedValue({ deleted: false }),
+    });
+    const api = caller(backend);
+    await expect(api.memory.delete({ userId: 'qp', memoryId: 'gone' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('returns {deleted:true} on a successful delete', async () => {
+    const backend = makeBackend({
+      deleteMemory: vi.fn().mockResolvedValue({ deleted: true }),
+    });
+    const api = caller(backend);
+    await expect(api.memory.delete({ userId: 'qp', memoryId: 'm1' })).resolves.toEqual({
+      deleted: true,
+    });
+  });
 });
 
 describe('health + analytics + meta routers', () => {

@@ -62,7 +62,12 @@ type StmServiceContract = {
   ) => Promise<void>;
   list: (
     userId: string,
-    options: { limit: number; scope?: string },
+    options: {
+      limit: number;
+      cursor?: string;
+      scope?: string;
+      tags?: string[];
+    },
   ) => Promise<MemoryListResult>;
 };
 
@@ -182,6 +187,13 @@ export interface ListMemoryOptions {
   scope?: string;
   tags?: string[];
   search?: string;
+  /**
+   * Restrict the listing to a single tier. `'short-term'` queries Redis (STM)
+   * only, paging via its SCAN cursor; `'long-term'` queries Postgres (LTM) only.
+   * When omitted, both tiers are merged (legacy behaviour — do not build stable
+   * pagination on the merge; see `listMemories`).
+   */
+  type?: 'short-term' | 'long-term';
 }
 
 export interface RecallOptions {
@@ -411,6 +423,45 @@ export class MemoryService {
     );
 
     const limit = options.limit || 20;
+
+    // Single-tier listings (WP2 T2/D3): the STM+LTM merge below double-counts STM
+    // on every page (its cursor only advances LTM), so any caller that needs
+    // stable pagination asks for exactly one tier.
+    if (options.type === 'short-term') {
+      // STM only — page through Redis via its SCAN cursor.
+      const stm = await this.stm.list(userId, {
+        limit,
+        cursor: options.cursor,
+        scope: options.scope,
+        tags: options.tags,
+      });
+      return {
+        items: stm.items,
+        totalCount: stm.totalCount,
+        hasNextPage: stm.hasNextPage,
+        hasPreviousPage: stm.hasPreviousPage,
+        startCursor: stm.startCursor,
+        endCursor: stm.endCursor,
+      };
+    }
+    if (options.type === 'long-term') {
+      // LTM only — Postgres keyset pagination is stable under concurrent writes.
+      const ltm = await this.ltm.list(userId, {
+        limit,
+        cursor: options.cursor,
+        scope: options.scope,
+        tags: options.tags,
+        search: options.search,
+      });
+      return {
+        items: ltm.items,
+        totalCount: ltm.totalCount,
+        hasNextPage: ltm.hasNextPage,
+        hasPreviousPage: ltm.hasPreviousPage,
+        startCursor: ltm.startCursor,
+        endCursor: ltm.endCursor,
+      };
+    }
 
     // Get memories from both services
     // Note: STM list is not fully implemented yet, but we'll call it anyway

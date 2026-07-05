@@ -371,6 +371,180 @@ describe('PrismaEngramBackend writes', () => {
       expect.objectContaining({ memoryId: 'm1' })
     );
   });
+
+  it('reports the truthful {deleted:false} the tool returns (A10)', async () => {
+    // Previously deleteMemory returned {deleted:true} unconditionally; now it
+    // reflects the tool's structured result so an already-gone row is truthful.
+    const mcp = {
+      call: vi.fn().mockResolvedValue({ deleted: false, memoryId: 'm1' }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    await expect(backend.deleteMemory({ userId: 'qp', memoryId: 'm1' })).resolves.toEqual({
+      deleted: false,
+    });
+  });
+});
+
+describe('PrismaEngramBackend.listStmMemories', () => {
+  it('maps MCP short-term items (ttl/accessCount/expiresAt, hasEmbedding=false)', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        memories: [
+          {
+            id: 'stm1',
+            userId: 'qp',
+            scope: 'agent:a',
+            content: 'live note',
+            metadata: null,
+            tags: ['insight'],
+            type: 'short-term',
+            createdAt: '2026-07-01T00:00:00.000Z',
+            updatedAt: '2026-07-01T00:00:00.000Z',
+            expiresAt: '2026-07-02T00:00:00.000Z',
+            ttl: 3600,
+            accessCount: 5,
+          },
+        ],
+        pagination: { totalCount: 1, hasNextPage: true, endCursor: '42' },
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+
+    const result = await backend.listStmMemories({ userId: 'qp', limit: 25 });
+
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'list_memories',
+      expect.objectContaining({ userId: 'qp', type: 'short-term', limit: 25 })
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: 'stm1',
+      type: 'short-term',
+      ttlSeconds: 3600,
+      accessCount: 5,
+      hasEmbedding: false,
+      isInsight: true,
+      expiresAt: '2026-07-02T00:00:00.000Z',
+    });
+    expect(result.nextCursor).toBe('42');
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("treats a completed SCAN cursor ('0') as no next page", async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        memories: [],
+        pagination: { totalCount: 0, hasNextPage: false, endCursor: '0' },
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const result = await backend.listStmMemories({ userId: 'qp', limit: 25 });
+    expect(result.nextCursor).toBeNull();
+    expect(result.items).toEqual([]);
+  });
+
+  it('degrades with unavailableReason when no MCP server is configured', async () => {
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: null,
+      mcpApiKey: null,
+    });
+    const result = await backend.listStmMemories({ userId: 'qp', limit: 25 });
+    expect(result.items).toEqual([]);
+    expect(result.unavailableReason).toBeTruthy();
+  });
+});
+
+describe('PrismaEngramBackend.getMemory (STM fallback)', () => {
+  it('returns the Postgres row without hitting MCP when present', async () => {
+    const prisma = makePrisma();
+    (prisma.memory.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(makeRow());
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma,
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const memory = await backend.getMemory('qp', 'm1');
+    expect(memory?.id).toBe('m1');
+    expect(mcp.call as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it('falls back to MCP get_memory on a Postgres miss and maps the STM item', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        id: 'stm1',
+        userId: 'qp',
+        content: 'live',
+        tags: [],
+        type: 'short-term',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        updatedAt: '2026-07-01T00:00:00.000Z',
+        expiresAt: '2026-07-02T00:00:00.000Z',
+        ttl: 1200,
+        accessCount: 2,
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const memory = await backend.getMemory('qp', 'stm1');
+    expect(memory).toMatchObject({ id: 'stm1', ttlSeconds: 1200, accessCount: 2 });
+  });
+
+  it('returns null for the structured {found:false} sentinel', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({ found: false, memoryId: 'gone' }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    expect(await backend.getMemory('qp', 'gone')).toBeNull();
+  });
+
+  it('returns null for legacy prose (unparseable → string) not-found', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue('Memory gone not found'),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    expect(await backend.getMemory('qp', 'gone')).toBeNull();
+  });
+
+  it('stays Postgres-only (returns null, no throw) when MCP is unconfigured', async () => {
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: null,
+      mcpApiKey: null,
+    });
+    expect(await backend.getMemory('qp', 'missing')).toBeNull();
+  });
 });
 
 describe('PrismaEngramBackend.getHealth', () => {

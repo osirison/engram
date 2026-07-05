@@ -27,6 +27,10 @@ export interface MemoryDTO {
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;
+  /** Remaining TTL in seconds for short-term memories; null for long-term. */
+  ttlSeconds: number | null;
+  /** STM retrieval counter (bumped on direct lookups); null for long-term. */
+  accessCount: number | null;
   /** Relevance score in [0,1], present only on semantic-search results. */
   score?: number;
 }
@@ -57,6 +61,34 @@ export interface ListMemoriesResult {
   totalCount: number;
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+/**
+ * Short-term (Redis) listing. STM lives only in Redis, so this always goes
+ * through the MCP server (`list_memories` with `type: 'short-term'`) — never a
+ * direct DB read. The cursor is an opaque Redis SCAN cursor, not an offset.
+ */
+export interface ListStmMemoriesParams {
+  userId: string;
+  scope?: string | null;
+  tags?: string[];
+  limit: number;
+  /** Opaque Redis SCAN cursor from a previous page; null/absent for the first. */
+  cursor?: string | null;
+}
+
+export interface ListStmMemoriesResult {
+  items: MemoryDTO[];
+  /** Approximate — STM counts are a live snapshot, not a stable ledger. */
+  totalCount: number;
+  /** Next Redis SCAN cursor; null when the scan is complete. */
+  nextCursor: string | null;
+  hasMore: boolean;
+  /**
+   * Set when the STM view cannot be served (no MCP server configured). The UI
+   * degrades to an empty state with this reason instead of throwing.
+   */
+  unavailableReason?: string;
 }
 
 export interface SearchMemoriesParams {
@@ -208,6 +240,7 @@ export interface EngramBackend {
   capabilities(): Promise<BackendCapabilities>;
 
   listMemories(params: ListMemoriesParams): Promise<ListMemoriesResult>;
+  listStmMemories(params: ListStmMemoriesParams): Promise<ListStmMemoriesResult>;
   getMemory(userId: string, memoryId: string): Promise<MemoryDTO | null>;
   searchMemories(params: SearchMemoriesParams): Promise<SearchMemoriesResult>;
   updateMemory(params: UpdateMemoryParams): Promise<MemoryDTO>;

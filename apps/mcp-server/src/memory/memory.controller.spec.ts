@@ -582,12 +582,17 @@ describe('MemoryController', () => {
       );
     });
 
-    it('returns a not-found message when memory is absent', async () => {
+    it('returns a structured not-found sentinel (plus prose) when memory is absent', async () => {
       mockMemoryService.getMemory.mockResolvedValue(null);
 
       const response = await controller.getMemory({ userId, memoryId });
 
-      expect(response.content[0]?.text).toContain('not found');
+      // First item is machine-readable JSON (WP2 T2/D2), prose stays second.
+      expect(JSON.parse(response.content[0]?.text ?? '{}')).toEqual({
+        found: false,
+        memoryId,
+      });
+      expect(response.content[1]?.text).toContain('not found');
     });
 
     it('rejects invalid userId', async () => {
@@ -707,12 +712,17 @@ describe('MemoryController', () => {
     const userId = 'clm0000000000000000000000';
     const memoryId = 'clm1111111111111111111111';
 
-    it('returns a success message when memory is deleted', async () => {
+    it('returns a structured deleted result (plus prose) when memory is deleted', async () => {
       mockMemoryService.deleteMemory.mockResolvedValue(true);
 
       const response = await controller.deleteMemory({ userId, memoryId });
 
-      expect(response.content[0]?.text).toContain('Successfully deleted');
+      // First item is machine-readable JSON (WP2 T2/D2/A10), prose stays second.
+      expect(JSON.parse(response.content[0]?.text ?? '{}')).toEqual({
+        deleted: true,
+        memoryId,
+      });
+      expect(response.content[1]?.text).toContain('Successfully deleted');
       expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith(
         userId,
         memoryId,
@@ -720,12 +730,16 @@ describe('MemoryController', () => {
       );
     });
 
-    it('returns a not-found message when nothing was deleted', async () => {
+    it('returns deleted:false (plus prose) when nothing was deleted', async () => {
       mockMemoryService.deleteMemory.mockResolvedValue(false);
 
       const response = await controller.deleteMemory({ userId, memoryId });
 
-      expect(response.content[0]?.text).toContain('not found');
+      expect(JSON.parse(response.content[0]?.text ?? '{}')).toEqual({
+        deleted: false,
+        memoryId,
+      });
+      expect(response.content[1]?.text).toContain('not found');
     });
 
     it('rejects invalid userId', async () => {

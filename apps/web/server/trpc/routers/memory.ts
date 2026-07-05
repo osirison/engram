@@ -21,6 +21,17 @@ const listInput = z.object({
   cursor: z.string().nullish(),
 });
 
+const listStmInput = z
+  .object({
+    userId,
+    tags: z.array(z.string()).max(50).optional(),
+    scope: z.string().max(256).nullish(),
+    limit: z.number().int().min(1).max(100).default(25),
+    // Opaque Redis SCAN cursor from a previous page.
+    cursor: z.string().max(256).nullish(),
+  })
+  .strict();
+
 const searchInput = z.object({
   userId,
   query: z.string().min(1, 'Enter a search query.').max(512),
@@ -63,6 +74,17 @@ export const memoryRouter = router({
     })
   ),
 
+  // Live short-term (Redis) tier — served through the MCP server, never the DB.
+  listStm: protectedProcedure.input(listStmInput).query(({ ctx, input }) =>
+    ctx.backend.listStmMemories({
+      userId: input.userId,
+      tags: input.tags,
+      scope: input.scope ?? undefined,
+      limit: input.limit,
+      cursor: input.cursor ?? undefined,
+    })
+  ),
+
   get: protectedProcedure.input(z.object({ userId, memoryId })).query(async ({ ctx, input }) => {
     const memory = await ctx.backend.getMemory(input.userId, input.memoryId);
     if (!memory) {
@@ -93,11 +115,17 @@ export const memoryRouter = router({
     })
   ),
 
-  delete: protectedProcedure.input(deleteInput).mutation(({ ctx, input }) =>
-    ctx.backend.deleteMemory({
+  delete: protectedProcedure.input(deleteInput).mutation(async ({ ctx, input }) => {
+    const result = await ctx.backend.deleteMemory({
       userId: input.userId,
       memoryId: input.memoryId,
       scope: input.scope ?? undefined,
-    })
-  ),
+    });
+    // A truthful {deleted:false} (WP2 T2/A10) means the row was already gone —
+    // surface it as NOT_FOUND rather than a false success.
+    if (!result.deleted) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Memory not found.' });
+    }
+    return result;
+  }),
 });

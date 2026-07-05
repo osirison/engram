@@ -10,6 +10,8 @@ import {
   type HealthReport,
   type ListMemoriesParams,
   type ListMemoriesResult,
+  type ListStmMemoriesParams,
+  type ListStmMemoriesResult,
   type MemoryDTO,
   type MemoryOwner,
   type McpDelegationMode,
@@ -80,6 +82,59 @@ function mapRow(row: MemoryRow, hasEmbedding: boolean): MemoryDTO {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+    // TTL / access-count are STM-only (Redis); LTM rows never carry them.
+    ttlSeconds: null,
+    accessCount: null,
+  };
+}
+
+/**
+ * Shape of a memory as returned by the MCP `list_memories` / `get_memory` tools.
+ * Short-term items additionally carry `ttl`/`accessCount` and always an
+ * `expiresAt`; long-term items omit them. Dates arrive as ISO strings.
+ */
+type McpMemoryJson = {
+  id: string;
+  userId: string;
+  organizationId?: string | null;
+  scope?: string | null;
+  content: string;
+  metadata?: Prisma.JsonValue;
+  tags?: string[];
+  type?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  expiresAt?: string | null;
+  ttl?: number;
+  accessCount?: number;
+};
+
+/**
+ * Map an MCP-returned memory (used for the short-term tier, which has no Postgres
+ * row) to a `MemoryDTO`. STM is never vector-indexed, so `hasEmbedding` is false.
+ */
+function mapMcpMemory(m: McpMemoryJson): MemoryDTO {
+  const metadata = asRecord(m.metadata ?? null);
+  const importance =
+    metadata && typeof metadata.importance === 'number' ? metadata.importance : null;
+  const tags = Array.isArray(m.tags) ? m.tags : [];
+  return {
+    id: m.id,
+    userId: m.userId,
+    organizationId: m.organizationId ?? null,
+    scope: m.scope ?? null,
+    content: m.content,
+    type: (m.type === 'long-term' ? 'long-term' : 'short-term') as MemoryType,
+    tags,
+    metadata,
+    importance,
+    hasEmbedding: false,
+    isInsight: tags.includes('insight'),
+    createdAt: m.createdAt ?? new Date(0).toISOString(),
+    updatedAt: m.updatedAt ?? m.createdAt ?? new Date(0).toISOString(),
+    expiresAt: m.expiresAt ?? null,
+    ttlSeconds: typeof m.ttl === 'number' ? m.ttl : null,
+    accessCount: typeof m.accessCount === 'number' ? m.accessCount : null,
   };
 }
 
@@ -286,14 +341,76 @@ export class PrismaEngramBackend implements EngramBackend {
     };
   }
 
+  /**
+   * List the live short-term (Redis) tier via the MCP server. STM has no Postgres
+   * row, so this never touches the DB. Degrades to an empty result with
+   * `unavailableReason` when no MCP server is configured (WP2 T2/D1).
+   */
+  async listStmMemories(params: ListStmMemoriesParams): Promise<ListStmMemoriesResult> {
+    if (!this.mcp) {
+      return {
+        items: [],
+        totalCount: 0,
+        nextCursor: null,
+        hasMore: false,
+        unavailableReason:
+          'Short-term memories are stored in Redis and require a configured ENGRAM server (ENGRAM_MCP_URL).',
+      };
+    }
+    const limit = Math.min(Math.max(params.limit, 1), 100);
+    const result = await this.mcp.call<{
+      memories?: McpMemoryJson[];
+      pagination?: { totalCount?: number; hasNextPage?: boolean; endCursor?: string };
+    }>('list_memories', {
+      userId: params.userId,
+      type: 'short-term',
+      limit,
+      ...(params.cursor ? { cursor: params.cursor } : {}),
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.tags && params.tags.length ? { tags: params.tags } : {}),
+    });
+
+    const items = (result.memories ?? []).map(mapMcpMemory);
+    // The SCAN cursor is complete when it returns to '0'.
+    const endCursor = result.pagination?.endCursor;
+    const nextCursor = endCursor && endCursor !== '0' ? endCursor : null;
+    return {
+      items,
+      totalCount: result.pagination?.totalCount ?? items.length,
+      nextCursor,
+      hasMore: result.pagination?.hasNextPage ?? false,
+    };
+  }
+
   async getMemory(userId: string, memoryId: string): Promise<MemoryDTO | null> {
     const row = await this.prisma.memory.findFirst({
       where: { id: memoryId, userId },
       select: memorySelect,
     });
-    if (!row) return null;
-    const withEmbedding = await this.embeddingFlags([row.id]);
-    return mapRow(row as MemoryRow, withEmbedding.has(row.id));
+    if (row) {
+      const withEmbedding = await this.embeddingFlags([row.id]);
+      return mapRow(row as MemoryRow, withEmbedding.has(row.id));
+    }
+    // Postgres miss: the id may be a live short-term (Redis) memory, which has no
+    // DB row. Fall back to the MCP server, which checks STM then LTM (WP2 T2/D1).
+    if (!this.mcp) return null;
+    let result: (McpMemoryJson & { found?: boolean }) | string | undefined;
+    try {
+      result = await this.mcp.call<McpMemoryJson & { found?: boolean }>('get_memory', {
+        userId,
+        memoryId,
+      });
+    } catch {
+      // Server unreachable — a lookup returns null rather than throwing, matching
+      // the Postgres-only contract. Reachability is surfaced via capabilities().
+      return null;
+    }
+    // Structured not-found sentinel (WP2 T2/D2), or legacy prose (parsed to a
+    // string), or an empty payload — all mean "not found".
+    if (!result || typeof result !== 'object' || result.found === false || !result.id) {
+      return null;
+    }
+    return mapMcpMemory(result);
   }
 
   // ---------------------------------------------------------------------------
@@ -387,12 +504,20 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
-    await this.mcp.call('delete_memory', {
+    // Parse the structured result (WP2 T2/D2/A10): the tool now reports the true
+    // outcome as JSON, so an already-gone row no longer looks like a success.
+    // Legacy servers returned prose — a missing/unparseable `deleted` defaults to
+    // the prior optimistic `true` so this stays backward-compatible.
+    const result = await this.mcp.call<{ deleted?: boolean } | string>('delete_memory', {
       userId: params.userId,
       memoryId: params.memoryId,
       ...(params.scope ? { scope: params.scope } : {}),
     });
-    return { deleted: true };
+    const deleted =
+      result && typeof result === 'object' && typeof result.deleted === 'boolean'
+        ? result.deleted
+        : true;
+    return { deleted };
   }
 
   // ---------------------------------------------------------------------------
