@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
+import { decodeCursor, encodeCursor, keysetWhere } from './cursor';
 import { McpToolClient } from './mcp-client';
 import {
   BackendError,
@@ -311,32 +312,44 @@ export class PrismaEngramBackend implements EngramBackend {
   }
 
   async listMemories(params: ListMemoriesParams): Promise<ListMemoriesResult> {
-    const where = this.buildWhere(params);
+    const baseWhere = this.buildWhere(params);
     const limit = Math.min(Math.max(params.limit, 1), 100);
-    const offset = params.cursor ? Math.max(parseInt(params.cursor, 10) || 0, 0) : 0;
     const sortBy = params.sortBy ?? 'createdAt';
     const sortOrder = params.sortOrder ?? 'desc';
+
+    // Keyset (seek) pagination (WP2 T1/D8): AND the direction-aware cursor
+    // predicate into the filter and order by (sortField, id). A malformed or
+    // legacy numeric offset cursor decodes to null → first page.
+    const cursor = decodeCursor(params.cursor);
+    const where: Prisma.MemoryWhereInput = cursor
+      ? { AND: [baseWhere, keysetWhere(sortBy, sortOrder, cursor)] }
+      : baseWhere;
 
     const [rows, totalCount] = await Promise.all([
       this.prisma.memory.findMany({
         where,
         select: memorySelect,
-        orderBy: { [sortBy]: sortOrder },
-        skip: offset,
-        take: limit,
+        orderBy: [{ [sortBy]: sortOrder }, { id: sortOrder }],
+        // Over-fetch by one to detect a further page without a second query.
+        take: limit + 1,
       }),
-      this.prisma.memory.count({ where }),
+      // totalCount is the full result set (base filter only) — a separate count.
+      this.prisma.memory.count({ where: baseWhere }),
     ]);
 
-    const withEmbedding = await this.embeddingFlags(rows.map((r) => r.id));
-    const items = rows.map((row) => mapRow(row as MemoryRow, withEmbedding.has(row.id)));
-    const nextOffset = offset + items.length;
-    const hasMore = nextOffset < totalCount;
+    const hasMore = rows.length > limit;
+    const pageRows = (hasMore ? rows.slice(0, limit) : rows) as MemoryRow[];
+    const withEmbedding = await this.embeddingFlags(pageRows.map((r) => r.id));
+    const items = pageRows.map((row) => mapRow(row, withEmbedding.has(row.id)));
+
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCursor({ v: last[sortBy].getTime(), id: last.id }) : null;
 
     return {
       items,
       totalCount,
-      nextCursor: hasMore ? String(nextOffset) : null,
+      nextCursor,
       hasMore,
     };
   }
