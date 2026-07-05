@@ -264,10 +264,17 @@ export class MemoryStmService {
     const scope = options.scope;
     const pattern = this.keyBuilder.buildUserPattern(userId, options.organizationId);
 
-    // Use Redis SCAN for memory-efficient iteration
+    // Use Redis SCAN for memory-efficient iteration. `count` is only a hint to
+    // Redis (a batch may return more or fewer keys), and the returned cursor is
+    // batch-granular: it can only resume at a batch boundary, NOT mid-batch. So
+    // we MUST process every key this batch returned — capping collection at
+    // `limit` and advancing the cursor past the un-collected keys would silently
+    // drop them from every subsequent page (WP2 T2 — caught by a live-Redis test).
+    // Pages are therefore approximately `limit` in size, which the SCAN-based STM
+    // view accepts (a caller keeps paging until the cursor returns to '0').
     const scanResult = await this.redisService.scan(cursor, {
       match: pattern,
-      count: limit * 2, // Get extra keys to account for filtering
+      count: limit,
     });
 
     const keys = scanResult.keys;
@@ -299,7 +306,6 @@ export class MemoryStmService {
               if (scope !== undefined && memory.scope !== scope) continue;
 
               memories.push(memory);
-              if (memories.length >= limit) break;
             } catch {
               this.logger.warn(`Failed to parse STM memory from key: ${keys[i]}`);
             }
