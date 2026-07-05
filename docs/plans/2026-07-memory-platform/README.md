@@ -15,15 +15,15 @@ transcript. Read `CLAUDE.md` and `AGENTS.md` at repo root before executing any W
 
 ## Status
 
-| WP  | Deliverable                                       | State   |
-| --- | ------------------------------------------------- | ------- |
-| WP1 | `WP1-marketing-site-validation/REPORT.md`         | pending |
-| WP2 | `WP2-memory-ui/PLAN.md`                           | pending |
-| WP3 | `WP3-markdown-export/PLAN.md`                     | pending |
-| WP4 | `WP4-agent-memory-import/PLAN.md`                 | pending |
-| WP5 | `WP5-primary-memory-integration/PLAN.md`          | pending |
-| WP6 | `WP6-developer-docs/PLAN.md`                      | pending |
-| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | pending |
+| WP  | Deliverable                                       | State                                   |
+| --- | ------------------------------------------------- | --------------------------------------- |
+| WP1 | `WP1-marketing-site-validation/REPORT.md`         | done — 26 findings (3 critical), R1–R13 |
+| WP2 | `WP2-memory-ui/PLAN.md`                           | done — SHARED-2 + T1–T8                 |
+| WP3 | `WP3-markdown-export/PLAN.md`                     | done — SHARED-1 + T1–T9                 |
+| WP4 | `WP4-agent-memory-import/PLAN.md`                 | pending                                 |
+| WP5 | `WP5-primary-memory-integration/PLAN.md`          | pending                                 |
+| WP6 | `WP6-developer-docs/PLAN.md`                      | pending                                 |
+| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A15 (agents' finds)  |
 
 ## Dependency graph (for executors)
 
@@ -34,6 +34,17 @@ transcript. Read `CLAUDE.md` and `AGENTS.md` at repo root before executing any W
 - WP5 depends on WP4's importer/provenance model existing (concepts, not code) — its
   plan can be executed in parallel, but ship WP4 importers first.
 - WP6 is standalone; it documents whatever exists at execution time.
+
+## Shared prerequisites registry (cross-WP schema tasks)
+
+Multiple WPs need new Prisma models. To avoid duplicate/conflicting migrations,
+schema tasks are numbered globally here; apply migrations serially (one PR each),
+everything else parallelizes.
+
+- **SHARED-1 — `MemoryLink` schema + migration**: typed memory→memory edges.
+  Defined in `WP3-markdown-export/PLAN.md` §5; consumed by WP3 export and WP4 import.
+- **SHARED-2 — `MemoryAuditLog` table + migration**: audit trail for destructive
+  ops. Defined in `WP2-memory-ui/PLAN.md` (Schema changes section).
 
 ## Conventions every executor must follow
 

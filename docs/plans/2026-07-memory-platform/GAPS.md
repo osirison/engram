@@ -100,8 +100,54 @@ default?). Lands in: WP2/WP3 design decisions — both plans must answer explici
 
 ## Additional gaps surfaced by WP agents
 
-<!-- RESUME NOTE: if this section is empty and the Status table in README.md shows
-completed WPs, read each WP agent's "gaps" bullets from... they are lost with the
-session; instead re-derive by skimming each WP deliverable's Risks section. -->
+<!-- RESUME NOTE: gaps from completed WPs are merged below as they land. For any WP
+marked done in README.md but missing here, re-derive by skimming that WP
+deliverable's Risks section. -->
 
-(to be merged as WP agents report)
+### From WP1 (marketing-site validation)
+
+- **A1** — `CNAME` exists only in the deployed `dist/`, not in
+  `apps/marketing-site/public/` — any CI Pages deploy from source silently drops the
+  `engram.events` custom domain.
+- **A2** — Doc/code drift in tool counts: root README says "19-tool MCP surface";
+  `memory.controller.ts:74-96` implements 20 (21 with `ping`). WP6's auto-generated
+  reference is the durable fix.
+- **A3** — `CLAUDE.md:16` pins `pnpm@11.4.0` vs `package.json` / README `pnpm@11.5.0`.
+- **A4** — Deployed marketing bundle differs from a fresh build of current source
+  (177 bytes) — no provenance link between deployed artifact and commit.
+- **A5** — Dev tooling ships to production visitors: TweaksPanel + `window.__haze`
+  debug handle + a `postMessage` to `window.parent` on every page load.
+
+### From WP2 (memory UI)
+
+- **A6** — STM is entirely invisible to the UI today: STM lives only in Redis with no
+  Postgres row, so the existing `short-term` type filter can never return data.
+  Surfacing it needs a new MCP read seam, not a tweak.
+- **A7** — Audit logging must live in `memory-ltm`/`apps/mcp-server`, not `apps/web`:
+  only the MCP server sees agent-originated deletes, and the web DB role is intended
+  read-only (#206). UI-level audit would miss every non-console destructive op.
+- **A8** — STM edit silently restarts the TTL clock
+  (`packages/memory-stm/src/memory-stm.service.ts:166-181`): editing a nearly-expired
+  note makes it near-permanent. Concrete instance of G12.
+- **A9** — Editing during an embeddings outage leaves the vector pointing at old
+  content with no signal; recall stays stale until manual reindex.
+- **A10** — `deleteMemory` returns `{deleted:true}` unconditionally
+  (`apps/web/server/backend/prisma-backend.ts:395`) — false success on already-gone
+  rows; cross-tenant deletes under a `tenant-limited` key fail as confusing
+  not-found instead of a clear authz block.
+
+### From WP3 (markdown export)
+
+- **A11** — Derived-vs-durable edge classification is the crux of export/import:
+  duplicate/contradiction matches are regenerable, insight edges are not. Without
+  SHARED-1's unique constraint, WP4 re-import silently doubles derived edges and the
+  round-trip test cannot pass by construction.
+- **A12** — Filtered exports need an explicit dangling-edge policy (WP3 chose
+  plain-text rendering) or Obsidian spawns phantom notes.
+- **A13** — Returning exports as base64 zip through the MCP text channel blows the
+  token budget at scale — WP3 chose path-reference mode instead.
+- **A14** — Export inherits the G1 auth hole: with caller-trusted `userId`, an
+  unauthenticated MCP export can read another tenant's memories wholesale.
+- **A15** — `packages/memory-interchange` must stay Prisma/NestJS-free so importers
+  (WP4) can depend on it without pulling in the server; metadata→edge mapping belongs
+  in the app layer.
