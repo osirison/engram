@@ -146,9 +146,9 @@ jobs:
       contents: write # create the release + generated notes
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      # No checkout: `gh release` talks to the GitHub API and reads
+      # GITHUB_REPOSITORY; it needs no working tree. `--verify-tag` checks
+      # the tag server-side.
       - name: Create release with generated notes
         env:
           GH_TOKEN: ${{ github.token }}

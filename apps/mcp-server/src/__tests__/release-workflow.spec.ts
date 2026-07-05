@@ -60,9 +60,14 @@ const workflowSchema = z.object({
   jobs: z.record(z.string(), jobSchema),
 });
 
-const tagTriggerSchema = z.object({
-  push: z.object({ tags: z.array(z.string()) }).strict(),
-});
+// `.strict()` at both levels: the release must trigger on *only* a tag
+// push (no `workflow_dispatch`, `pull_request`, etc.) carrying *only* a
+// `tags` filter — any extra key fails the parse.
+const tagTriggerSchema = z
+  .object({
+    push: z.object({ tags: z.array(z.string()) }).strict(),
+  })
+  .strict();
 
 const composeSchema = z.object({
   services: z.record(
@@ -123,7 +128,9 @@ describe('release workflow (.github/workflows/release.yml)', () => {
 
   it('triggers only on v* tag pushes (no branch or PR triggers)', () => {
     const trigger = tagTriggerSchema.parse(workflow.on);
-    expect(trigger.push.tags).toContain('v*');
+    // Pin the exact filter: adding another pattern (e.g. `release/*`) must
+    // fail this, not silently pass as `toContain` would.
+    expect(trigger.push.tags).toEqual(['v*']);
   });
 
   it('keeps workflow-level permissions read-only', () => {
