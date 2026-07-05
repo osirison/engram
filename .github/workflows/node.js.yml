@@ -60,6 +60,8 @@ jobs:
     # pull requests.
     needs: verify
     if: github.event_name != 'pull_request'
+    env:
+      MARKETING_SITE_DOMAIN: engram.events
     permissions:
       contents: read
       pages: write
@@ -72,10 +74,34 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
+      # Fail fast before configure/deploy: if the repository's Pages custom
+      # domain has drifted from the expected value, block the deploy instead of
+      # shipping a site that would serve an untrusted certificate.
+      - name: Verify Pages custom domain binding
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const expectedCname = process.env.MARKETING_SITE_DOMAIN;
+            const { data } = await github.rest.repos.getPages({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            core.info(`Pages html_url: ${data.html_url}`);
+            core.info(`Pages custom domain: ${data.cname ?? '(none)'}`);
+            core.info(`Pages https_enforced: ${data.https_enforced}`);
+
+            if (data.cname !== expectedCname) {
+              const runbookUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${context.sha}/docs/MARKETING_SITE_DOMAIN.md`;
+              core.setFailed(
+                `Expected Pages custom domain '${expectedCname}', found '${data.cname ?? '(none)'}'. See ${runbookUrl} for DNS/TLS setup instructions.`,
+              );
+            }
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
-          cname: engram.events
+          cname: ${{ env.MARKETING_SITE_DOMAIN }}
 
       - name: Deploy to GitHub Pages
         id: deployment
