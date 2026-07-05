@@ -135,7 +135,7 @@ export class MemoryAuditService {
     organizationId: string | null;
   } | null> {
     const row = await this.prisma.memoryAudit.findFirst({
-      where: { userId, memoryId, action: 'delete' },
+      where: { userId, memoryId, action: { in: ['delete', 'bulk-delete'] } },
       orderBy: { createdAt: 'desc' },
       select: { before: true, scope: true, organizationId: true },
     });

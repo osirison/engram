@@ -428,6 +428,32 @@ describe('PrismaEngramBackend writes', () => {
     );
   });
 
+  it('bulk-deletes through one MCP call and parses the per-item report (WP2 T6)', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        deleted: ['a', 'b'],
+        failed: [{ id: 'c', reason: 'not-found' }],
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const result = await backend.bulkDeleteMemories({
+      userId: 'qp',
+      memoryIds: ['a', 'b', 'c'],
+      actorLabel: 'op@example.com',
+    });
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'bulk_delete_memories',
+      expect.objectContaining({ userId: 'qp', memoryIds: ['a', 'b', 'c'] })
+    );
+    expect(result.deleted).toEqual(['a', 'b']);
+    expect(result.failed).toEqual([{ id: 'c', reason: 'not-found' }]);
+  });
+
   it('reads audit history from Postgres and maps rows (WP2 T5)', async () => {
     const prisma = makePrisma();
     (prisma.memoryAudit.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([

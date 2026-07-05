@@ -39,6 +39,10 @@ import {
   MutateByIdToolInput,
 } from './dto/mutate-by-id.dto';
 import {
+  bulkDeleteToolSchema,
+  BulkDeleteToolInput,
+} from './dto/bulk-delete.dto';
+import {
   restoreMemoryToolSchema,
   RestoreMemoryToolInput,
   getMemoryAuditToolSchema,
@@ -89,12 +93,13 @@ import {
 /**
  * MCP Memory Tools Controller
  *
- * Implements 23 MCP tools for memory management:
+ * Implements 24 MCP tools for memory management:
  * 1.  create_memory          - Create short-term or long-term memory
  * 2.  get_memory             - Retrieve memory by ID
  * 3.  list_memories          - List memories with pagination
  * 4.  update_memory          - Update existing memory
  * 5.  delete_memory          - Delete memory by ID
+ * 5a. bulk_delete_memories   - Delete up to 100 memories with a per-item report (WP2 T6)
  * 6.  promote_memory         - Convert STM memory to LTM
  * 6a. reembed_memory         - Regenerate a long-term memory's vector (repair drift)
  * 6b. restore_memory         - Recreate a deleted memory from its audit snapshot
@@ -503,6 +508,79 @@ export class MemoryController {
     } catch (error) {
       this.logger.error('Error in delete_memory tool:', error);
       throw toClientError(error, 'Failed to delete memory');
+    }
+  }
+
+  /**
+   * MCP Tool: bulk_delete_memories
+   * Delete up to 100 memories in one call with a per-item report (WP2 T6/D9).
+   */
+  async bulkDeleteMemories(
+    input: unknown,
+    context?: ToolCallContext,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('bulk_delete_memories tool called');
+
+      const validatedInput: BulkDeleteToolInput =
+        bulkDeleteToolSchema.parse(input);
+
+      // Snapshot every target BEFORE deleting so each row remains restorable
+      // (WP2 T5/T6). Snapshotting is best-effort; a missing pre-image just means
+      // that id can't be restored later.
+      const snapshots = new Map<
+        string,
+        Awaited<ReturnType<MemoryController['snapshotOf']>>
+      >();
+      for (const id of validatedInput.memoryIds) {
+        snapshots.set(
+          id,
+          await this.snapshotOf(
+            validatedInput.userId,
+            id,
+            validatedInput.scope,
+          ),
+        );
+      }
+
+      const result = await this.memoryService.bulkDeleteMemories(
+        validatedInput.userId,
+        validatedInput.memoryIds,
+        validatedInput.scope,
+      );
+
+      // Audit each successfully deleted id with its pre-image (WP2 T5).
+      for (const id of result.deleted) {
+        const pre = snapshots.get(id) ?? null;
+        await this.audit?.record({
+          memoryId: id,
+          userId: validatedInput.userId,
+          organizationId: pre?.organizationId,
+          scope: validatedInput.scope ?? pre?.snapshot.scope ?? null,
+          action: 'bulk-delete',
+          context,
+          actorLabel: validatedInput.actorLabel,
+          before: pre?.snapshot ?? null,
+          after: { deleted: true },
+        });
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              deleted: result.deleted,
+              failed: result.failed,
+              deletedCount: result.deleted.length,
+              failedCount: result.failed.length,
+            }),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in bulk_delete_memories tool:', error);
+      throw toClientError(error, 'Failed to bulk-delete memories');
     }
   }
 
@@ -1453,7 +1531,8 @@ export class MemoryController {
       {
         name: 'delete_memory',
         description: 'Delete memory by ID',
-        inputSchema: getMemoryToolSchema, // Reuse get_memory schema
+        // get_memory locator + optional actorLabel (WP2 T5 audit).
+        inputSchema: mutateByIdToolSchema,
         // Delegable: an admin-scoped key (the operator console) may delete any
         // data owner's memory by passing an explicit userId (#200).
         delegable: true,
@@ -1462,9 +1541,21 @@ export class MemoryController {
         ) => Promise<unknown>,
       },
       {
+        name: 'bulk_delete_memories',
+        description:
+          'Delete up to 100 memories in a single call, returning a per-item report of deleted ids and failures. STM/LTM routing and scope isolation are inherited per id.',
+        inputSchema: bulkDeleteToolSchema,
+        // Delegable: an admin-scoped key may bulk-delete any data owner's memories.
+        delegable: true,
+        handler: this.bulkDeleteMemories.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
         name: 'promote_memory',
         description: 'Promote short-term memory to long-term storage',
-        inputSchema: getMemoryToolSchema, // Reuse get_memory schema
+        // get_memory locator + optional actorLabel (WP2 T5 audit).
+        inputSchema: mutateByIdToolSchema,
         // Delegable: an admin-scoped key (the operator console) may promote any
         // data owner's short-term memory by passing an explicit userId
         // (#200, WP2 T2/A28).
@@ -1658,6 +1749,7 @@ export class MemoryController {
       remember: 'memories:write',
       ingest_conversation: 'memories:write',
       delete_memory: 'memories:delete',
+      bulk_delete_memories: 'memories:delete',
       forget: 'memories:delete',
       get_memory: 'memories:read',
       list_memories: 'memories:read',

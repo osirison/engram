@@ -648,6 +648,70 @@ describe('MemoryService', () => {
     });
   });
 
+  describe('bulkDeleteMemories (WP2 T6)', () => {
+    it('reports per-item results across an STM+LTM mix with partial failures', async () => {
+      // stm-1 lives in STM; ltm-1 in LTM; gone-1 in neither (not-found).
+      stmService.delete.mockImplementation((_u: string, id: string) =>
+        id === 'stm-1'
+          ? Promise.resolve() // deleted from STM
+          : Promise.reject(new StmMemoryNotFoundError(id)),
+      );
+      ltmService.delete.mockImplementation((_u: string, id: string) =>
+        Promise.resolve(id === 'ltm-1'),
+      );
+
+      const result = await service.bulkDeleteMemories('user-1', [
+        'stm-1',
+        'ltm-1',
+        'gone-1',
+      ]);
+
+      expect(result.deleted.sort()).toEqual(['ltm-1', 'stm-1']);
+      expect(result.failed).toEqual([{ id: 'gone-1', reason: 'not-found' }]);
+    });
+
+    it('still counts a row as deleted when only vector cleanup failed (Postgres is truth)', async () => {
+      // deleteMemory resolves true even if the vector-store removal failed — the
+      // Postgres row is gone. Model that by returning true from ltm.delete.
+      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError('x'));
+      ltmService.delete.mockResolvedValue(true);
+
+      const result = await service.bulkDeleteMemories('user-1', ['a', 'b']);
+      expect(result.deleted.sort()).toEqual(['a', 'b']);
+      expect(result.failed).toEqual([]);
+    });
+
+    it('does not abort the batch when one id throws a hard error', async () => {
+      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError('x'));
+      ltmService.delete.mockImplementation((_u: string, id: string) =>
+        id === 'boom'
+          ? Promise.reject(new Error('db exploded'))
+          : Promise.resolve(true),
+      );
+
+      const result = await service.bulkDeleteMemories('user-1', [
+        'ok-1',
+        'boom',
+        'ok-2',
+      ]);
+      expect(result.deleted.sort()).toEqual(['ok-1', 'ok-2']);
+      expect(result.failed).toEqual([{ id: 'boom', reason: 'db exploded' }]);
+    });
+
+    it('de-duplicates repeated ids', async () => {
+      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError('x'));
+      ltmService.delete.mockResolvedValue(true);
+
+      const result = await service.bulkDeleteMemories('user-1', [
+        'a',
+        'a',
+        'a',
+      ]);
+      expect(result.deleted).toEqual(['a']);
+      expect(ltmService.delete).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('promoteMemory', () => {
     it('should promote memory from STM to LTM', async () => {
       ltmService.promote.mockResolvedValue(mockLtmMemory);

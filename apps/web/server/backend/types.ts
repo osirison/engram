@@ -144,6 +144,21 @@ export interface DeleteMemoryParams {
   actorLabel?: string;
 }
 
+export interface BulkDeleteMemoriesParams {
+  userId: string;
+  memoryIds: string[];
+  scope?: string | null;
+  /** Audit display label, injected server-side (WP2 T5). */
+  actorLabel?: string;
+}
+
+export interface BulkDeleteResult {
+  /** Ids successfully deleted. */
+  deleted: string[];
+  /** Ids that could not be deleted, with a reason (e.g. `not-found`). */
+  failed: Array<{ id: string; reason: string }>;
+}
+
 /** One audit-trail entry shaped for the UI (WP2 T5). */
 export interface MemoryAuditEntryDTO {
   id: string;
@@ -286,6 +301,8 @@ export interface EngramBackend {
     actorLabel?: string
   ): Promise<MemoryDTO>;
   deleteMemory(params: DeleteMemoryParams): Promise<{ deleted: boolean }>;
+  /** Delete many memories in one MCP call with a per-item report (WP2 T6). */
+  bulkDeleteMemories(params: BulkDeleteMemoriesParams): Promise<BulkDeleteResult>;
   /** Read a memory's audit history, newest first (WP2 T5). Reads Postgres directly. */
   listMemoryAudit(userId: string, memoryId: string, limit: number): Promise<MemoryAuditEntryDTO[]>;
   /** Recreate a hard-deleted memory from its delete snapshot (WP2 T5). */

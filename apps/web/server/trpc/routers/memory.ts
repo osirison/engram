@@ -163,4 +163,24 @@ export const memoryRouter = router({
     }
     return result;
   }),
+
+  // Bulk delete up to 100 memories in one MCP call (WP2 T6).
+  bulkDelete: protectedProcedure
+    .input(
+      z
+        .object({
+          userId,
+          memoryIds: z.array(memoryId).min(1).max(100),
+          scope: z.string().max(256).nullish(),
+        })
+        .strict()
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.backend.bulkDeleteMemories({
+        userId: input.userId,
+        memoryIds: input.memoryIds,
+        scope: input.scope ?? undefined,
+        actorLabel: ctx.session?.user?.email ?? undefined,
+      })
+    ),
 });

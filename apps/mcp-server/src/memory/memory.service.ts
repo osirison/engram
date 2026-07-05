@@ -644,6 +644,53 @@ export class MemoryService {
   }
 
   /**
+   * Delete many memories in one call (WP2 T6/D9) with bounded concurrency,
+   * returning a per-item report. Each id routes through {@link deleteMemory}, so
+   * STM/LTM tier routing, scope isolation, and non-fatal vector cleanup are all
+   * inherited. A not-found id lands in `failed` (reason `not-found`); a per-item
+   * error never aborts the batch. An id whose Postgres row deleted but whose
+   * vector removal failed still counts as `deleted` — Postgres is the truth.
+   */
+  async bulkDeleteMemories(
+    userId: string,
+    ids: string[],
+    scope?: string,
+  ): Promise<{
+    deleted: string[];
+    failed: Array<{ id: string; reason: string }>;
+  }> {
+    this.logger.debug(
+      `Bulk-deleting ${ids.length} memories for user: ${userId}`,
+    );
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+
+    // De-duplicate ids to avoid double-processing the same memory.
+    const uniqueIds = [...new Set(ids)];
+
+    await MemoryService.runConcurrent(
+      uniqueIds.map((id) => async () => {
+        try {
+          const ok = await this.deleteMemory(userId, id, scope);
+          if (ok) {
+            deleted.push(id);
+          } else {
+            failed.push({ id, reason: 'not-found' });
+          }
+        } catch (error) {
+          failed.push({
+            id,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+      5, // bounded concurrency — matches the vector-store friendly default
+    );
+
+    return { deleted, failed };
+  }
+
+  /**
    * Promote a memory from STM to LTM
    */
   async promoteMemory(

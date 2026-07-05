@@ -179,9 +179,9 @@ describe('MCP Tools Integration', () => {
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 23 tools', () => {
+    it('should register exactly 24 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(23);
+      expect(tools).toHaveLength(24);
     });
 
     it('should register all expected tool names', () => {

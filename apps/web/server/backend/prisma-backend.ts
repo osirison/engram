@@ -6,6 +6,8 @@ import {
   BackendError,
   type ActivityPoint,
   type BackendCapabilities,
+  type BulkDeleteMemoriesParams,
+  type BulkDeleteResult,
   type DeleteMemoryParams,
   type EngramBackend,
   type HealthReport,
@@ -638,6 +640,28 @@ export class PrismaEngramBackend implements EngramBackend {
         ? result.deleted
         : true;
     return { deleted };
+  }
+
+  async bulkDeleteMemories(params: BulkDeleteMemoriesParams): Promise<BulkDeleteResult> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Deleting memories requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    const result = await this.mcp.call<{
+      deleted?: string[];
+      failed?: Array<{ id: string; reason: string }>;
+    }>('bulk_delete_memories', {
+      userId: params.userId,
+      memoryIds: params.memoryIds,
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.actorLabel ? { actorLabel: params.actorLabel } : {}),
+    });
+    return {
+      deleted: Array.isArray(result.deleted) ? result.deleted : [],
+      failed: Array.isArray(result.failed) ? result.failed : [],
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -17,22 +18,46 @@ import { formatPercent, memoryTypeLabel, relativeTime, truncate } from '@/lib/fo
 
 type MemoryItem = RouterOutputs['memory']['list']['items'][number];
 
+/**
+ * Optional multi-select support (WP2 T6). When passed, the list renders a
+ * checkbox column with a select-page header. Omitted ⇒ the list behaves exactly
+ * as before (no selection column), keeping non-bulk callers unchanged.
+ */
+export interface MemoryListSelection {
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  onTogglePage: (ids: string[], select: boolean) => void;
+}
+
 export function MemoryList({
   items,
   showScore = false,
   isLoading = false,
   onSelect,
+  selection,
 }: {
   items: MemoryItem[];
   showScore?: boolean;
   isLoading?: boolean;
   onSelect: (item: MemoryItem) => void;
+  selection?: MemoryListSelection;
 }) {
+  const pageIds = items.map((i) => i.id);
+  const allSelected = pageIds.length > 0 && pageIds.every((id) => selection?.selectedIds.has(id));
   return (
     <div className="overflow-hidden rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40 hover:bg-muted/40">
+            {selection && (
+              <TableHead className="w-[44px]">
+                <Checkbox
+                  checked={allSelected}
+                  aria-label="Select all on this page"
+                  onCheckedChange={(checked) => selection.onTogglePage(pageIds, checked === true)}
+                />
+              </TableHead>
+            )}
             <TableHead className="min-w-[280px]">Memory</TableHead>
             <TableHead className="w-[110px]">Type</TableHead>
             <TableHead className="hidden w-[140px] md:table-cell">Scope</TableHead>
@@ -44,6 +69,11 @@ export function MemoryList({
           {isLoading
             ? Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={`s-${i}`}>
+                  {selection && (
+                    <TableCell>
+                      <Skeleton className="size-4" />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Skeleton className="h-4 w-3/4" />
                   </TableCell>
@@ -77,6 +107,18 @@ export function MemoryList({
                   }}
                   className="cursor-pointer focus:bg-muted/60 focus:outline-none"
                 >
+                  {selection && (
+                    <TableCell
+                      // Stop row-open when interacting with the checkbox cell.
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selection.selectedIds.has(item.id)}
+                        aria-label={`Select memory ${item.id}`}
+                        onCheckedChange={() => selection.onToggle(item.id)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="max-w-0">
                     <p className="truncate font-medium">{truncate(item.content, 140)}</p>
                     {(item.tags.length > 0 || item.isInsight) && (

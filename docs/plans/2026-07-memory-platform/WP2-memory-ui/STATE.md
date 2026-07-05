@@ -38,7 +38,7 @@ collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
 | T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ✅     | stores+mcp+web+UI; full suite green                                            |
 | T7       | Re-embed integrity (`embeddingStale` + `reembed_memory`)   | (T4)     | ✅     | LTM flag+reembed (no version bump); tool 21; UI badge/button                   |
 | T5       | Persistent audit trail + restore (`ToolCallContext`)       | SHARED-2 | ✅     | core ctx + audit svc + restore/get_audit tools (23) + web history; suite green |
-| T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ⬜     |                                                                                |
+| T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ✅     | tool (24) + per-item report; audit each; UI checkbox+dialog (type-to-confirm)  |
 | T3       | STM UI (live tier, TTL, promote)                           | T2       | ⬜     |                                                                                |
 | T8       | Optimistic delete UX                                       | T2       | ⬜     |                                                                                |
 | T9       | Proportionate authz (operator→tenant binding)              | (last)   | ⬜     |                                                                                |
@@ -60,8 +60,9 @@ collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
   `mapMcpMemory`, and delegation injects `userId` end-to-end. Redis is up (`engram-redis`).
   Add a Redis-backed paging integration test (mirroring T1's 60-row walk) BEFORE T3, which
   builds the STM UI on this seam.
-- Commit bodies: footer counts toward commitlint `body-max-length` (300) — target ≤~215
-  chars of body text on first write to avoid retries.
+- Commit bodies: the `Co-Authored-By` footer (~66 chars) counts toward commitlint
+  `body-max-length` (300). Empirically keep body PROSE ≤ ~200 chars to pass first try
+  (224 passed, 270 failed).
 - T4 seams to thread: `MemoryDTO.version`, `memorySelect` + `mapRow` in prisma-backend (none
   carry `version` yet), and confirm STM `create` stamps `version:1` into the Redis payload
   (CAS compares against it).

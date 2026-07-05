@@ -4,6 +4,9 @@ import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Database, Loader2, Search, Sparkles, X } from 'lucide-react';
 
+import { toast } from 'sonner';
+
+import { BulkDeleteDialog } from '@/components/memories/bulk-delete-dialog';
 import { MemoryDetailSheet } from '@/components/memories/memory-detail-sheet';
 import { MemoryFiltersBar } from '@/components/memories/memory-filters';
 import { MemoryList } from '@/components/memories/memory-list';
@@ -120,6 +123,62 @@ export function MemoryNavigator() {
     null
   );
 
+  // Multi-select + bulk delete (WP2 T6). Selection persists across loaded pages;
+  // it is cleared when the filter/search context changes so stale ids can't leak.
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
+  const selectionContext = `${filters.type}|${filters.scope}|${filters.tags.join(',')}|${filters.q}`;
+  React.useEffect(() => {
+    setSelectedIds(new Set());
+  }, [selectionContext, userId]);
+
+  const toggleId = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const togglePage = (ids: string[], select: boolean) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (select) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+
+  const utils = trpc.useUtils();
+  const bulkDelete = trpc.memory.bulkDelete.useMutation({
+    onSuccess: async (result) => {
+      const failedCount = result.failed.length;
+      toast.success(`Deleted ${result.deleted.length} of ${result.deleted.length + failedCount}`, {
+        description:
+          failedCount > 0
+            ? `${failedCount} could not be deleted (${result.failed[0]?.reason ?? 'error'}${
+                failedCount > 1 ? ', …' : ''
+              }).`
+            : undefined,
+      });
+      setSelectedIds(new Set());
+      setBulkDialogOpen(false);
+      await Promise.all([
+        utils.memory.list.invalidate(),
+        utils.memory.listStm.invalidate(),
+        utils.memory.search.invalidate(),
+        utils.analytics.invalidate(),
+      ]);
+    },
+    onError: (error) => toast.error('Bulk delete failed', { description: error.message }),
+  });
+
+  const selectionArray = [...selectedIds];
+  const previews = items
+    .filter((i) => selectedIds.has(i.id))
+    .slice(0, 5)
+    .map((i) => i.content);
+
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     writeFilters({ q: searchInput.trim() });
@@ -201,11 +260,29 @@ export function MemoryNavigator() {
             />
           ) : (
             <>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  <span>{selectedIds.size} selected</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                      Clear
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => setBulkDialogOpen(true)}>
+                      Delete {selectedIds.size} selected
+                    </Button>
+                  </div>
+                </div>
+              )}
               <MemoryList
                 items={items}
                 showScore={isSearch}
                 isLoading={isLoading}
                 onSelect={(item) => setSelected({ id: item.id, score: item.score ?? null })}
+                selection={{
+                  selectedIds,
+                  onToggle: toggleId,
+                  onTogglePage: togglePage,
+                }}
               />
 
               {!isSearch && list.hasNextPage && (
@@ -233,6 +310,15 @@ export function MemoryNavigator() {
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
+      />
+
+      <BulkDeleteDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        count={selectedIds.size}
+        previews={previews}
+        isPending={bulkDelete.isPending}
+        onConfirm={() => bulkDelete.mutate({ userId, memoryIds: selectionArray })}
       />
     </PageContainer>
   );

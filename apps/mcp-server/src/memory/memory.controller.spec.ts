@@ -1029,6 +1029,7 @@ describe('MemoryController audit wiring (WP2 T5)', () => {
     getMemory: jest.fn(),
     updateMemory: jest.fn(),
     deleteMemory: jest.fn(),
+    bulkDeleteMemories: jest.fn(),
     promoteMemory: jest.fn(),
     reembedMemory: jest.fn(),
     restoreMemory: jest.fn(),
@@ -1209,5 +1210,49 @@ describe('MemoryController audit wiring (WP2 T5)', () => {
     expect(restore?.requiredScope).toBe('memories:write');
     expect(history?.delegable).toBe(true);
     expect(history?.requiredScope).toBe('memories:read');
+  });
+
+  it('registers bulk_delete_memories as a delegable memories:delete tool (WP2 T6)', () => {
+    const tool = controller
+      .getMcpTools()
+      .find((t) => t.name === 'bulk_delete_memories');
+    expect(tool?.delegable).toBe(true);
+    expect(tool?.requiredScope).toBe('memories:delete');
+  });
+
+  it('bulk delete returns a per-item report and audits each deleted id (WP2 T6)', async () => {
+    svc.getMemory.mockResolvedValue({
+      id: 'x',
+      userId,
+      content: 'c',
+      tags: [],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 1,
+    });
+    svc.bulkDeleteMemories.mockResolvedValue({
+      deleted: ['a', 'b'],
+      failed: [{ id: 'c', reason: 'not-found' }],
+    });
+
+    const response = await controller.bulkDeleteMemories(
+      { userId, memoryIds: ['a', 'b', 'c'], actorLabel: 'op@example.com' },
+      ctx,
+    );
+
+    const parsed = JSON.parse(response.content[0]!.text) as {
+      deletedCount: number;
+      failedCount: number;
+    };
+    expect(parsed.deletedCount).toBe(2);
+    expect(parsed.failedCount).toBe(1);
+    // One bulk-delete audit row per successfully deleted id.
+    const bulkRows = audit.record.mock.calls.filter(
+      (c) => (c[0] as { action: string }).action === 'bulk-delete',
+    );
+    expect(bulkRows).toHaveLength(2);
   });
 });

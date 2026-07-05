@@ -99,7 +99,12 @@ describe('MemoryAuditService (WP2 T5)', () => {
     });
     expect(prisma.memoryAudit.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 'qp', memoryId: 'mem-4', action: 'delete' },
+        // Restore recovers from single OR bulk deletes (WP2 T5/T6).
+        where: {
+          userId: 'qp',
+          memoryId: 'mem-4',
+          action: { in: ['delete', 'bulk-delete'] },
+        },
         orderBy: { createdAt: 'desc' },
       }),
     );

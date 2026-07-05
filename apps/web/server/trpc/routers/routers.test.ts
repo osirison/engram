@@ -114,6 +114,26 @@ describe('memory router', () => {
     );
   });
 
+  it('delegates bulkDelete with the operator email as actorLabel (WP2 T6)', async () => {
+    const bulkDeleteMemories = vi.fn().mockResolvedValue({ deleted: ['a', 'b'], failed: [] });
+    const backend = makeBackend({ bulkDeleteMemories });
+    const api = caller(backend);
+    await api.memory.bulkDelete({ userId: 'qp', memoryIds: ['a', 'b'] });
+    expect(bulkDeleteMemories).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'qp',
+        memoryIds: ['a', 'b'],
+        actorLabel: 'op@example.com',
+      })
+    );
+  });
+
+  it('rejects a bulkDelete over the 100-id cap (WP2 T6)', async () => {
+    const api = caller(makeBackend());
+    const tooMany = Array.from({ length: 101 }, (_, i) => `id-${i}`);
+    await expect(api.memory.bulkDelete({ userId: 'qp', memoryIds: tooMany })).rejects.toBeTruthy();
+  });
+
   it('injects the operator email as actorLabel on update (WP2 T5)', async () => {
     const updateMemory = vi.fn().mockResolvedValue({ id: 'm1' });
     const backend = makeBackend({ updateMemory });

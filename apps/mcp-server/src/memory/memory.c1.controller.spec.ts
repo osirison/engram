@@ -64,7 +64,7 @@ describe('MemoryController — C1 High-Level Agent UX Tools', () => {
   });
 
   it('should expose 20 MCP tools', () => {
-    expect(controller.getMcpTools()).toHaveLength(23);
+    expect(controller.getMcpTools()).toHaveLength(24);
   });
 
   // ─── remember ───────────────────────────────────────────────────────────────
