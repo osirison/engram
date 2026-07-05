@@ -34,6 +34,7 @@ const memorySelect = {
   metadata: true,
   tags: true,
   type: true,
+  version: true,
   createdAt: true,
   updatedAt: true,
   expiresAt: true,
@@ -48,6 +49,7 @@ type MemoryRow = {
   metadata: Prisma.JsonValue;
   tags: string[];
   type: string;
+  version: number;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
@@ -80,6 +82,7 @@ function mapRow(row: MemoryRow, hasEmbedding: boolean): MemoryDTO {
     importance,
     hasEmbedding,
     isInsight,
+    version: row.version,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
@@ -108,6 +111,7 @@ type McpMemoryJson = {
   expiresAt?: string | null;
   ttl?: number;
   accessCount?: number;
+  version?: number;
 };
 
 /**
@@ -131,6 +135,7 @@ function mapMcpMemory(m: McpMemoryJson): MemoryDTO {
     importance,
     hasEmbedding: false,
     isInsight: tags.includes('insight'),
+    version: typeof m.version === 'number' ? m.version : 1,
     createdAt: m.createdAt ?? new Date(0).toISOString(),
     updatedAt: m.updatedAt ?? m.createdAt ?? new Date(0).toISOString(),
     expiresAt: m.expiresAt ?? null,
@@ -496,13 +501,28 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
-    await this.mcp.call('update_memory', {
-      userId: params.userId,
-      memoryId: params.memoryId,
-      ...(params.content !== undefined ? { content: params.content } : {}),
-      ...(params.tags !== undefined ? { tags: params.tags } : {}),
-      ...(params.scope ? { scope: params.scope } : {}),
-    });
+    try {
+      await this.mcp.call('update_memory', {
+        userId: params.userId,
+        memoryId: params.memoryId,
+        ...(params.content !== undefined ? { content: params.content } : {}),
+        ...(params.tags !== undefined ? { tags: params.tags } : {}),
+        ...(params.scope ? { scope: params.scope } : {}),
+        ...(params.ttl !== undefined ? { ttl: params.ttl } : {}),
+        ...(params.expectedVersion !== undefined
+          ? { expectedVersion: params.expectedVersion }
+          : {}),
+      });
+    } catch (error) {
+      // Optimistic-concurrency conflict (WP2 T4/D5): the tool surfaces a
+      // `CONFLICT:`-tagged message; re-raise it as a typed BackendError so the
+      // tRPC layer maps it to 409 and the UI shows the reload-and-rediff panel.
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('CONFLICT:')) {
+        throw new BackendError(message, 'CONFLICT');
+      }
+      throw error;
+    }
     const updated = await this.getMemory(params.userId, params.memoryId);
     if (!updated) {
       throw new BackendError('Memory not found after update.', 'NOT_FOUND');

@@ -31,6 +31,7 @@ describe('MemoryLtmService', () => {
     metadata: { test: 'data' },
     tags: ['test', 'memory'],
     type: MemoryType.LONG_TERM,
+    version: 1,
     createdAt: new Date('2025-01-01T00:00:00Z'),
     updatedAt: new Date('2025-01-01T00:00:00Z'),
     expiresAt: null,
@@ -325,6 +326,8 @@ describe('MemoryLtmService', () => {
           content: updateInput.content,
           metadata: updateInput.metadata,
           tags: updateInput.tags,
+          // Version is always bumped, even without an expectedVersion (WP2 T4).
+          version: { increment: 1 },
         },
       });
       expect(result.content).toBe(updateInput.content);
@@ -336,6 +339,63 @@ describe('MemoryLtmService', () => {
       await expect(service.update(mockUserId, mockMemoryId, updateInput)).rejects.toThrow(
         LtmMemoryNotFoundError
       );
+    });
+
+    it('folds expectedVersion into the CAS where clause on success (WP2 T4)', async () => {
+      prismaService.memory.findFirst.mockResolvedValue({ ...mockMemory, version: 3 });
+      prismaService.memory.update.mockResolvedValue({ ...mockMemory, version: 4 });
+
+      const result = await service.update(mockUserId, mockMemoryId, {
+        ...updateInput,
+        expectedVersion: 3,
+      });
+
+      expect(prismaService.memory.update).toHaveBeenCalledWith({
+        where: {
+          id: mockMemoryId,
+          userId: mockUserId,
+          type: MemoryType.LONG_TERM,
+          version: 3, // compare-and-swap guard
+        },
+        data: expect.objectContaining({ version: { increment: 1 } }),
+      });
+      expect(result.version).toBe(4);
+    });
+
+    it('maps a stale expectedVersion (P2025 with the row still present) to a conflict', async () => {
+      prismaService.memory.findFirst.mockResolvedValue({ ...mockMemory, version: 5 });
+      prismaService.memory.update.mockRejectedValue({ code: 'P2025' });
+
+      await expect(
+        service.update(mockUserId, mockMemoryId, { ...updateInput, expectedVersion: 3 })
+      ).rejects.toMatchObject({
+        name: 'LtmVersionConflictError',
+        currentVersion: 5,
+      });
+    });
+
+    it('maps P2025 with no surviving row to not-found, not a conflict', async () => {
+      // First find (pre-update) sees the row; the re-fetch after P2025 sees none
+      // (deleted concurrently) → not-found.
+      prismaService.memory.findFirst
+        .mockResolvedValueOnce({ ...mockMemory, version: 3 })
+        .mockResolvedValueOnce(null);
+      prismaService.memory.update.mockRejectedValue({ code: 'P2025' });
+
+      await expect(
+        service.update(mockUserId, mockMemoryId, { ...updateInput, expectedVersion: 3 })
+      ).rejects.toBeInstanceOf(LtmMemoryNotFoundError);
+    });
+
+    it('omits the version guard when no expectedVersion is given (last-write-wins)', async () => {
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockResolvedValue({ ...mockMemory, version: 2 });
+
+      await service.update(mockUserId, mockMemoryId, updateInput);
+
+      const call = prismaService.memory.update.mock.calls[0][0];
+      expect(call.where.version).toBeUndefined();
+      expect(call.data.version).toEqual({ increment: 1 });
     });
 
     it('should only update provided fields', async () => {

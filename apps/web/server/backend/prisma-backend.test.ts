@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     metadata: null,
     tags: [],
     type: 'long-term',
+    version: 1,
     createdAt: new Date('2026-06-01T00:00:00.000Z'),
     updatedAt: new Date('2026-06-02T00:00:00.000Z'),
     expiresAt: null,
@@ -233,7 +234,7 @@ describe('PrismaEngramBackend.listMemories', () => {
     expect(result.hasMore).toBe(true);
 
     // Query shape: keyset ordering with an id tiebreak, over-fetch, no `skip`.
-    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(findArgs.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
     expect(findArgs.take).toBe(3);
     expect(findArgs.skip).toBeUndefined();
@@ -255,7 +256,7 @@ describe('PrismaEngramBackend.listMemories', () => {
     const cursor = encodeCursor({ v: new Date('2026-06-01T00:00:00.000Z').getTime(), id: 'm5' });
     const result = await backend.listMemories({ userId: 'qp', limit: 2, cursor });
 
-    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     // The base filter is preserved and the seek predicate is AND-ed on top.
     expect(findArgs.where.AND).toBeDefined();
     expect(findArgs.where.AND[1].OR).toEqual([
@@ -263,7 +264,7 @@ describe('PrismaEngramBackend.listMemories', () => {
       { createdAt: new Date('2026-06-01T00:00:00.000Z'), id: { lt: 'm5' } },
     ]);
     // totalCount counts the base filter, not the seek window.
-    const countArgs = (prisma.memory.count as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const countArgs = (prisma.memory.count as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(countArgs.where.AND).toBeUndefined();
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeNull();
@@ -277,7 +278,7 @@ describe('PrismaEngramBackend.listMemories', () => {
     const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
     await backend.listMemories({ userId: 'qp', limit: 2, cursor: '25' });
 
-    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(findArgs.where.AND).toBeUndefined();
     expect(findArgs.where).toMatchObject({ userId: 'qp' });
   });

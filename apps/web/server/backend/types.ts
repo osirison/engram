@@ -24,6 +24,8 @@ export interface MemoryDTO {
   hasEmbedding: boolean;
   /** True when `metadata.isInsight` — a synthesised insight memory. */
   isInsight: boolean;
+  /** Optimistic-concurrency counter (WP2 T4); sent back as `expectedVersion` on edit. */
+  version: number;
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;
@@ -114,6 +116,13 @@ export interface UpdateMemoryParams {
   content?: string;
   tags?: string[];
   scope?: string | null;
+  /** STM-only: reset the TTL window to this many seconds on save (WP2 T3). */
+  ttl?: number;
+  /**
+   * Optimistic-concurrency guard (WP2 T4). When set, the edit fails with a
+   * `CONFLICT` BackendError if the memory has moved past this version.
+   */
+  expectedVersion?: number;
 }
 
 export interface DeleteMemoryParams {
@@ -263,6 +272,7 @@ export class BackendError extends Error {
       | 'UNAVAILABLE'
       | 'WRITES_DISABLED'
       | 'BAD_REQUEST'
+      | 'CONFLICT'
       | 'INTERNAL' = 'INTERNAL'
   ) {
     super(message);

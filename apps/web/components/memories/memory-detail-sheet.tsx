@@ -59,6 +59,11 @@ export function MemoryDetailSheet({
   const [draftContent, setDraftContent] = React.useState('');
   const [draftTags, setDraftTags] = React.useState<string[]>([]);
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  // Optimistic-concurrency conflict UI (WP2 T4/D5): set when a save is rejected
+  // because another writer moved the version. `preservedDraft` keeps the
+  // operator's rejected text so a reload never silently discards their work.
+  const [conflict, setConflict] = React.useState(false);
+  const [preservedDraft, setPreservedDraft] = React.useState<string | null>(null);
 
   // Reset transient edit/confirm UI whenever the target memory changes or the
   // sheet closes — the canonical "reset state on prop change" effect.
@@ -66,6 +71,8 @@ export function MemoryDetailSheet({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsEditing(false);
     setConfirmingDelete(false);
+    setConflict(false);
+    setPreservedDraft(null);
   }, [memoryId, open]);
 
   const beginEdit = () => {
@@ -88,10 +95,33 @@ export function MemoryDetailSheet({
     onSuccess: async () => {
       toast.success('Memory updated');
       setIsEditing(false);
+      setConflict(false);
+      setPreservedDraft(null);
       await invalidate();
     },
-    onError: (error) => toast.error('Update failed', { description: error.message }),
+    onError: (error) => {
+      // A version conflict is expected control-flow, not a failure toast: surface
+      // the reload-and-rediff panel instead (WP2 T4/D5).
+      if (error.data?.code === 'CONFLICT') {
+        setConflict(true);
+        return;
+      }
+      toast.error('Update failed', { description: error.message });
+    },
   });
+
+  // Pull the latest server copy into the editor after a conflict, stashing the
+  // operator's rejected text so it is never lost. The next save carries the
+  // fresh version, so it will succeed unless another write races again.
+  const reloadLatest = async () => {
+    setPreservedDraft(draftContent);
+    const fresh = await memory.refetch();
+    if (fresh.data) {
+      setDraftContent(fresh.data.content);
+      setDraftTags(fresh.data.tags);
+    }
+    setConflict(false);
+  };
 
   const remove = trpc.memory.delete.useMutation({
     onSuccess: async () => {
@@ -104,12 +134,16 @@ export function MemoryDetailSheet({
 
   const saveEdit = () => {
     if (!memoryId) return;
+    setConflict(false);
     update.mutate({
       userId,
       memoryId,
       content: draftContent,
       tags: draftTags,
       scope: memory.data?.scope ?? undefined,
+      // Optimistic concurrency (WP2 T4): the save is rejected with CONFLICT if the
+      // memory has moved past the version we loaded/reloaded.
+      expectedVersion: memory.data?.version,
     });
   };
 
@@ -168,6 +202,37 @@ export function MemoryDetailSheet({
             </div>
           ) : (
             <div className="space-y-6 pb-6">
+              {isEditing && conflict && (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm"
+                >
+                  <p className="font-medium text-destructive">
+                    This memory changed since you opened it
+                  </p>
+                  <p className="mt-1 text-muted-foreground">
+                    Another writer updated it, so your save was rejected. Reload the latest version
+                    to continue — your unsaved text is preserved below.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={reloadLatest}
+                  >
+                    Reload latest
+                  </Button>
+                </div>
+              )}
+              {isEditing && preservedDraft !== null && (
+                <details className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Your previous unsaved edit
+                  </summary>
+                  <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{preservedDraft}</p>
+                </details>
+              )}
               <section className="space-y-2">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Content

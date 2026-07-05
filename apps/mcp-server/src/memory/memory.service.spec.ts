@@ -32,6 +32,7 @@ describe('MemoryService', () => {
     expiresAt: new Date(Date.now() + 86400000),
     ttl: 86400,
     accessCount: 0,
+    version: 1,
   };
 
   const mockLtmMemory: LtmMemory = {
@@ -45,6 +46,7 @@ describe('MemoryService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     expiresAt: null,
+    version: 1,
   };
 
   beforeEach(async () => {

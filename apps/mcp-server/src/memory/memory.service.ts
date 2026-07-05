@@ -50,6 +50,7 @@ type StmServiceContract = {
       metadata?: Record<string, unknown>;
       tags?: string[];
       ttl?: number;
+      expectedVersion?: number;
     },
     organizationId?: string,
     scope?: string,
@@ -93,6 +94,7 @@ type LtmServiceContract = {
       content?: string;
       metadata?: Record<string, unknown>;
       tags?: string[];
+      expectedVersion?: number;
     },
     organizationId?: string,
     scope?: string,
@@ -179,6 +181,8 @@ export interface UpdateMemoryDto {
   metadata?: Record<string, unknown>;
   tags?: string[];
   ttl?: number;
+  /** Optimistic-concurrency guard (WP2 T4); when set, a version mismatch fails. */
+  expectedVersion?: number;
 }
 
 export interface ListMemoryOptions {
@@ -535,6 +539,7 @@ export class MemoryService {
           metadata: updates.metadata,
           tags: updates.tags ?? ([] as string[]),
           ttl: updates.ttl,
+          expectedVersion: updates.expectedVersion,
         },
         undefined,
         scope,
@@ -562,6 +567,7 @@ export class MemoryService {
             content: updates.content,
             metadata: updates.metadata,
             tags: updates.tags,
+            expectedVersion: updates.expectedVersion,
           },
           undefined,
           scope,

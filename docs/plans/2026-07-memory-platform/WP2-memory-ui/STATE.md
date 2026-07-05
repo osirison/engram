@@ -35,7 +35,7 @@ collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
 | SHARED-2 | `Memory.version` + `MemoryAudit` schema + migration        | none     | ✅     | migration `20260705190357_memory_version_and_audit`                   |
 | T2       | STM read path: delegation, type filter, structured results | none     | 🟨     | logic + unit/wiring green; LIVE STM round-trip pending (do before T3) |
 | T1       | Keyset pagination                                          | none     | ✅     | cursor.ts + listMemories; walk verified on real PG                    |
-| T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ⬜     |                                                                       |
+| T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ✅     | stores+mcp+web+UI; full suite green                                   |
 | T7       | Re-embed integrity (`embeddingStale` + `reembed_memory`)   | (T4)     | ⬜     |                                                                       |
 | T5       | Persistent audit trail + restore (`ToolCallContext`)       | SHARED-2 | ⬜     |                                                                       |
 | T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ⬜     |                                                                       |

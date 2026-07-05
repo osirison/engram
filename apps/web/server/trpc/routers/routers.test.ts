@@ -88,6 +88,18 @@ describe('memory router', () => {
     ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
   });
 
+  it('maps a CONFLICT BackendError to tRPC CONFLICT (409) — WP2 T4', async () => {
+    const backend = makeBackend({
+      updateMemory: vi
+        .fn()
+        .mockRejectedValue(new BackendError('CONFLICT: modified (currentVersion=4)', 'CONFLICT')),
+    });
+    const api = caller(backend);
+    await expect(
+      api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x', expectedVersion: 3 })
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
   it('validates input (empty userId rejected)', async () => {
     const api = caller(makeBackend());
     await expect(api.memory.list({ userId: '' })).rejects.toBeTruthy();
