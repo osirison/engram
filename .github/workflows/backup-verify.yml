@@ -56,15 +56,18 @@ jobs:
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_backup_verify
       REDIS_URL: redis://localhost:6379
       QDRANT_URL: http://127.0.0.1:6333
-      # backup.sh / restore.sh copy the RDB through `docker exec` /
-      # `docker stop|cp|start` on this container (there is no compose project
-      # on the runner — service containers are plain docker containers).
-      REDIS_CONTAINER: ${{ job.services.redis.id }}
       BACKUP_OUT: ${{ github.workspace }}/.backup-verify
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Resolve redis service container id
+        # backup.sh / restore.sh copy the RDB through `docker exec` /
+        # `docker stop|cp|start` on this container (there is no compose project
+        # on the runner — service containers are plain docker containers). The
+        # `job` context is unavailable in job-level env, so export it in a step.
+        run: echo "REDIS_CONTAINER=${{ job.services.redis.id }}" >> "$GITHUB_ENV"
 
       - name: Install PostgreSQL 17 client + redis-cli
         # The runner ships pg_dump 16, but the postgres service is pg17 and
