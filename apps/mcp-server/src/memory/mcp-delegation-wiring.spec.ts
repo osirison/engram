@@ -82,19 +82,26 @@ describe('MCP delegation wiring — real memory tools (#200)', () => {
   };
 
   describe('metadata contract', () => {
-    it.each(['recall', 'update_memory', 'delete_memory'])(
-      '%s is identity-mode and opts into delegation',
-      (name) => {
-        const t = tool(name);
-        // Identity mode (the default): the tenant boundary is the token, not the
-        // request body. If this ever became 'admin', a client-supplied userId
-        // would pass through untouched for EVERY principal — a cross-tenant leak.
-        expect(t.auth ?? 'identity').toBe('identity');
-        // Opted into delegation so an admin-scoped operator console can act on
-        // behalf of any data owner. Dropping this silently re-pins the console.
-        expect(t.delegable).toBe(true);
-      },
-    );
+    // get_memory/list_memories/promote_memory joined the delegable set in WP2 T2
+    // (#200/A28): without it, every console STM read or promote silently targets
+    // the admin key's own tenant instead of the requested data owner.
+    it.each([
+      'recall',
+      'update_memory',
+      'delete_memory',
+      'get_memory',
+      'list_memories',
+      'promote_memory',
+    ])('%s is identity-mode and opts into delegation', (name) => {
+      const t = tool(name);
+      // Identity mode (the default): the tenant boundary is the token, not the
+      // request body. If this ever became 'admin', a client-supplied userId
+      // would pass through untouched for EVERY principal — a cross-tenant leak.
+      expect(t.auth ?? 'identity').toBe('identity');
+      // Opted into delegation so an admin-scoped operator console can act on
+      // behalf of any data owner. Dropping this silently re-pins the console.
+      expect(t.delegable).toBe(true);
+    });
   });
 
   describe('end-to-end delegation through registerTools', () => {
@@ -133,6 +140,32 @@ describe('MCP delegation wiring — real memory tools (#200)', () => {
         OTHER_TENANT,
         'hi',
         expect.anything(),
+      );
+    });
+
+    it('honours an admin-scoped key delegating list_memories to another tenant', async () => {
+      // Without list_memories being delegable, this would silently enumerate the
+      // KEY_TENANT's memories — the console would show the wrong owner's STM.
+      mockMemoryService.listMemories.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      const call = capture(tool('list_memories'));
+      await call(
+        {
+          method: 'tools/call',
+          params: {
+            name: 'list_memories',
+            arguments: { userId: OTHER_TENANT, type: 'short-term' },
+          },
+        },
+        { authInfo: { scopes: ['admin'], extra: { userId: KEY_TENANT } } },
+      );
+      expect(mockMemoryService.listMemories).toHaveBeenCalledWith(
+        OTHER_TENANT,
+        expect.objectContaining({ type: 'short-term' }),
       );
     });
 

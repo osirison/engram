@@ -232,6 +232,58 @@ describe('MemoryService', () => {
   });
 
   describe('listMemories', () => {
+    it('type=short-term queries STM only and passes the SCAN cursor through', async () => {
+      stmService.list.mockResolvedValue({
+        items: [mockStmMemory],
+        totalCount: 1,
+        hasNextPage: true,
+        hasPreviousPage: false,
+        startCursor: '0',
+        endCursor: '42',
+      });
+
+      const result = await service.listMemories('user-1', {
+        type: 'short-term',
+        limit: 20,
+        cursor: '17',
+        scope: 'agent:alpha',
+        tags: ['x'],
+      });
+
+      // STM-only: LTM is never touched, and the Redis SCAN cursor is forwarded.
+      expect(ltmService.list).not.toHaveBeenCalled();
+      expect(stmService.list).toHaveBeenCalledWith('user-1', {
+        limit: 20,
+        cursor: '17',
+        scope: 'agent:alpha',
+        tags: ['x'],
+      });
+      expect(result.items).toEqual([mockStmMemory]);
+      expect(result.endCursor).toBe('42');
+      expect(result.hasNextPage).toBe(true);
+    });
+
+    it('type=long-term queries LTM only and never merges STM', async () => {
+      ltmService.list.mockResolvedValue({
+        items: [mockLtmMemory],
+        totalCount: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const result = await service.listMemories('user-1', {
+        type: 'long-term',
+        limit: 20,
+      });
+
+      expect(stmService.list).not.toHaveBeenCalled();
+      expect(ltmService.list).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ limit: 20 }),
+      );
+      expect(result.items).toEqual([mockLtmMemory]);
+    });
+
     it('should combine memories from both STM and LTM', async () => {
       stmService.list.mockResolvedValue({
         items: [mockStmMemory],
