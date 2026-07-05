@@ -5,7 +5,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import type { Tool } from '@engram/core';
+import type { Tool, ToolCallContext } from '@engram/core';
 import {
   DeploymentProfile,
   resolveCapabilities,
@@ -34,6 +34,16 @@ import {
   reembedMemoryToolSchema,
   ReembedMemoryToolInput,
 } from './dto/reembed.dto';
+import {
+  mutateByIdToolSchema,
+  MutateByIdToolInput,
+} from './dto/mutate-by-id.dto';
+import {
+  restoreMemoryToolSchema,
+  RestoreMemoryToolInput,
+  getMemoryAuditToolSchema,
+  GetMemoryAuditToolInput,
+} from './dto/audit.dto';
 import { reindexToolSchema, ReindexToolInput } from './dto/reindex.dto';
 import {
   reindexQueueToolSchema,
@@ -66,6 +76,10 @@ import {
 } from './dto/ingest-conversation.dto';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
+import {
+  MemoryAuditService,
+  type MemorySnapshot,
+} from './memory-audit.service';
 import { constantTimeStringEqual } from '../security/admin-token.util';
 import {
   ClientFacingError,
@@ -75,7 +89,7 @@ import {
 /**
  * MCP Memory Tools Controller
  *
- * Implements 21 MCP tools for memory management:
+ * Implements 23 MCP tools for memory management:
  * 1.  create_memory          - Create short-term or long-term memory
  * 2.  get_memory             - Retrieve memory by ID
  * 3.  list_memories          - List memories with pagination
@@ -83,6 +97,8 @@ import {
  * 5.  delete_memory          - Delete memory by ID
  * 6.  promote_memory         - Convert STM memory to LTM
  * 6a. reembed_memory         - Regenerate a long-term memory's vector (repair drift)
+ * 6b. restore_memory         - Recreate a deleted memory from its audit snapshot
+ * 6c. get_memory_audit       - Read a memory's audit history (WP2 T5)
  * 7.  recall                 - Semantic (vector) recall over long-term memories
  * 8.  reindex_memories       - Backfill/rebuild the vector store from Postgres
  * 9.  queue_reindex_memories - Queue resumable reindex processing as a job
@@ -110,11 +126,53 @@ export class MemoryController {
     @Inject(ReindexQueueService)
     private readonly reindexQueue: ReindexQueueService | null,
     private readonly consolidation: ConsolidationService,
+    // Audit trail (WP2 T5): Postgres-only, so optional — absent under the
+    // memory/lite profiles, where destructive ops simply are not audited.
+    @Optional()
+    @Inject(MemoryAuditService)
+    private readonly audit: MemoryAuditService | null = null,
   ) {
     this.activeProfile = coerceDeploymentProfile(
       process.env['DEPLOYMENT_PROFILE'],
       DeploymentProfile.ENTERPRISE,
     );
+  }
+
+  /**
+   * Capture the auditable pre-image of a memory (WP2 T5/D6). Returns null when
+   * the memory can't be read (already gone), so callers still record the attempt.
+   */
+  private async snapshotOf(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<{
+    snapshot: MemorySnapshot;
+    organizationId: string | null;
+  } | null> {
+    let memory: Awaited<ReturnType<MemoryService['getMemory']>> | null = null;
+    try {
+      memory = await this.memoryService.getMemory(userId, memoryId, scope);
+    } catch {
+      memory = null;
+    }
+    if (!memory) {
+      return null;
+    }
+    return {
+      snapshot: {
+        content: memory.content,
+        tags: memory.tags,
+        metadata: memory.metadata,
+        type: memory.type,
+        scope: memory.scope ?? null,
+        expiresAt: memory.expiresAt
+          ? new Date(memory.expiresAt).toISOString()
+          : null,
+        version: (memory as { version?: number }).version,
+      },
+      organizationId: memory.organizationId ?? null,
+    };
   }
 
   private assertAdminAuthorized(
@@ -301,6 +359,7 @@ export class MemoryController {
    */
   async updateMemory(
     input: unknown,
+    context?: ToolCallContext,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('update_memory tool called');
@@ -318,6 +377,13 @@ export class MemoryController {
         expectedVersion: validatedInput.expectedVersion,
       };
 
+      // Snapshot the pre-image for the audit trail (WP2 T5) before mutating.
+      const pre = await this.snapshotOf(
+        validatedInput.userId,
+        validatedInput.memoryId,
+        validatedInput.scope,
+      );
+
       // Update memory using service
       const memory = await this.memoryService.updateMemory(
         validatedInput.userId,
@@ -325,6 +391,23 @@ export class MemoryController {
         updateDto,
         validatedInput.scope,
       );
+
+      await this.audit?.record({
+        memoryId: memory.id,
+        userId: validatedInput.userId,
+        organizationId: pre?.organizationId,
+        scope: validatedInput.scope ?? memory.scope ?? null,
+        action: 'update',
+        context,
+        actorLabel: validatedInput.actorLabel,
+        before: pre?.snapshot ?? null,
+        after: {
+          content: memory.content,
+          tags: memory.tags,
+          metadata: memory.metadata,
+          version: (memory as { version?: number }).version,
+        },
+      });
 
       return {
         content: [
@@ -359,13 +442,22 @@ export class MemoryController {
    */
   async deleteMemory(
     input: unknown,
+    context?: ToolCallContext,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('delete_memory tool called');
 
-      // Validate input using Zod schema (reuse get_memory schema)
-      const validatedInput: GetMemoryToolInput =
-        getMemoryToolSchema.parse(input);
+      // Validate input (get_memory locator + optional actorLabel — WP2 T5).
+      const validatedInput: MutateByIdToolInput =
+        mutateByIdToolSchema.parse(input);
+
+      // Snapshot BEFORE deleting — this pre-image is the source for restore_memory
+      // (WP2 T5/G5). Fetch first, then delete, then audit the attempt.
+      const pre = await this.snapshotOf(
+        validatedInput.userId,
+        validatedInput.memoryId,
+        validatedInput.scope,
+      );
 
       // Delete memory using service
       const deleted = await this.memoryService.deleteMemory(
@@ -373,6 +465,20 @@ export class MemoryController {
         validatedInput.memoryId,
         validatedInput.scope,
       );
+
+      // Record the attempt even when nothing was deleted (audit over-reports
+      // attempts but never under-reports successes — WP2 T5 accepted trade-off).
+      await this.audit?.record({
+        memoryId: validatedInput.memoryId,
+        userId: validatedInput.userId,
+        organizationId: pre?.organizationId,
+        scope: validatedInput.scope ?? pre?.snapshot.scope ?? null,
+        action: 'delete',
+        context,
+        actorLabel: validatedInput.actorLabel,
+        before: pre?.snapshot ?? null,
+        after: { deleted },
+      });
 
       // Machine-readable first item so callers get the real outcome (the web
       // backend previously reported {deleted:true} unconditionally — A10); the
@@ -406,13 +512,14 @@ export class MemoryController {
    */
   async promoteMemory(
     input: unknown,
+    context?: ToolCallContext,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('promote_memory tool called');
 
-      // Validate input using Zod schema (reuse get_memory schema)
-      const validatedInput: GetMemoryToolInput =
-        getMemoryToolSchema.parse(input);
+      // Validate input (get_memory locator + optional actorLabel — WP2 T5).
+      const validatedInput: MutateByIdToolInput =
+        mutateByIdToolSchema.parse(input);
 
       // Promote memory using service
       const promotedMemory = await this.memoryService.promoteMemory(
@@ -420,6 +527,18 @@ export class MemoryController {
         validatedInput.memoryId,
         validatedInput.scope,
       );
+
+      await this.audit?.record({
+        memoryId: promotedMemory.id,
+        userId: validatedInput.userId,
+        organizationId: promotedMemory.organizationId ?? null,
+        scope: validatedInput.scope ?? promotedMemory.scope ?? null,
+        action: 'promote',
+        context,
+        actorLabel: validatedInput.actorLabel,
+        before: { type: 'short-term' },
+        after: { type: 'long-term', memoryId: promotedMemory.id },
+      });
 
       return {
         content: [
@@ -443,6 +562,7 @@ export class MemoryController {
    */
   async reembedMemory(
     input: unknown,
+    context?: ToolCallContext,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
       this.logger.debug('reembed_memory tool called');
@@ -455,6 +575,17 @@ export class MemoryController {
         validatedInput.memoryId,
         validatedInput.scope,
       );
+
+      await this.audit?.record({
+        memoryId: memory.id,
+        userId: validatedInput.userId,
+        organizationId: memory.organizationId ?? null,
+        scope: validatedInput.scope ?? memory.scope ?? null,
+        action: 'reembed',
+        context,
+        actorLabel: validatedInput.actorLabel,
+        after: { reembedded: true },
+      });
 
       return {
         content: [
@@ -486,6 +617,112 @@ export class MemoryController {
         );
       }
       throw toClientError(error, 'Failed to re-embed memory');
+    }
+  }
+
+  /**
+   * MCP Tool: restore_memory
+   * Recreate a hard-deleted memory from the newest `delete` audit snapshot,
+   * preserving its original id (WP2 T5/G5). Requires the audit trail.
+   */
+  async restoreMemory(
+    input: unknown,
+    context?: ToolCallContext,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('restore_memory tool called');
+
+      const validatedInput: RestoreMemoryToolInput =
+        restoreMemoryToolSchema.parse(input);
+
+      if (!this.audit) {
+        throw new ClientFacingError(
+          'restore is unavailable: the audit trail is not enabled on this server',
+        );
+      }
+
+      const recoverable = await this.audit.findLatestDeleteSnapshot(
+        validatedInput.userId,
+        validatedInput.memoryId,
+      );
+      if (!recoverable || !recoverable.before.content) {
+        throw new ClientFacingError(
+          `No recoverable delete snapshot found for memory ${validatedInput.memoryId}`,
+        );
+      }
+
+      const restored = await this.memoryService.restoreMemory({
+        id: validatedInput.memoryId,
+        userId: validatedInput.userId,
+        content: recoverable.before.content,
+        tags: recoverable.before.tags,
+        metadata: (recoverable.before.metadata ?? null) as Record<
+          string,
+          unknown
+        > | null,
+        scope: recoverable.before.scope ?? recoverable.scope,
+        organizationId: recoverable.organizationId,
+        type: recoverable.before.type,
+      });
+
+      await this.audit.record({
+        memoryId: restored.id,
+        userId: validatedInput.userId,
+        organizationId: restored.organizationId ?? null,
+        scope: restored.scope ?? null,
+        action: 'restore',
+        context,
+        actorLabel: validatedInput.actorLabel,
+        before: recoverable.before,
+        after: { restored: true, memoryId: restored.id },
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Restored memory ${restored.id}: ${JSON.stringify(restored, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in restore_memory tool:', error);
+      throw toClientError(error, 'Failed to restore memory');
+    }
+  }
+
+  /**
+   * MCP Tool: get_memory_audit
+   * Read the audit history for a memory, newest first (WP2 T5).
+   */
+  async getMemoryAudit(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('get_memory_audit tool called');
+
+      const validatedInput: GetMemoryAuditToolInput =
+        getMemoryAuditToolSchema.parse(input);
+
+      const entries = this.audit
+        ? await this.audit.list(
+            validatedInput.userId,
+            validatedInput.memoryId,
+            validatedInput.limit,
+          )
+        : [];
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ entries }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      this.logger.error('Error in get_memory_audit tool:', error);
+      throw toClientError(error, 'Failed to read memory audit');
     }
   }
 
@@ -1248,6 +1485,28 @@ export class MemoryController {
         ) => Promise<unknown>,
       },
       {
+        name: 'restore_memory',
+        description:
+          'Recreate a hard-deleted memory from its most recent delete audit snapshot, preserving its original id. Requires the audit trail.',
+        inputSchema: restoreMemoryToolSchema,
+        // Delegable: the operator console restores any data owner's memory (#200).
+        delegable: true,
+        handler: this.restoreMemory.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'get_memory_audit',
+        description:
+          'Read the append-only audit history (update/delete/promote/reembed/restore) for a memory, newest first.',
+        inputSchema: getMemoryAuditToolSchema,
+        // Delegable: the operator console reads any data owner's history (#200).
+        delegable: true,
+        handler: this.getMemoryAudit.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
         name: 'recall',
         description:
           'Semantically recall the most relevant long-term memories for a natural-language query',
@@ -1394,6 +1653,8 @@ export class MemoryController {
       update_memory: 'memories:write',
       promote_memory: 'memories:write',
       reembed_memory: 'memories:write',
+      restore_memory: 'memories:write',
+      get_memory_audit: 'memories:read',
       remember: 'memories:write',
       ingest_conversation: 'memories:write',
       delete_memory: 'memories:delete',

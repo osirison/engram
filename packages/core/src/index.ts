@@ -22,6 +22,7 @@ export {
   zodToJsonSchema,
   type Tool,
   type ToolAuthMode,
+  type ToolCallContext,
   type AuthPolicy,
   type ActingUserDecision,
   type ToolInputJsonSchema,

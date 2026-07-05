@@ -114,12 +114,59 @@ describe('memory router', () => {
     );
   });
 
+  it('injects the operator email as actorLabel on update (WP2 T5)', async () => {
+    const updateMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ updateMemory });
+    const api = caller(backend);
+    await api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x' });
+    expect(updateMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ actorLabel: 'op@example.com' })
+    );
+  });
+
+  it('injects the operator email as actorLabel on delete (WP2 T5)', async () => {
+    const deleteMemory = vi.fn().mockResolvedValue({ deleted: true });
+    const backend = makeBackend({ deleteMemory });
+    const api = caller(backend);
+    await api.memory.delete({ userId: 'qp', memoryId: 'm1' });
+    expect(deleteMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ actorLabel: 'op@example.com' })
+    );
+  });
+
+  it('delegates auditLog reads (WP2 T5)', async () => {
+    const listMemoryAudit = vi.fn().mockResolvedValue([]);
+    const backend = makeBackend({ listMemoryAudit });
+    const api = caller(backend);
+    await api.memory.auditLog({ userId: 'qp', memoryId: 'm1' });
+    expect(listMemoryAudit).toHaveBeenCalledWith('qp', 'm1', 50);
+  });
+
+  it('delegates restore with the operator email as actorLabel (WP2 T5)', async () => {
+    const restoreMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ restoreMemory });
+    const api = caller(backend);
+    await api.memory.restore({ userId: 'qp', memoryId: 'm1' });
+    expect(restoreMemory).toHaveBeenCalledWith('qp', 'm1', 'op@example.com');
+  });
+
+  it('rejects unauthenticated auditLog/restore callers (WP2 T5)', async () => {
+    const api = caller(makeBackend(), false);
+    await expect(api.memory.auditLog({ userId: 'qp', memoryId: 'm1' })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+    await expect(api.memory.restore({ userId: 'qp', memoryId: 'm1' })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
   it('delegates reembed to the backend (WP2 T7)', async () => {
     const reembedMemory = vi.fn().mockResolvedValue({ id: 'm1' });
     const backend = makeBackend({ reembedMemory });
     const api = caller(backend);
     await api.memory.reembed({ userId: 'qp', memoryId: 'm1' });
-    expect(reembedMemory).toHaveBeenCalledWith('qp', 'm1', undefined);
+    // Fourth arg is the operator email injected server-side as actorLabel (T5).
+    expect(reembedMemory).toHaveBeenCalledWith('qp', 'm1', undefined, 'op@example.com');
   });
 
   it('delegates listStm with parsed defaults', async () => {

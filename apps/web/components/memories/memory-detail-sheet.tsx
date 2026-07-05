@@ -73,6 +73,7 @@ export function MemoryDetailSheet({
     setConfirmingDelete(false);
     setConflict(false);
     setPreservedDraft(null);
+    setHistoryOpen(false);
   }, [memoryId, open]);
 
   const beginEdit = () => {
@@ -139,6 +140,21 @@ export function MemoryDetailSheet({
       await invalidate();
     },
     onError: (error) => toast.error('Re-embed failed', { description: error.message }),
+  });
+
+  // Audit history (WP2 T5) — collapsed by default; fetched lazily on expand.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const auditLog = trpc.memory.auditLog.useQuery(
+    { userId, memoryId: memoryId ?? '', limit: 50 },
+    { enabled: open && historyOpen && Boolean(memoryId) }
+  );
+
+  const restore = trpc.memory.restore.useMutation({
+    onSuccess: async () => {
+      toast.success('Memory restored');
+      await Promise.all([invalidate(), auditLog.refetch()]);
+    },
+    onError: (error) => toast.error('Restore failed', { description: error.message }),
   });
 
   const saveEdit = () => {
@@ -354,6 +370,56 @@ export function MemoryDetailSheet({
                   </pre>
                 </section>
               )}
+
+              {/* History (WP2 T5): audit trail with a restore path for deletes. */}
+              <section className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+                >
+                  {historyOpen ? '▾' : '▸'} History
+                </button>
+                {historyOpen && (
+                  <div className="space-y-2">
+                    {auditLog.isLoading && (
+                      <p className="text-sm text-muted-foreground">Loading history…</p>
+                    )}
+                    {auditLog.data && auditLog.data.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No recorded changes.</p>
+                    )}
+                    {auditLog.data?.map((entry) => (
+                      <div key={entry.id} className="rounded-md border p-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{entry.action}</Badge>
+                          <span
+                            className="text-muted-foreground"
+                            title={absoluteTime(entry.createdAt)}
+                          >
+                            {relativeTime(entry.createdAt)}
+                          </span>
+                          {entry.actorLabel && (
+                            <span className="text-muted-foreground">by {entry.actorLabel}</span>
+                          )}
+                          {entry.delegated && <Badge variant="muted">delegated</Badge>}
+                          {entry.action === 'delete' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="ml-auto"
+                              disabled={restore.isPending}
+                              onClick={() => restore.mutate({ userId, memoryId: data.id })}
+                            >
+                              {restore.isPending && <Loader2 className="size-4 animate-spin" />}
+                              Restore
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </div>
           )}
         </div>

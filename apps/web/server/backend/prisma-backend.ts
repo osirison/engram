@@ -13,6 +13,7 @@ import {
   type ListMemoriesResult,
   type ListStmMemoriesParams,
   type ListStmMemoriesResult,
+  type MemoryAuditEntryDTO,
   type MemoryDTO,
   type MemoryOwner,
   type McpDelegationMode,
@@ -514,6 +515,7 @@ export class PrismaEngramBackend implements EngramBackend {
         ...(params.expectedVersion !== undefined
           ? { expectedVersion: params.expectedVersion }
           : {}),
+        ...(params.actorLabel ? { actorLabel: params.actorLabel } : {}),
       });
     } catch (error) {
       // Optimistic-concurrency conflict (WP2 T4/D5): the tool surfaces a
@@ -532,7 +534,12 @@ export class PrismaEngramBackend implements EngramBackend {
     return updated;
   }
 
-  async reembedMemory(userId: string, memoryId: string, scope?: string | null): Promise<MemoryDTO> {
+  async reembedMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string | null,
+    actorLabel?: string
+  ): Promise<MemoryDTO> {
     if (!this.mcp) {
       throw new BackendError(
         'Re-embedding requires a configured ENGRAM server (ENGRAM_MCP_URL).',
@@ -543,12 +550,70 @@ export class PrismaEngramBackend implements EngramBackend {
       userId,
       memoryId,
       ...(scope ? { scope } : {}),
+      ...(actorLabel ? { actorLabel } : {}),
     });
     const updated = await this.getMemory(userId, memoryId);
     if (!updated) {
       throw new BackendError('Memory not found after re-embedding.', 'NOT_FOUND');
     }
     return updated;
+  }
+
+  /**
+   * Read a memory's audit history directly from Postgres (WP2 T5). The audit
+   * table lives in the same DB the console already reads; keeping this on the
+   * read path (Prisma) avoids a round-trip through the MCP server.
+   */
+  async listMemoryAudit(
+    userId: string,
+    memoryId: string,
+    limit: number
+  ): Promise<MemoryAuditEntryDTO[]> {
+    const take = Math.min(Math.max(limit, 1), 200);
+    const rows = await this.prisma.memoryAudit.findMany({
+      where: { userId, memoryId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        action: true,
+        actorType: true,
+        actorLabel: true,
+        delegated: true,
+        before: true,
+        after: true,
+        createdAt: true,
+      },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorType: r.actorType,
+      actorLabel: r.actorLabel,
+      delegated: r.delegated,
+      before: asRecord(r.before),
+      after: asRecord(r.after),
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  async restoreMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Restoring requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    await this.mcp.call('restore_memory', {
+      userId,
+      memoryId,
+      ...(actorLabel ? { actorLabel } : {}),
+    });
+    const restored = await this.getMemory(userId, memoryId);
+    if (!restored) {
+      throw new BackendError('Memory not found after restore.', 'NOT_FOUND');
+    }
+    return restored;
   }
 
   async deleteMemory(params: DeleteMemoryParams): Promise<{ deleted: boolean }> {
@@ -566,6 +631,7 @@ export class PrismaEngramBackend implements EngramBackend {
       userId: params.userId,
       memoryId: params.memoryId,
       ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.actorLabel ? { actorLabel: params.actorLabel } : {}),
     });
     const deleted =
       result && typeof result === 'object' && typeof result.deleted === 'boolean'

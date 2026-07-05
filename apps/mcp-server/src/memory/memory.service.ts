@@ -134,6 +134,15 @@ type LtmServiceContract = {
     organizationId?: string,
     scope?: string,
   ) => Promise<Memory>;
+  restore: (input: {
+    id: string;
+    userId: string;
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown> | null;
+    scope?: string | null;
+    organizationId?: string | null;
+  }) => Promise<Memory>;
   semanticSearch: (
     userId: string,
     query: string,
@@ -686,6 +695,49 @@ export class MemoryService {
     }
 
     return await this.ltm.reembed(userId, memoryId, undefined, scope);
+  }
+
+  /**
+   * Recreate a memory from a delete snapshot (WP2 T5/G5). A `short-term` snapshot
+   * is recreated in STM with a fresh default TTL (its original expiry is long
+   * gone); everything else restores to LTM under its original id with a rebuilt
+   * vector. The audit trail + snapshot lookup are owned by the controller.
+   */
+  async restoreMemory(snapshot: {
+    id: string;
+    userId: string;
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown> | null;
+    scope?: string | null;
+    organizationId?: string | null;
+    type?: string;
+  }): Promise<Memory> {
+    this.logger.debug(
+      `Restoring memory ${snapshot.id} for user: ${snapshot.userId}`,
+    );
+
+    if (snapshot.type === 'short-term') {
+      // STM has no durable id and its expiry is unrecoverable — recreate as a new
+      // short-term memory with a fresh default TTL.
+      return await this.stm.create({
+        userId: snapshot.userId,
+        content: snapshot.content,
+        scope: snapshot.scope ?? undefined,
+        metadata: snapshot.metadata ?? undefined,
+        tags: snapshot.tags,
+      });
+    }
+
+    return await this.ltm.restore({
+      id: snapshot.id,
+      userId: snapshot.userId,
+      content: snapshot.content,
+      tags: snapshot.tags,
+      metadata: snapshot.metadata,
+      scope: snapshot.scope,
+      organizationId: snapshot.organizationId,
+    });
   }
 
   /**

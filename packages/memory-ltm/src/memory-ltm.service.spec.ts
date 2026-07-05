@@ -520,6 +520,45 @@ describe('MemoryLtmService', () => {
         LtmMemoryNotFoundError
       );
     });
+
+    it('restore recreates the row under its original id, re-embeds, and re-indexes', async () => {
+      const vs = stubVectorStore();
+      const svc = withEmbeddings([0.7, 0.8], vs);
+      prismaService.memory.count.mockResolvedValue(0); // under quota
+      prismaService.memory.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({
+            ...mockMemory,
+            ...data,
+            version: 1,
+          })
+      );
+
+      const restored = await svc.restore({
+        id: mockMemoryId,
+        userId: mockUserId,
+        content: 'recovered content',
+        tags: ['x'],
+        metadata: { note: 'from delete snapshot' },
+        scope: 'agent:a',
+      });
+
+      // Preserves the original id (id-keyed vector upsert stays idempotent).
+      const created = prismaService.memory.create.mock.calls[0][0].data;
+      expect(created.id).toBe(mockMemoryId);
+      expect(created.content).toBe('recovered content');
+      expect(created.embedding).toEqual([0.7, 0.8]);
+      expect(restored.id).toBe(mockMemoryId);
+      expect(vs.upsert).toHaveBeenCalled();
+    });
+
+    it('restore surfaces a quota-exceeded error unchanged', async () => {
+      const svc = withEmbeddings([0.1]);
+      prismaService.memory.count.mockResolvedValue(DEFAULT_LTM_CONFIG.maxMemoriesPerUser);
+      await expect(
+        svc.restore({ id: mockMemoryId, userId: mockUserId, content: 'x' })
+      ).rejects.toBeInstanceOf(LtmMemoryQuotaExceededError);
+    });
   });
 
   describe('delete', () => {

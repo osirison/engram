@@ -38,6 +38,12 @@ vi.mock('@/trpc/react', () => {
         reembed: {
           useMutation: () => ({ mutate: h.reembedMutate, isPending: false }),
         },
+        auditLog: {
+          useQuery: () => ({ data: [], isLoading: false, refetch: vi.fn() }),
+        },
+        restore: {
+          useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+        },
       },
     },
   };

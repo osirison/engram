@@ -158,8 +158,8 @@ describe('tools/list advertised JSON Schemas (wiring, issue #205)', () => {
     expect(advertisedTools.map((t) => t.name).sort()).toEqual(
       registeredTools.map((t) => t.name).sort(),
     );
-    // Enterprise profile: 1 built-in + 21 memory + 3 api-key tools.
-    expect(advertisedTools).toHaveLength(25);
+    // Enterprise profile: 1 built-in + 23 memory + 3 api-key tools.
+    expect(advertisedTools).toHaveLength(27);
   });
 
   it('every advertised schema is a strict draft-07 object schema', () => {

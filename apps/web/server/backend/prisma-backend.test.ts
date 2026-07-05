@@ -34,6 +34,9 @@ function makePrisma(overrides: Record<string, unknown> = {}): PrismaClient {
         .fn()
         .mockResolvedValue({ _max: { createdAt: null }, _min: { createdAt: null } }),
     },
+    memoryAudit: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     $queryRaw: vi.fn().mockResolvedValue([]),
     ...overrides,
   } as unknown as PrismaClient;
@@ -423,6 +426,50 @@ describe('PrismaEngramBackend writes', () => {
       'delete_memory',
       expect.objectContaining({ memoryId: 'm1' })
     );
+  });
+
+  it('reads audit history from Postgres and maps rows (WP2 T5)', async () => {
+    const prisma = makePrisma();
+    (prisma.memoryAudit.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'a1',
+        action: 'delete',
+        actorType: 'api-key',
+        actorLabel: 'op@example.com',
+        delegated: true,
+        before: { content: 'gone' },
+        after: { deleted: true },
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    ]);
+    const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
+    const entries = await backend.listMemoryAudit('qp', 'm1', 50);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      action: 'delete',
+      actorLabel: 'op@example.com',
+      delegated: true,
+      before: { content: 'gone' },
+      createdAt: '2026-07-01T00:00:00.000Z',
+    });
+  });
+
+  it('restores via MCP then re-reads the memory (WP2 T5)', async () => {
+    const prisma = makePrisma();
+    (prisma.memory.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(makeRow({ id: 'm1' }));
+    const mcp = { call: vi.fn().mockResolvedValue({}) } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma,
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const restored = await backend.restoreMemory('qp', 'm1', 'op@example.com');
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'restore_memory',
+      expect.objectContaining({ userId: 'qp', memoryId: 'm1', actorLabel: 'op@example.com' })
+    );
+    expect(restored.id).toBe('m1');
   });
 
   it('reports the truthful {deleted:false} the tool returns (A10)', async () => {

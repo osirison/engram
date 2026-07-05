@@ -129,12 +129,31 @@ export interface UpdateMemoryParams {
    * `CONFLICT` BackendError if the memory has moved past this version.
    */
   expectedVersion?: number;
+  /**
+   * Untrusted display label for the audit trail (WP2 T5) — the operator email,
+   * injected server-side in tRPC (never trusted from the browser).
+   */
+  actorLabel?: string;
 }
 
 export interface DeleteMemoryParams {
   userId: string;
   memoryId: string;
   scope?: string | null;
+  /** Audit display label, injected server-side (WP2 T5). */
+  actorLabel?: string;
+}
+
+/** One audit-trail entry shaped for the UI (WP2 T5). */
+export interface MemoryAuditEntryDTO {
+  id: string;
+  action: string;
+  actorType: string;
+  actorLabel: string | null;
+  delegated: boolean;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export interface ServiceHealth {
@@ -260,8 +279,17 @@ export interface EngramBackend {
   searchMemories(params: SearchMemoriesParams): Promise<SearchMemoriesResult>;
   updateMemory(params: UpdateMemoryParams): Promise<MemoryDTO>;
   /** Regenerate the vector for a memory's current content (WP2 T7). */
-  reembedMemory(userId: string, memoryId: string, scope?: string | null): Promise<MemoryDTO>;
+  reembedMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string | null,
+    actorLabel?: string
+  ): Promise<MemoryDTO>;
   deleteMemory(params: DeleteMemoryParams): Promise<{ deleted: boolean }>;
+  /** Read a memory's audit history, newest first (WP2 T5). Reads Postgres directly. */
+  listMemoryAudit(userId: string, memoryId: string, limit: number): Promise<MemoryAuditEntryDTO[]>;
+  /** Recreate a hard-deleted memory from its delete snapshot (WP2 T5). */
+  restoreMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO>;
 
   getHealth(): Promise<HealthReport>;
   getMetrics(): Promise<MetricSnapshot>;

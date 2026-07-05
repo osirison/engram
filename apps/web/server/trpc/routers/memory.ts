@@ -118,13 +118,35 @@ export const memoryRouter = router({
       scope: input.scope ?? undefined,
       ttl: input.ttl,
       expectedVersion: input.expectedVersion,
+      // Audit label is the signed-in operator, injected server-side — never
+      // trusted from the browser (WP2 T5).
+      actorLabel: ctx.session?.user?.email ?? undefined,
     })
   ),
 
   reembed: protectedProcedure
     .input(z.object({ userId, memoryId, scope: z.string().max(256).nullish() }))
     .mutation(({ ctx, input }) =>
-      ctx.backend.reembedMemory(input.userId, input.memoryId, input.scope ?? undefined)
+      ctx.backend.reembedMemory(
+        input.userId,
+        input.memoryId,
+        input.scope ?? undefined,
+        ctx.session?.user?.email ?? undefined
+      )
+    ),
+
+  // Audit history for a memory (WP2 T5). Read-only; served from Postgres.
+  auditLog: protectedProcedure
+    .input(z.object({ userId, memoryId, limit: z.number().int().min(1).max(200).default(50) }))
+    .query(({ ctx, input }) =>
+      ctx.backend.listMemoryAudit(input.userId, input.memoryId, input.limit)
+    ),
+
+  // Restore a hard-deleted memory from its delete snapshot (WP2 T5/G5).
+  restore: protectedProcedure
+    .input(z.object({ userId, memoryId }))
+    .mutation(({ ctx, input }) =>
+      ctx.backend.restoreMemory(input.userId, input.memoryId, ctx.session?.user?.email ?? undefined)
     ),
 
   delete: protectedProcedure.input(deleteInput).mutation(async ({ ctx, input }) => {
@@ -132,6 +154,7 @@ export const memoryRouter = router({
       userId: input.userId,
       memoryId: input.memoryId,
       scope: input.scope ?? undefined,
+      actorLabel: ctx.session?.user?.email ?? undefined,
     });
     // A truthful {deleted:false} (WP2 T2/A10) means the row was already gone —
     // surface it as NOT_FOUND rather than a false success.

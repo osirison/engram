@@ -30,18 +30,18 @@ Order respects the dependency graph (server foundations before UI consumers); se
 in one worktree because tasks overlap heavily on shared files (parallel worktrees would
 collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
 
-| #        | Task                                                       | Depends  | Status | Commit                                                                |
-| -------- | ---------------------------------------------------------- | -------- | ------ | --------------------------------------------------------------------- |
-| SHARED-2 | `Memory.version` + `MemoryAudit` schema + migration        | none     | ✅     | migration `20260705190357_memory_version_and_audit`                   |
-| T2       | STM read path: delegation, type filter, structured results | none     | 🟨     | logic + unit/wiring green; LIVE STM round-trip pending (do before T3) |
-| T1       | Keyset pagination                                          | none     | ✅     | cursor.ts + listMemories; walk verified on real PG                    |
-| T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ✅     | stores+mcp+web+UI; full suite green                                   |
-| T7       | Re-embed integrity (`embeddingStale` + `reembed_memory`)   | (T4)     | ✅     | LTM flag+reembed (no version bump); tool 21; UI badge/button          |
-| T5       | Persistent audit trail + restore (`ToolCallContext`)       | SHARED-2 | ⬜     |                                                                       |
-| T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ⬜     |                                                                       |
-| T3       | STM UI (live tier, TTL, promote)                           | T2       | ⬜     |                                                                       |
-| T8       | Optimistic delete UX                                       | T2       | ⬜     |                                                                       |
-| T9       | Proportionate authz (operator→tenant binding)              | (last)   | ⬜     |                                                                       |
+| #        | Task                                                       | Depends  | Status | Commit                                                                         |
+| -------- | ---------------------------------------------------------- | -------- | ------ | ------------------------------------------------------------------------------ |
+| SHARED-2 | `Memory.version` + `MemoryAudit` schema + migration        | none     | ✅     | migration `20260705190357_memory_version_and_audit`                            |
+| T2       | STM read path: delegation, type filter, structured results | none     | 🟨     | logic + unit/wiring green; LIVE STM round-trip pending (do before T3)          |
+| T1       | Keyset pagination                                          | none     | ✅     | cursor.ts + listMemories; walk verified on real PG                             |
+| T4       | Optimistic concurrency (version CAS)                       | SHARED-2 | ✅     | stores+mcp+web+UI; full suite green                                            |
+| T7       | Re-embed integrity (`embeddingStale` + `reembed_memory`)   | (T4)     | ✅     | LTM flag+reembed (no version bump); tool 21; UI badge/button                   |
+| T5       | Persistent audit trail + restore (`ToolCallContext`)       | SHARED-2 | ✅     | core ctx + audit svc + restore/get_audit tools (23) + web history; suite green |
+| T6       | Bulk delete (`bulk_delete_memories`)                       | SHARED-2 | ⬜     |                                                                                |
+| T3       | STM UI (live tier, TTL, promote)                           | T2       | ⬜     |                                                                                |
+| T8       | Optimistic delete UX                                       | T2       | ⬜     |                                                                                |
+| T9       | Proportionate authz (operator→tenant binding)              | (last)   | ⬜     |                                                                                |
 
 ## Decisions / notes log
 

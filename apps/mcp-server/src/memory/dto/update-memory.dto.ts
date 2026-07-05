@@ -24,6 +24,8 @@ export const updateMemoryToolSchema = z
      * `CONFLICT:` error. Optional so existing agent callers keep last-write-wins.
      */
     expectedVersion: z.coerce.number().int().min(1).optional(),
+    /** Untrusted display label recorded on the audit row (WP2 T5). */
+    actorLabel: z.string().max(256).optional(),
   })
   .strict();
 

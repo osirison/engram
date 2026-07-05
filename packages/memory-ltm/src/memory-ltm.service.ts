@@ -514,6 +514,61 @@ export class MemoryLtmService {
   }
 
   /**
+   * Recreate a long-term memory from a delete snapshot, preserving its ORIGINAL
+   * id so id-keyed vector upserts and inbound links stay valid (WP2 T5/G5). Runs
+   * through the same quota-guarded insert path as `create`, re-embeds the content,
+   * and re-indexes the vector. Fails with `LtmMemoryQuotaExceededError` if the
+   * user is at quota, and is a no-op-safe recreate: if the id already exists the
+   * Prisma insert throws and surfaces as a database error.
+   */
+  async restore(input: {
+    id: string;
+    userId: string;
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown> | null;
+    scope?: string | null;
+    organizationId?: string | null;
+  }): Promise<LtmMemory> {
+    this.logger.debug(`Restoring LTM memory ${input.id} for user: ${input.userId}`);
+
+    try {
+      let embedding: number[] = [];
+      if (this.embeddingsService) {
+        const result = await this.embeddingsService
+          .generate({ text: input.content })
+          .catch(() => null);
+        embedding = result?.embedding ?? [];
+      }
+
+      const memory = await this.createRowWithQuota(input.userId, {
+        id: input.id,
+        userId: input.userId,
+        organizationId: input.organizationId ?? null,
+        scope: input.scope ?? null,
+        content: input.content,
+        metadata: (input.metadata ?? null) as PrismaMemory['metadata'],
+        tags: input.tags ?? [],
+        type: MemoryType.LONG_TERM,
+        expiresAt: null,
+        embedding,
+      });
+
+      const ltmMemory = this.mapToLtmMemory(memory);
+      if (embedding.length > 0) {
+        await this.indexVector(ltmMemory, embedding);
+      }
+      return ltmMemory;
+    } catch (error) {
+      if (error instanceof LtmMemoryQuotaExceededError) {
+        throw error;
+      }
+      this.logger.error(`Failed to restore LTM memory ${input.id}: ${error}`);
+      throw new LtmDatabaseError('restore', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
    * Delete a long-term memory.
    * Pass `organizationId` in user-facing paths to prevent cross-tenant deletes.
    * See `get()` for the full isolation contract.

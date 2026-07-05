@@ -12,6 +12,8 @@ export const reembedMemoryToolSchema = z
     memoryId: memoryIdSchema,
     /** Optional namespace used to locate the memory (scope isolation). */
     scope: z.string().min(1).max(256).optional(),
+    /** Untrusted display label recorded on the audit row (WP2 T5). */
+    actorLabel: z.string().max(256).optional(),
   })
   .strict();
 

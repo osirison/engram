@@ -1008,3 +1008,206 @@ describe('MemoryController', () => {
     });
   });
 });
+
+// ── WP2 T5: audit trail + restore wiring ───────────────────────────────────────
+import { MemoryAuditService } from './memory-audit.service';
+import type { ToolCallContext } from '@engram/core';
+
+describe('MemoryController audit wiring (WP2 T5)', () => {
+  let controller: MemoryController;
+
+  const userId = 'clm0000000000000000000000';
+  const memoryId = 'clm1111111111111111111111';
+  const ctx: ToolCallContext = {
+    actorUserId: userId,
+    apiKeyId: 'key_op',
+    scopes: ['admin'],
+    delegated: true,
+  };
+
+  const svc = {
+    getMemory: jest.fn(),
+    updateMemory: jest.fn(),
+    deleteMemory: jest.fn(),
+    promoteMemory: jest.fn(),
+    reembedMemory: jest.fn(),
+    restoreMemory: jest.fn(),
+  };
+  const audit = {
+    record: jest.fn().mockResolvedValue(undefined),
+    list: jest.fn().mockResolvedValue([]),
+    findLatestDeleteSnapshot: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [MemoryController],
+      providers: [
+        { provide: MemoryService, useValue: svc },
+        { provide: ReindexQueueService, useValue: {} },
+        { provide: ConsolidationService, useValue: {} },
+        { provide: MemoryAuditService, useValue: audit },
+      ],
+    }).compile();
+    controller = module.get<MemoryController>(MemoryController);
+  });
+
+  it('records an update audit row carrying the dispatch delegation facts + before/after', async () => {
+    svc.getMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'old',
+      tags: ['a'],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 3,
+    });
+    svc.updateMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'new',
+      tags: ['a'],
+      metadata: null,
+      version: 4,
+      scope: null,
+    });
+
+    await controller.updateMemory(
+      { userId, memoryId, content: 'new', actorLabel: 'op@example.com' },
+      ctx,
+    );
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memoryId,
+        userId,
+        action: 'update',
+        context: ctx,
+        actorLabel: 'op@example.com',
+        before: expect.objectContaining({ content: 'old', version: 3 }),
+        after: expect.objectContaining({ content: 'new', version: 4 }),
+      }),
+    );
+  });
+
+  it("captures a delete's before-snapshot (the restore source) and records the attempt", async () => {
+    svc.getMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'delete me',
+      tags: ['x'],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 1,
+    });
+    svc.deleteMemory.mockResolvedValue(true);
+
+    await controller.deleteMemory({ userId, memoryId }, ctx);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'delete',
+        before: expect.objectContaining({ content: 'delete me' }),
+        after: { deleted: true },
+        // Delegation facts travel in `context`, which the audit service maps to
+        // the row's `delegated`/`actorType` columns.
+        context: ctx,
+      }),
+    );
+  });
+
+  it('records the attempt even when the delete found nothing (deleted:false)', async () => {
+    svc.getMemory.mockResolvedValue(null);
+    svc.deleteMemory.mockResolvedValue(false);
+
+    await controller.deleteMemory({ userId, memoryId }, ctx);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'delete',
+        before: null,
+        after: { deleted: false },
+      }),
+    );
+  });
+
+  it('restore_memory rebuilds from the newest delete snapshot and records a restore row', async () => {
+    audit.findLatestDeleteSnapshot.mockResolvedValue({
+      before: {
+        content: 'recover me',
+        tags: ['x'],
+        type: 'long-term',
+        scope: null,
+      },
+      scope: null,
+      organizationId: null,
+    });
+    svc.restoreMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'recover me',
+      scope: null,
+      organizationId: null,
+    });
+
+    const response = await controller.restoreMemory({ userId, memoryId }, ctx);
+
+    expect(svc.restoreMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: memoryId,
+        content: 'recover me',
+        type: 'long-term',
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'restore', memoryId }),
+    );
+    expect(response.content[0]?.text).toContain(memoryId);
+  });
+
+  it('restore_memory fails clearly when there is no recoverable snapshot', async () => {
+    audit.findLatestDeleteSnapshot.mockResolvedValue(null);
+    await expect(
+      controller.restoreMemory({ userId, memoryId }, ctx),
+    ).rejects.toThrow(/No recoverable delete snapshot/);
+  });
+
+  it('get_memory_audit returns the history from the audit service', async () => {
+    audit.list.mockResolvedValue([
+      {
+        id: 'a1',
+        action: 'delete',
+        actorType: 'api-key',
+        actorLabel: null,
+        delegated: false,
+      },
+    ]);
+    const response = await controller.getMemoryAudit({
+      userId,
+      memoryId,
+      limit: 10,
+    });
+    const parsed = JSON.parse(response.content[0]!.text) as {
+      entries: unknown[];
+    };
+    expect(parsed.entries).toHaveLength(1);
+    expect(audit.list).toHaveBeenCalledWith(userId, memoryId, 10);
+  });
+
+  it('registers restore_memory + get_memory_audit as delegable tools with correct scopes', () => {
+    const tools = controller.getMcpTools();
+    const restore = tools.find((t) => t.name === 'restore_memory');
+    const history = tools.find((t) => t.name === 'get_memory_audit');
+    expect(restore?.delegable).toBe(true);
+    expect(restore?.requiredScope).toBe('memories:write');
+    expect(history?.delegable).toBe(true);
+    expect(history?.requiredScope).toBe('memories:read');
+  });
+});
