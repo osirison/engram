@@ -12,18 +12,23 @@ transcript. Read `CLAUDE.md` and `AGENTS.md` at repo root before executing any W
    worktree — uncommitted WP files on disk are valid completed work; commit them.
 3. Any WP marked `pending` below with no file on disk must be (re)generated per the
    "WP specs" section. WPs are independent — regenerate only what is missing.
+4. **Single-writer rule**: interrupted agents can auto-resume when usage limits
+   reset and rewrite deliverables (this happened to WP1 and WP2 in the original
+   session). Before regenerating or overwriting any WP file, `git diff` it against
+   HEAD — if it changed since the last commit, another writer may be active. Prefer
+   merging the better content over re-spawning; every prior state is in git.
 
 ## Status
 
 | WP  | Deliverable                                       | State                                             |
 | --- | ------------------------------------------------- | ------------------------------------------------- |
 | WP1 | `WP1-marketing-site-validation/REPORT.md`         | done — 26 findings (3 critical), R1–R13           |
-| WP2 | `WP2-memory-ui/PLAN.md`                           | done — SHARED-2 + T1–T8                           |
+| WP2 | `WP2-memory-ui/PLAN.md`                           | done — v2: SHARED-2 + T1–T9                       |
 | WP3 | `WP3-markdown-export/PLAN.md`                     | done — SHARED-1 + T1–T9                           |
 | WP4 | `WP4-agent-memory-import/PLAN.md`                 | done — SHARED-1 + T1–T16 (6 adapters in parallel) |
 | WP5 | `WP5-primary-memory-integration/PLAN.md`          | done — D1–D8, T1–T13                              |
 | WP6 | `WP6-developer-docs/PLAN.md`                      | pending                                           |
-| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A27 (agents' finds)            |
+| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A31 (agents' finds)            |
 
 ## Dependency graph (for executors)
 
@@ -45,8 +50,9 @@ everything else parallelizes.
   **Canonical model: `SHARED-1-memory-link.md`** — it reconciles the divergent
   WP3 §5 and WP4 §6 drafts (both carry supersession notes). Consumed by WP3
   export, WP4 import, WP2 UI.
-- **SHARED-2 — `MemoryAuditLog` table + migration**: audit trail for destructive
-  ops. Defined in `WP2-memory-ui/PLAN.md` (Schema changes section).
+- **SHARED-2 — `Memory.version` column + `MemoryAudit` table** (migration
+  `memory-version-audit`): optimistic-concurrency CAS + audit trail for
+  destructive ops. Defined in `WP2-memory-ui/PLAN.md` (Schema changes).
 - _(WP4-local)_ `MemoryImportSource` ledger — defined in WP4 §6; serialize its
   migration with the SHARED tasks like any other schema change.
 

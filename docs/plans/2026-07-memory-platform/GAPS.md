@@ -195,3 +195,21 @@ deliverable's Risks section. -->
 - **A27** — Distillation model dependency: the SessionEnd backstop needs an LLM to
   distill transcripts; which provider/model, its cost, and the privacy of sending
   transcripts to it are open policy questions.
+
+### From WP2 v2 (rewrite by resumed agent — deeper server-side verification)
+
+- **A28** — `get_memory`, `list_memories`, `promote_memory` are **not `delegable`**
+  (`memory.controller.ts:1086-1130`): the console's admin API key is silently pinned
+  to its own tenant for those tools. Any WP relying on console reads of STM or
+  promote hits this wall today.
+- **A29** — `list_memories` drops its `type` filter (`memory.controller.ts:242-251`)
+  and the STM+LTM merge re-injects STM rows on every page
+  (`memory.service.ts:404-456`) — WP4 importers or WP3 export using this tool for
+  enumeration will double-count.
+- **A30** — Core tool dispatch passes no actor context to handlers
+  (`packages/core/src/mcp/tools/index.ts:296-299`). WP2 audit, WP4 provenance, and
+  WP5 per-agent attribution all need the same `ToolCallContext` change — coordinate
+  on ONE signature or three competing ones will collide.
+- **A31** — Two Prisma clients (web `WEB_DATABASE_URL` vs mcp-server `DATABASE_URL`)
+  assume one Postgres instance; introducing a read replica breaks read-after-write
+  in the web update flow (update via MCP → immediate Postgres re-read).
