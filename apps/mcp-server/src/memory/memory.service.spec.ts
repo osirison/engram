@@ -65,6 +65,7 @@ describe('MemoryService', () => {
       delete: jest.fn(),
       list: jest.fn(),
       promote: jest.fn(),
+      reembed: jest.fn(),
       semanticSearch: jest.fn(),
       reindex: jest.fn(),
     };
@@ -672,6 +673,35 @@ describe('MemoryService', () => {
       await expect(service.promoteMemory('user-1', 'stm-123')).rejects.toBe(
         quotaError,
       );
+    });
+  });
+
+  describe('reembedMemory (WP2 T7)', () => {
+    it('delegates to LTM reembed when the id is not a live STM memory', async () => {
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError('ltm-1'),
+      );
+      ltmService.reembed.mockResolvedValue(mockLtmMemory);
+
+      const result = await service.reembedMemory('user-1', 'ltm-1');
+
+      expect(result).toEqual(mockLtmMemory);
+      expect(ltmService.reembed).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-1',
+        undefined,
+        undefined,
+      );
+    });
+
+    it('rejects an STM id with a clear error and never calls LTM reembed', async () => {
+      // The id resolves in STM — STM is not vector-indexed, so reembed is invalid.
+      stmService.findById.mockResolvedValue(mockStmMemory);
+
+      await expect(service.reembedMemory('user-1', 'stm-123')).rejects.toThrow(
+        /short-term and is not vector-indexed/,
+      );
+      expect(ltmService.reembed).not.toHaveBeenCalled();
     });
   });
 
