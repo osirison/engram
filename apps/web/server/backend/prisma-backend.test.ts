@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { decodeCursor, encodeCursor } from './cursor';
 import type { McpToolClient } from './mcp-client';
 import { parsePrometheus, PrismaEngramBackend } from './prisma-backend';
 
@@ -204,11 +205,14 @@ describe('PrismaEngramBackend.capabilities', () => {
 });
 
 describe('PrismaEngramBackend.listMemories', () => {
-  it('maps rows to DTOs, derives importance/insight/embedding, and paginates', async () => {
+  it('maps rows to DTOs, derives importance/insight/embedding, and keyset-paginates', async () => {
     const prisma = makePrisma();
+    // Over-fetch: limit+1 rows come back, so hasMore is detected without a
+    // second query and the extra row is trimmed from the page (WP2 T1/D8).
     (prisma.memory.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
       makeRow({ id: 'm1', metadata: { importance: 0.8 }, tags: ['insight', 'x'] }),
-      makeRow({ id: 'm2' }),
+      makeRow({ id: 'm2', createdAt: new Date('2026-05-30T00:00:00.000Z') }),
+      makeRow({ id: 'm3' }),
     ]);
     (prisma.memory.count as ReturnType<typeof vi.fn>).mockResolvedValue(5);
     (prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'm1' }]);
@@ -227,7 +231,55 @@ describe('PrismaEngramBackend.listMemories', () => {
     expect(result.items[1]).toMatchObject({ id: 'm2', hasEmbedding: false, importance: null });
     expect(result.totalCount).toBe(5);
     expect(result.hasMore).toBe(true);
-    expect(result.nextCursor).toBe('2');
+
+    // Query shape: keyset ordering with an id tiebreak, over-fetch, no `skip`.
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(findArgs.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+    expect(findArgs.take).toBe(3);
+    expect(findArgs.skip).toBeUndefined();
+
+    // nextCursor points at the last row OF THE PAGE (m2), not the over-fetched m3.
+    expect(decodeCursor(result.nextCursor)).toEqual({
+      v: new Date('2026-05-30T00:00:00.000Z').getTime(),
+      id: 'm2',
+    });
+  });
+
+  it('applies the decoded cursor as an AND-ed keyset predicate; no next page when short', async () => {
+    const prisma = makePrisma();
+    // Fewer than limit+1 rows → this is the last page.
+    (prisma.memory.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([makeRow({ id: 'z' })]);
+    (prisma.memory.count as ReturnType<typeof vi.fn>).mockResolvedValue(3);
+
+    const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
+    const cursor = encodeCursor({ v: new Date('2026-06-01T00:00:00.000Z').getTime(), id: 'm5' });
+    const result = await backend.listMemories({ userId: 'qp', limit: 2, cursor });
+
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    // The base filter is preserved and the seek predicate is AND-ed on top.
+    expect(findArgs.where.AND).toBeDefined();
+    expect(findArgs.where.AND[1].OR).toEqual([
+      { createdAt: { lt: new Date('2026-06-01T00:00:00.000Z') } },
+      { createdAt: new Date('2026-06-01T00:00:00.000Z'), id: { lt: 'm5' } },
+    ]);
+    // totalCount counts the base filter, not the seek window.
+    const countArgs = (prisma.memory.count as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(countArgs.where.AND).toBeUndefined();
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it('treats a legacy numeric offset cursor as the first page (no keyset clause)', async () => {
+    const prisma = makePrisma();
+    (prisma.memory.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (prisma.memory.count as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+
+    const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
+    await backend.listMemories({ userId: 'qp', limit: 2, cursor: '25' });
+
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(findArgs.where.AND).toBeUndefined();
+    expect(findArgs.where).toMatchObject({ userId: 'qp' });
   });
 
   it('uses the insight tag (not metadata) as the source of truth for isInsight', async () => {
