@@ -213,3 +213,22 @@ deliverable's Risks section. -->
 - **A31** — Two Prisma clients (web `WEB_DATABASE_URL` vs mcp-server `DATABASE_URL`)
   assume one Postgres instance; introducing a read replica breaks read-after-write
   in the web update flow (update via MCP → immediate Postgres re-read).
+
+### From WP6 (developer docs)
+
+- **A32** — `@engram/config` exports only `envSchema`, which is a `ZodEffects`
+  (post-refine) and cannot be introspected field-by-field. The env-var reference
+  generator needs a small additive change first: `export const baseSchema`
+  (`packages/config/src/index.ts:6`).
+- **A33** — Roughly 20 env vars are read via `process.env` directly and bypass the
+  config schema entirely (`MCP_ADMIN_TOKEN`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  `LOG_LEVEL`, `CORS_ALLOWED_ORIGINS`, `METRICS_TOKEN`, `QDRANT_API_KEY`, …).
+  True configuration surface is ~52 vars, not the ~32 in the schema — the docs
+  generator emits a supplementary "not schema-validated" table, but folding them
+  into the schema is the durable fix.
+- **A34** — Doc-drift gates only work if generators are deterministic: zero
+  timestamps or run-IDs in generated output, or CI fails on every run. Applies
+  equally to WP3's deterministic-export requirement.
+- **A35** — Static-hosting base-path risk: Starlight search (Pagefind) under
+  `base: '/docs'` on GitHub Pages needs verification up front (T1), with a
+  documented fallback strategy if it fights the merged-artifact deploy.

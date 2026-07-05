@@ -145,6 +145,36 @@ PGVECTOR_HNSW*{M,EF*CONSTRUCTION,EF_SEARCH}, DEPLOYMENT_PROFILE, JWT_SECRET,
 JWT_EXPIRES_IN, AUTH_REQUIRED, OAUTH_REDIRECT_BASE_URL, GITHUB*{CLIENT*ID,CLIENT_SECRET},
 GOOGLE*{CLIENT*ID,CLIENT_SECRET}, RATE_LIMIT*{ENABLED,WINDOW_SEC,USER_RPM,ORG_RPM,IP_RPM,TOOL_OVERRIDES}.
 
+**Important: env vars read outside `baseSchema`** (confirmed by `grep -rhoP "process\.env\.\K[A-Z0-9_]+"` across `apps/` and `packages/` during planning):
+The following vars are consumed directly via `process.env` but NOT validated by `envSchema`.
+They must appear in the configuration reference. T3 generates a supplementary
+"Unvalidated variables" section (labelled "not schema-validated") for these:
+
+| Variable                             | Where consumed          | Notes                                                |
+| ------------------------------------ | ----------------------- | ---------------------------------------------------- |
+| `MCP_ADMIN_TOKEN`                    | `apps/mcp-server`       | Required for all admin MCP tools — security-critical |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`        | observability           | Omit to disable OTel (no overhead)                   |
+| `OTEL_SERVICE_NAME`                  | observability           | OTel service name                                    |
+| `BACKUP_DIR`                         | backup scripts          | Default: `./backups`                                 |
+| `BACKUP_RETENTION_DAYS`              | backup scripts          | Default: 30                                          |
+| `LOG_LEVEL`                          | logging module          | `debug`/`info`/`warn`/`error`                        |
+| `ALLOW_UNAUTHENTICATED_HTTP`         | auth                    | Dev override; never set in production                |
+| `CORS_ALLOWED_ORIGINS`               | HTTP config             | Comma-separated origins                              |
+| `ENGRAM_DEFAULT_USER_ID`             | multi-tenancy           | Fallback userId when AUTH_REQUIRED=false             |
+| `ENGRAM_API_KEY`                     | API key auth            | Pre-shared key alternative to JWT                    |
+| `ENGRAM_ADMIN_EMAILS`                | auth                    | Comma-separated admin email list                     |
+| `METRICS_TOKEN`                      | Prometheus endpoint     | Bearer token for `/health/metrics`                   |
+| `QDRANT_API_KEY`                     | Qdrant backend          | Optional Qdrant auth key                             |
+| `MEMORY_DUPLICATE_THRESHOLD`         | dedup logic             | Cosine similarity threshold                          |
+| `MEMORY_CONTRADICTION_THRESHOLD`     | contradiction detection | Lower bound                                          |
+| `MEMORY_CONTRADICTION_THRESHOLD_MAX` | contradiction detection | Upper bound                                          |
+| `MEMORY_DECAY_INTERVAL_MS`           | decay service           | Decay tick interval                                  |
+| `PGVECTOR_TEST_URL`                  | CI integration tests    | Enables pgvector integration tests                   |
+| `LTM_QUOTA_TEST_URL`                 | quota integration tests | Test-only Postgres URL                               |
+| `ENGRAM_MCP_URL`                     | MCP client config       | Base URL for MCP endpoint                            |
+
+**Total configuration reference scope**: 32 (schema-validated) + ~20 (unvalidated) = **~52 env vars**.
+
 **JSDoc descriptions exist in source** (e.g., `/** Conditional Postgres URL. Required for... */`)
 but are not runtime-visible via `z.toJSONSchema()`. The generator will parse them using
 the TypeScript compiler API (`ts.createSourceFile` + AST walking) or ts-morph to
@@ -158,14 +188,14 @@ approach; mark as optional in T3).
 
 ### 3.1 Frameworks evaluated
 
-| Framework           | Type                   | Next 16 compat                                     | MDX               | Static export                 | Monorepo/pnpm  | Search (static)               | Versioning                                  | Pages fit                                                                               |
-| ------------------- | ---------------------- | -------------------------------------------------- | ----------------- | ----------------------------- | -------------- | ----------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **Astro Starlight** | Purpose-built docs SSG | N/A (Astro, not Next)                              | Yes               | Yes (Astro default)           | Yes            | Pagefind (build-time, static) | Plugin (`@astrojs/starlight-docs-versions`) | **Excellent**: pure static, trivially merged                                            |
-| **Fumadocs**        | Next.js docs framework | **Yes** (v16 requires Next 16+)                    | Yes               | Yes (needs `output:'export'`) | Yes            | Orama (WASM, works static)    | None built-in                               | **Conditional**: static export OK, but search under basePath needs validation; see §3.3 |
-| **Nextra**          | Next.js docs framework | Partial (4.6.1 fixes; early issues with Turbopack) | Yes               | Yes (limited)                 | Yes            | FlexSearch (client-side)      | None built-in                               | Same Pages constraint as Fumadocs                                                       |
-| **Docusaurus**      | React SSG (Meta)       | N/A (own React bundler)                            | Yes               | Yes (default SSG)             | Yes (via pnpm) | Algolia + local fallback      | **Built-in (best-in-class)**                | Good: pure static                                                                       |
-| **VitePress**       | Vue 3 + Vite SSG       | N/A                                                | Yes (MDC variant) | Yes                           | Yes            | MiniSearch (static)           | None built-in                               | Good: pure static                                                                       |
-| **Mintlify**        | Hosted SaaS            | N/A                                                | Yes               | No (SaaS only)                | N/A            | Built-in (hosted)             | Built-in                                    | **No**: requires external hosting, proprietary, $X/month                                |
+| Framework           | Type                   | Next 16 compat                                     | MDX               | Static export                 | Monorepo/pnpm  | Search (static)               | Versioning                               | Pages fit                                                                               |
+| ------------------- | ---------------------- | -------------------------------------------------- | ----------------- | ----------------------------- | -------------- | ----------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Astro Starlight** | Purpose-built docs SSG | N/A (Astro, not Next)                              | Yes               | Yes (Astro default)           | Yes            | Pagefind (build-time, static) | `starlight-versions` (HiDeoo; early dev) | **Excellent**: pure static, trivially merged                                            |
+| **Fumadocs**        | Next.js docs framework | **Yes** (v16 requires Next 16+)                    | Yes               | Yes (needs `output:'export'`) | Yes            | Orama (WASM, works static)    | None built-in                            | **Conditional**: static export OK, but search under basePath needs validation; see §3.3 |
+| **Nextra**          | Next.js docs framework | Partial (4.6.1 fixes; early issues with Turbopack) | Yes               | Yes (limited)                 | Yes            | FlexSearch (client-side)      | None built-in                            | Same Pages constraint as Fumadocs                                                       |
+| **Docusaurus**      | React SSG (Meta)       | N/A (own React bundler)                            | Yes               | Yes (default SSG)             | Yes (via pnpm) | Algolia + local fallback      | **Built-in (best-in-class)**             | Good: pure static                                                                       |
+| **VitePress**       | Vue 3 + Vite SSG       | N/A                                                | Yes (MDC variant) | Yes                           | Yes            | MiniSearch (static)           | None built-in                            | Good: pure static                                                                       |
+| **Mintlify**        | Hosted SaaS            | N/A                                                | Yes               | No (SaaS only)                | N/A            | Built-in (hosted)             | Built-in                                 | **No**: requires external hosting, proprietary, $X/month                                |
 
 **Verified facts** (web searches performed 2026-07-05):
 
@@ -173,6 +203,12 @@ approach; mark as optional in T3).
 - Nextra v4.6.1 (Dec 2025) fixed Next 16 compatibility. Earlier issues with Turbopack existed. Source: github.com/shuding/nextra/issues/4830.
 - Astro Starlight: static-native, Pagefind runs at build time (no external service). ~200K weekly downloads, active 2026. Source: pkgpulse.com/blog/best-documentation-frameworks-2026.
 - Docusaurus: ~3M weekly downloads, built-in versioning, Algolia DocSearch (free for OSS). Source: same.
+- `starlight-typedoc` v0.21.4 (HiDeoo): confirmed on npm and GitHub. Uses `typedoc-plugin-markdown` to emit Starlight-compatible MDX; requires Astro v5. Source: npmjs.com/package/starlight-typedoc, github.com/HiDeoo/starlight-typedoc.
+- `starlight-versions` (HiDeoo): confirmed on npm and GitHub — community plugin, not an official `@astrojs/*` package. Still in early development; frequent API changes expected. Source: github.com/HiDeoo/starlight-versions.
+
+**Assumed (verify in T1)**:
+
+- Pagefind under `base:'/docs'`: Astro's `base` config option is documented, but a GitHub discussion (#1407, withastro/starlight) shows developers needed to patch sidebar/title components for correct base-path handling. May require workaround. If Pagefind search links are not correctly prefixed, fall back to Strategy B (Vercel). Source: github.com/withastro/starlight/discussions/1407.
 
 ### 3.2 Pages deployment constraint (discriminating factor)
 
@@ -209,9 +245,12 @@ at `/docs` on GitHub Pages (engram.events/docs).**
 Rationale:
 
 1. **Pages constraint, cleanly resolved**: Starlight produces pure static HTML. Its
-   `base` config option (`base: '/docs'`) is stable and well-tested. Pagefind
-   generates a static search index at build time and respects the base path. No
-   WASM runtime caveats, no Node.js server needed.
+   `base` config option (`base: '/docs'`) is documented and works for content routing.
+   Pagefind generates a static search index at build time. **Caveat (assumed, verify in
+   T1)**: a Starlight upstream discussion (#1407) indicates that full base-path support
+   (sidebar links, site title, Pagefind URLs) may require component patches. If verified
+   broken, switch to Strategy B (Vercel). No WASM runtime caveats, no Node.js server
+   needed.
 
 2. **No Next.js version friction**: `apps/docs` is throwaway boilerplate. Replacing
    it with Starlight removes one Next.js app from the Turborepo dependency graph and
@@ -235,8 +274,9 @@ Rationale:
    Starlight-compatible MDX from TypeScript source. `entryPointStrategy:'packages'`
    supports the monorepo layout natively.
 
-7. **Versioning**: `@astrojs/starlight-docs-versions` plugin handles docs versioning
-   when needed. Policy: version at 1.0.0 (currently v0.1.0); track main until then.
+7. **Versioning**: `starlight-versions` plugin (HiDeoo; early dev, verified on npm)
+   handles docs versioning when needed. Policy: version at 1.0.0 (currently v0.1.0);
+   track main until then.
 
 **Second choice**: Fumadocs — if the team prefers to stay in the Next.js/React
 ecosystem and is willing to validate that static export + Pagefind/Orama search
@@ -323,7 +363,7 @@ Engram concept to a quadrant.
     /ingest-conversation
     /prompt-context
 
-  /reference/configuration                  — AUTO-GENERATED env-var table (32 vars)
+  /reference/configuration                  — AUTO-GENERATED env-var table (~52 vars: 32 schema-validated + ~20 process.env)
   /reference/capacity                       — Latency budgets, thresholds (migrated CAPACITY.md)
   /reference/release-gates                  — SLO targets, gate criteria (migrated)
   /reference/health-endpoints              — /health, /health/ready, /health/metrics
@@ -427,6 +467,11 @@ searchable in GitHub's code search, and avoids a docs-build dependency on the fu
 TypeScript compilation during static site generation. Generated files are marked
 `# AUTO-GENERATED — do not edit by hand` in a comment/frontmatter field.
 
+**Determinism requirement**: Generators MUST NOT emit timestamps, "generated on YYYY-MM-DD"
+lines, run-IDs, or any other non-deterministic content. Any such output causes the
+drift gate to fail spuriously on every CI run (the committed file will always differ
+from the freshly generated one). Use a fixed comment: `<!-- AUTO-GENERATED -->` only.
+
 ### D4 — baseSchema must be exported from @engram/config
 
 `envSchema` is a `ZodEffects` (result of `.transform()`), not introspectable as a
@@ -459,7 +504,8 @@ HTML. Instead:
 ENGRAM is v0.1.x. Maintaining a parallel "v0.1" and "v0.2" docs version adds
 overhead for no user benefit at this stage. Policy: docs track `main` with a
 "Last updated" date in the footer. Version the docs site at 1.0.0 using
-`@astrojs/starlight-docs-versions`.
+`starlight-versions` (npm-verified; note: still in early development with
+frequent API changes expected).
 
 ### D8 — apps/docs is replaced, not extended
 
@@ -524,18 +570,29 @@ Astro Starlight project. Configure pnpm workspace, Turborepo, basePath, and loca
    - Name: `"docs"` (preserve — AGENTS.md refers to `--filter docs`)
    - Add `"build": "astro build"`, `"dev": "astro dev --port 3001"`,
      `"check-types": "astro check"`, `"preview": "astro preview"`
-   - Remove Next.js deps; add `astro`, `@astrojs/starlight`, `sharp`
+   - Remove Next.js deps; add `astro`, `@astrojs/starlight`, `sharp`,
+     `starlight-links-validator` (install now; configure below)
 4. Configure `apps/docs/astro.config.mjs`:
    ```js
+   import starlightLinksValidator from 'starlight-links-validator';
    base: '/docs',
    site: 'https://engram.events',
-   integrations: [starlight({ title: 'Engram Docs', ... })]
+   integrations: [starlight({
+     title: 'Engram Docs',
+     plugins: [starlightLinksValidator()],
+     // ... other config
+   })]
    ```
+   `starlight-links-validator` fails the Astro build on broken internal links — this
+   is the standing CI gate for `.mdx` content (which `pnpm docs:check` does not cover).
 5. Verify `pnpm --filter docs build` succeeds from repo root.
 6. Update `turbo.json` to add `docs:generate` as a pipeline task if caching needed.
 7. Update `apps/docs/README.md` with Starlight-specific dev instructions.
 8. Add `"docs:generate"` script to root `package.json` (placeholder for T3/T4).
-9. Run `pnpm docs:check` from root — must pass (no new .md files yet that lack frontmatter).
+9. Verify base-path Pagefind behaviour: run `pnpm --filter docs preview` and check
+   that search results return URLs prefixed with `/docs/`. If broken, open a tracking
+   comment in T2 and switch Strategy A → Strategy B (Vercel deploy).
+10. Run `pnpm docs:check` from root — must pass (no new .md files yet that lack frontmatter).
 
 **Acceptance criteria**:
 
@@ -543,6 +600,8 @@ Astro Starlight project. Configure pnpm workspace, Turborepo, basePath, and loca
 - `pnpm --filter docs dev` serves `http://localhost:3001/docs/` with Starlight default page
 - `pnpm docs:check` exits 0
 - `pnpm build` (Turbo full build) exits 0
+- `starlight-links-validator` is wired in `astro.config.mjs` (build fails on broken internal links)
+- Pagefind base-path verified: search results under `/docs` return URLs prefixed with `/docs/`
 
 **Verification**: Run all four commands above. Check `apps/docs/dist/index.html` exists.
 
@@ -639,15 +698,17 @@ defaults, and leading JSDoc comments from `baseSchema`, and writes
      compiled `@engram/config`) to cross-check types and defaults.
    - Emit `apps/docs/src/content/docs/reference/configuration.md` with:
      - YAML frontmatter: `title: Configuration Reference`, `description: All ENGRAM environment variables with types, defaults, and profile requirements`
-     - A Markdown table: `| Variable | Type | Default | Required | Profile | Description |`
+     - **Section 1 — Schema-validated table** (32 rows): `| Variable | Type | Default | Required | Profile | Description |`
      - Profile-conditional notes for DATABASE_URL, REDIS_URL, QDRANT_URL, JWT_SECRET extracted from the transform logic's `ctx.addIssue` call messages.
+     - **Section 2 — "Additional variables (not schema-validated)"** table: enumerate the ~20 `process.env.*` vars found outside `baseSchema` (full list in §2.5), labelled "manual" to signal they require manual upkeep when code changes. See §2.5 for the complete enumeration.
+   - **Determinism requirement** (per D3): do NOT emit a "generated on" date or any run-specific content. Output must be byte-for-byte identical on every run or the drift gate will fail spuriously on every CI run.
 3. Add `"docs:generate": "node scripts/gen-env-table.mjs && node scripts/gen-mcp-tools.mjs && node scripts/gen-typedoc.mjs"` to root `package.json`.
-4. Run `pnpm docs:generate` and verify `configuration.md` is created with 32 rows.
+4. Run `pnpm docs:generate` and verify `configuration.md` has 32 rows in section 1 and ~20 rows in section 2.
 5. Run `pnpm docs:check` — the generated `.md` must pass frontmatter + link checks.
 
 **Acceptance criteria**:
 
-- `configuration.md` has 32 rows (one per `baseSchema` field).
+- `configuration.md` has 32 rows in the schema-validated table AND a supplementary table for ~20 additional `process.env` vars (covering `MCP_ADMIN_TOKEN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and the rest listed in §2.5). Total coverage: ~52 vars.
 - Frontmatter has `title` and `description`.
 - No broken links in the generated file.
 - `pnpm docs:check` exits 0.

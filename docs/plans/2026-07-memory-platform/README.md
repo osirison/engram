@@ -27,8 +27,8 @@ transcript. Read `CLAUDE.md` and `AGENTS.md` at repo root before executing any W
 | WP3 | `WP3-markdown-export/PLAN.md`                     | done — SHARED-1 + T1–T9                           |
 | WP4 | `WP4-agent-memory-import/PLAN.md`                 | done — SHARED-1 + T1–T16 (6 adapters in parallel) |
 | WP5 | `WP5-primary-memory-integration/PLAN.md`          | done — D1–D8, T1–T13                              |
-| WP6 | `WP6-developer-docs/PLAN.md`                      | pending                                           |
-| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A31 (agents' finds)            |
+| WP6 | `WP6-developer-docs/PLAN.md`                      | done — Starlight, D1–D10, T1–T14                  |
+| —   | `GAPS.md` (cross-cutting gaps qp may have missed) | done — G1–G12 + A1–A35 (agents' finds)            |
 
 ## Dependency graph (for executors)
 
