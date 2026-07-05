@@ -27,8 +27,13 @@ function normaliseUrl(value: string | undefined): string | null {
 }
 
 export const serverEnv = {
-  /** Postgres connection string — shared with the rest of the monorepo. */
-  databaseUrl: process.env.DATABASE_URL ?? null,
+  /**
+   * Postgres connection string for the dashboard's read/analytics path. Prefer
+   * a dedicated read-only role via `WEB_DATABASE_URL` (writes go through the MCP
+   * server, so the dashboard never needs write access — see #206); fall back to
+   * the shared full-privilege `DATABASE_URL` when it is not set.
+   */
+  databaseUrl: process.env.WEB_DATABASE_URL ?? process.env.DATABASE_URL ?? null,
 
   /** Base URL of the ENGRAM MCP server, e.g. http://localhost:3000. */
   mcpUrl: normaliseUrl(process.env.ENGRAM_MCP_URL),

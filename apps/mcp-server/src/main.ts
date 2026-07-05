@@ -20,6 +20,7 @@ import {
 } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { isAuthRequired, isFlagEnabled } from './auth/auth.config';
+import { helmetOptions } from './security/security-headers.util';
 
 type ExpressMiddleware = (
   req: Request,
@@ -55,11 +56,7 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(app.get(Logger));
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: false,
-    }),
-  );
+  app.use(helmet(helmetOptions));
 
   // CORS origin policy: an explicit allow-list from CORS_ALLOWED_ORIGINS
   // (comma-separated) when set; otherwise reflect any origin, preserving the

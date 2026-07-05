@@ -3,6 +3,30 @@ import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
+import { GENERIC_CLIENT_ERROR_DETAIL } from '../security/client-error.util';
+
+/**
+ * Assert an operation failed with the generic client-facing message and did
+ * NOT leak the internal error detail (Prisma/Redis/vector-store messages must
+ * stay server-side).
+ */
+const expectGenericFailure = async (
+  promise: Promise<unknown>,
+  prefix: string,
+  internalDetail: string,
+): Promise<void> => {
+  const error = await promise.then(
+    () => {
+      throw new Error('expected the call to reject');
+    },
+    (e: unknown) => e,
+  );
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toBe(
+    `${prefix}: ${GENERIC_CLIENT_ERROR_DETAIL}`,
+  );
+  expect((error as Error).message).not.toContain(internalDetail);
+};
 
 describe('MemoryController', () => {
   let controller: MemoryController;
@@ -295,16 +319,18 @@ describe('MemoryController', () => {
       expect(payload.state).toBe('queued');
     });
 
-    it('wraps enqueue errors', async () => {
+    it('wraps enqueue errors without leaking internal details', async () => {
       mockReindexQueueService.enqueue.mockRejectedValue(
         new Error('queue unavailable'),
       );
 
-      await expect(
+      await expectGenericFailure(
         controller.queueReindexMemories({
           adminToken: 'test-admin-token-12345',
         }),
-      ).rejects.toThrow('Failed to queue reindex job: queue unavailable');
+        'Failed to queue reindex job',
+        'queue unavailable',
+      );
     });
   });
 
@@ -347,15 +373,17 @@ describe('MemoryController', () => {
       expect(payload.summary.cursor).toBe('c1');
     });
 
-    it('wraps lookup errors', async () => {
+    it('wraps lookup errors without leaking internal details', async () => {
       mockReindexQueueService.get.mockRejectedValue(new Error('db down'));
 
-      await expect(
+      await expectGenericFailure(
         controller.getReindexStatus({
           adminToken: 'test-admin-token-12345',
           jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
         }),
-      ).rejects.toThrow('Failed to get reindex status: db down');
+        'Failed to get reindex status',
+        'db down',
+      );
     });
   });
 
@@ -390,15 +418,17 @@ describe('MemoryController', () => {
       expect(payload.state).toBe('not_found');
     });
 
-    it('wraps cancel errors', async () => {
+    it('wraps cancel errors without leaking internal details', async () => {
       mockReindexQueueService.cancel.mockRejectedValue(new Error('db error'));
 
-      await expect(
+      await expectGenericFailure(
         controller.cancelReindexJob({
           adminToken: 'test-admin-token-12345',
           jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
         }),
-      ).rejects.toThrow('Failed to cancel reindex job: db error');
+        'Failed to cancel reindex job',
+        'db error',
+      );
     });
   });
 
@@ -433,15 +463,17 @@ describe('MemoryController', () => {
       expect(payload.state).toBe('not_found');
     });
 
-    it('wraps retry errors', async () => {
+    it('wraps retry errors without leaking internal details', async () => {
       mockReindexQueueService.retry.mockRejectedValue(new Error('db error'));
 
-      await expect(
+      await expectGenericFailure(
         controller.retryReindexJob({
           adminToken: 'test-admin-token-12345',
           jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
         }),
-      ).rejects.toThrow('Failed to retry reindex job: db error');
+        'Failed to retry reindex job',
+        'db error',
+      );
     });
   });
 
@@ -506,18 +538,20 @@ describe('MemoryController', () => {
       ).rejects.toThrow(/Failed to create memory/);
     });
 
-    it('wraps service errors', async () => {
+    it('wraps service errors without leaking internal details', async () => {
       mockMemoryService.createMemory.mockRejectedValue(
         new Error('quota exceeded'),
       );
 
-      await expect(
+      await expectGenericFailure(
         controller.createMemory({
           userId,
           content: 'hello',
           type: 'long-term',
         }),
-      ).rejects.toThrow(/Failed to create memory: quota exceeded/);
+        'Failed to create memory',
+        'quota exceeded',
+      );
     });
   });
 
@@ -656,14 +690,16 @@ describe('MemoryController', () => {
       ).rejects.toThrow(/Failed to update memory/);
     });
 
-    it('wraps service errors', async () => {
+    it('wraps service errors without leaking internal details', async () => {
       mockMemoryService.updateMemory.mockRejectedValue(
         new Error('memory not found'),
       );
 
-      await expect(
+      await expectGenericFailure(
         controller.updateMemory({ userId, memoryId }),
-      ).rejects.toThrow(/Failed to update memory: memory not found/);
+        'Failed to update memory',
+        'memory not found',
+      );
     });
   });
 
@@ -729,14 +765,16 @@ describe('MemoryController', () => {
       ).rejects.toThrow(/Failed to promote memory/);
     });
 
-    it('wraps service errors', async () => {
+    it('wraps service errors without leaking internal details', async () => {
       mockMemoryService.promoteMemory.mockRejectedValue(
         new Error('quota exceeded'),
       );
 
-      await expect(
+      await expectGenericFailure(
         controller.promoteMemory({ userId, memoryId }),
-      ).rejects.toThrow(/Failed to promote memory: quota exceeded/);
+        'Failed to promote memory',
+        'quota exceeded',
+      );
     });
   });
 
@@ -781,16 +819,18 @@ describe('MemoryController', () => {
       expect(mockConsolidationService.run).toHaveBeenCalledWith(userId);
     });
 
-    it('wraps consolidation errors', async () => {
+    it('wraps consolidation errors without leaking internal details', async () => {
       mockConsolidationService.run.mockRejectedValue(
         new Error('service unavailable'),
       );
 
-      await expect(
+      await expectGenericFailure(
         controller.consolidateMemories({
           adminToken: 'test-admin-token-12345',
         }),
-      ).rejects.toThrow('Failed to run consolidation: service unavailable');
+        'Failed to run consolidation',
+        'service unavailable',
+      );
     });
 
     it('rejects unauthorized admin token', async () => {
@@ -799,6 +839,65 @@ describe('MemoryController', () => {
           adminToken: 'wrong-token-12345678',
         }),
       ).rejects.toThrow(/Unauthorized/);
+    });
+  });
+
+  describe('client-facing error hygiene through the MCP tool seam', () => {
+    const userId = 'clm0000000000000000000000';
+
+    it('returns only the generic message when a tool handler hits an internal error', async () => {
+      mockMemoryService.createMemory.mockRejectedValue(
+        new Error(
+          'connect ECONNREFUSED 10.1.2.3:5432 (postgresql://engram:s3cret@db/engram)',
+        ),
+      );
+
+      const tool = controller
+        .getMcpTools()
+        .find((t) => t.name === 'create_memory');
+      expect(tool).toBeDefined();
+
+      const error = await tool!
+        .handler({ userId, content: 'hello', type: 'long-term' })
+        .then(
+          () => {
+            throw new Error('expected the handler to reject');
+          },
+          (e: unknown) => e,
+        );
+
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toBe(
+        `Failed to create memory: ${GENERIC_CLIENT_ERROR_DETAIL}`,
+      );
+      expect(message).not.toContain('ECONNREFUSED');
+      expect(message).not.toContain('s3cret');
+    });
+
+    it('still surfaces validation errors so callers can fix their input', async () => {
+      const tool = controller.getMcpTools().find((t) => t.name === 'recall');
+      expect(tool).toBeDefined();
+
+      await expect(
+        tool!.handler({
+          userId,
+          query: 'notes',
+          createdFrom: '2025-06-01T00:00:00Z',
+          createdTo: '2025-01-01T00:00:00Z',
+        }),
+      ).rejects.toThrow(/createdFrom must be before or equal to createdTo/);
+    });
+
+    it('still surfaces authored admin-auth errors', async () => {
+      const tool = controller
+        .getMcpTools()
+        .find((t) => t.name === 'reindex_memories');
+      expect(tool).toBeDefined();
+
+      await expect(
+        tool!.handler({ adminToken: 'wrong-token-123456' }),
+      ).rejects.toThrow(/Unauthorized maintenance operation/);
     });
   });
 

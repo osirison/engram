@@ -6,9 +6,15 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-engram}
       POSTGRES_USER: ${POSTGRES_USER:-engram}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # Password for the read-only dashboard role, provisioned on first DB init.
+      # Required in production so the role never gets a weak baked-in default;
+      # use the same value in WEB_DATABASE_URL. NOTE: this is a new required var —
+      # existing deployments must set it before `docker compose up`.
+      WEB_DB_READONLY_PASSWORD: ${WEB_DB_READONLY_PASSWORD:?WEB_DB_READONLY_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres/10-web-readonly-role.sh:/docker-entrypoint-initdb.d/10-web-readonly-role.sh:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-engram} -d ${POSTGRES_DB:-engram}']
       interval: 10s

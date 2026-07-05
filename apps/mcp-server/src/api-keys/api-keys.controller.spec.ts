@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ApiKeysController } from './api-keys.controller';
 import { ApiKeysService } from './api-keys.service';
+import { GENERIC_CLIENT_ERROR_DETAIL } from '../security/client-error.util';
 
 describe('ApiKeysController', () => {
   let controller: ApiKeysController;
@@ -143,17 +144,28 @@ describe('ApiKeysController', () => {
       expect(service.createApiKey).not.toHaveBeenCalled();
     });
 
-    it('throws when service throws', async () => {
+    it('throws a generic message when the service fails, without internals', async () => {
       service.createApiKey.mockRejectedValue(new Error('DB error'));
 
-      await expect(
-        controller.createApiKey({
+      const error = await controller
+        .createApiKey({
           userId,
           adminToken: 'test-admin-token',
           name: 'Key',
           scopes: ['memories:read'],
-        }),
-      ).rejects.toThrow('Failed to create API key: DB error');
+        })
+        .then(
+          () => {
+            throw new Error('expected the call to reject');
+          },
+          (e: unknown) => e,
+        );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        `Failed to create API key: ${GENERIC_CLIENT_ERROR_DETAIL}`,
+      );
+      expect((error as Error).message).not.toContain('DB error');
     });
   });
 
@@ -212,12 +224,65 @@ describe('ApiKeysController', () => {
       ).rejects.toThrow(/Failed to revoke API key/);
     });
 
-    it('throws when service throws', async () => {
+    it('throws a generic message when the service fails, without internals', async () => {
       service.revokeApiKey.mockRejectedValue(new Error('DB down'));
 
-      await expect(controller.revokeApiKey({ userId, keyId })).rejects.toThrow(
-        'Failed to revoke API key: DB down',
+      const error = await controller.revokeApiKey({ userId, keyId }).then(
+        () => {
+          throw new Error('expected the call to reject');
+        },
+        (e: unknown) => e,
       );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        `Failed to revoke API key: ${GENERIC_CLIENT_ERROR_DETAIL}`,
+      );
+      expect((error as Error).message).not.toContain('DB down');
+    });
+  });
+
+  describe('client-facing error hygiene through the MCP tool seam', () => {
+    it('list_api_keys handler returns only the generic message on internal errors', async () => {
+      service.listApiKeys.mockRejectedValue(
+        new Error('connect ECONNREFUSED 10.1.2.3:5432'),
+      );
+
+      const tool = controller
+        .getMcpTools()
+        .find((t) => t.name === 'list_api_keys');
+      expect(tool).toBeDefined();
+
+      const error = await tool!.handler({ userId }).then(
+        () => {
+          throw new Error('expected the handler to reject');
+        },
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        `Failed to list API keys: ${GENERIC_CLIENT_ERROR_DETAIL}`,
+      );
+      expect((error as Error).message).not.toContain('ECONNREFUSED');
+    });
+
+    it('create_api_key handler still surfaces the authored admin-auth error', async () => {
+      const tool = controller
+        .getMcpTools()
+        .find((t) => t.name === 'create_api_key');
+      expect(tool).toBeDefined();
+
+      await expect(
+        // Wrong, but >= the 16-char DTO minimum, so it clears validation and
+        // reaches the constant-time admin-token check (the authored error).
+        tool!.handler({
+          userId,
+          adminToken: 'wrong-admin-token-000',
+          name: 'Key',
+          scopes: ['memories:read'],
+        }),
+      ).rejects.toThrow(/Unauthorized: invalid admin token/);
     });
   });
 });

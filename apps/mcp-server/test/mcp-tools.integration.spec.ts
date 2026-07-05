@@ -290,7 +290,9 @@ describe('MCP Tools Integration', () => {
           content: 'Test content',
           type: 'short-term',
         }),
-      ).rejects.toThrow('Failed to create memory: Redis unavailable');
+      ).rejects.toThrow(
+        'Failed to create memory: an internal error occurred (details are in the server logs)',
+      );
     });
 
     it('should create memory with tags and metadata', async () => {
@@ -578,7 +580,9 @@ describe('MCP Tools Integration', () => {
           userId: USER_ID,
           memoryId: MEMORY_ID,
         }),
-      ).rejects.toThrow('Failed to delete memory: Redis connection failed');
+      ).rejects.toThrow(
+        'Failed to delete memory: an internal error occurred (details are in the server logs)',
+      );
     });
   });
 

@@ -10,6 +10,7 @@ import {
   type ProfileCapabilities,
 } from '@engram/config';
 import { HealthController } from './health.controller';
+import { MetricsTokenGuard } from './metrics-token.guard';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
@@ -27,7 +28,10 @@ export class HealthModule {
    * them. The process-only `MemoryStoreHealthIndicator` is always present.
    */
   static forRoot(capabilities: ProfileCapabilities): DynamicModule {
-    const providers: DynamicModule['providers'] = [MemoryStoreHealthIndicator];
+    const providers: DynamicModule['providers'] = [
+      MemoryStoreHealthIndicator,
+      MetricsTokenGuard,
+    ];
     const imports: DynamicModule['imports'] = [
       TerminusModule,
       HttpModule,

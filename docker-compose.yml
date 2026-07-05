@@ -11,6 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/postgres/10-web-readonly-role.sh:/docker-entrypoint-initdb.d/10-web-readonly-role.sh
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-engram} -d ${POSTGRES_DB:-engram}']
       interval: 10s

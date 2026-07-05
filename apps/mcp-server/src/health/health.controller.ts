@@ -1,4 +1,11 @@
-import { Controller, Get, Header, Inject, Optional } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Inject,
+  Optional,
+  UseGuards,
+} from '@nestjs/common';
 import { EmbeddingsService } from '@engram/embeddings';
 import {
   HealthCheck,
@@ -20,6 +27,7 @@ import { RedisHealthIndicator } from './redis.health';
 import { QdrantHealthIndicator } from './qdrant.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { MemoryStoreHealthIndicator } from './memory-store.health';
+import { MetricsTokenGuard } from './metrics-token.guard';
 import { MetricsService } from '../metrics/metrics.service';
 
 /**
@@ -114,7 +122,10 @@ export class HealthController {
     return this.health.check(this.buildIndicators());
   }
 
+  // Optional scrape-token protection: open when METRICS_TOKEN is unset,
+  // 401 without a matching token when it is set (#206).
   @Get('metrics')
+  @UseGuards(MetricsTokenGuard)
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async getMetrics(): Promise<string> {
     const backend = (

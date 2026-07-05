@@ -18,7 +18,11 @@ The dashboard talks to the ENGRAM backend through a single, mockable seam,
 
 - **Reads & analytics — direct Postgres.** Listing, filtering, counts, tag/type
   distributions, and activity series query Postgres (the source of truth) via
-  `@prisma/client`. No MCP tool exposes these aggregations.
+  `@prisma/client`. No MCP tool exposes these aggregations. Because the console
+  only reads, give it a **dedicated read-only role** via `WEB_DATABASE_URL`
+  rather than the full-privilege `DATABASE_URL` — `docker/postgres` provisions an
+  `engram_readonly` role on first DB init (defense-in-depth, #206). It falls back
+  to `DATABASE_URL` when `WEB_DATABASE_URL` is unset.
 - **Writes & semantic recall — the MCP server.** `update_memory`,
   `delete_memory`, and `recall` go through the MCP server over its `/mcp`
   endpoint, so the derived vector index stays in sync (a raw Prisma write would

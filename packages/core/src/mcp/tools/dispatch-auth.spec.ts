@@ -66,6 +66,24 @@ const scopedTool: Tool = {
     Promise.resolve({ ok: (input as { userId: string }).userId }),
 };
 
+// Mirrors the real `recall` tool: a `.strict().refine(...)` object. userId
+// injection introspects the schema (`instanceof z.ZodObject`), so a schema
+// wrapped by `.refine()`/`.transform()` could silently disable the tenant
+// boundary. This tool locks that in — see schemaAcceptsUserId in index.ts.
+const refinedIdentityTool: Tool = {
+  name: 'echo_user_refined',
+  description: 'refined identity tool mirroring recall',
+  inputSchema: z
+    .object({ userId: z.string(), from: z.string().optional(), to: z.string().optional() })
+    .strict()
+    .refine((v) => !v.from || !v.to || v.from <= v.to, {
+      message: 'from must be <= to',
+      path: ['from'],
+    }),
+  handler: (input): Promise<unknown> =>
+    Promise.resolve({ echoedUserId: (input as { userId: string }).userId }),
+};
+
 describe('auth-aware tool dispatch', () => {
   let server: Server;
 
@@ -94,6 +112,20 @@ describe('auth-aware tool dispatch', () => {
       { method: 'tools/call', params: { name: 'echo_user', arguments: { userId: 'attacker' } } },
       { authInfo: { extra: { userId: 'real-user' } } }
     );
+    expect(parse(result).echoedUserId).toBe('real-user');
+  });
+
+  it('injects userId into a .refine()-wrapped identity schema (recall latent-trap guard)', async () => {
+    const handler = capture([refinedIdentityTool], { required: true });
+    const result = await handler(
+      {
+        method: 'tools/call',
+        params: { name: 'echo_user_refined', arguments: { userId: 'attacker' } },
+      },
+      { authInfo: { extra: { userId: 'real-user' } } }
+    );
+    // If a Zod change makes `.refine()` non-ZodObject, injection silently skips
+    // and this reads back 'attacker' — a cross-tenant leak. Must be 'real-user'.
     expect(parse(result).echoedUserId).toBe('real-user');
   });
 

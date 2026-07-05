@@ -7,6 +7,7 @@
     "PORT",
     "DEPLOYMENT_PROFILE",
     "DATABASE_URL",
+    "WEB_DATABASE_URL",
     "REDIS_URL",
     "QDRANT_URL",
     "OPENAI_API_KEY",
