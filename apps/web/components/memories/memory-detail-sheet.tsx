@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { getQueryKey } from '@trpc/react-query';
 
+import { ExpiryBadge } from '@/components/memories/expiry-badge';
 import { TagInput } from '@/components/memories/tag-input';
 import { ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +23,13 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { absoluteTime, formatPercent, memoryTypeLabel, relativeTime } from '@/lib/format';
+import {
+  absoluteTime,
+  formatPercent,
+  formatUptime,
+  memoryTypeLabel,
+  relativeTime,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/react';
 
@@ -207,6 +214,24 @@ export function MemoryDetailSheet({
     onError: (error) => toast.error('Re-embed failed', { description: error.message }),
   });
 
+  // STM affordances (WP2 T3/D4): promote to long-term, and extend the TTL window.
+  const promote = trpc.memory.promote.useMutation({
+    onSuccess: async () => {
+      toast.success('Promoted to long-term');
+      onOpenChange(false);
+      await invalidate();
+    },
+    onError: (error) => toast.error('Promote failed', { description: error.message }),
+  });
+
+  const extendTtl = trpc.memory.update.useMutation({
+    onSuccess: async () => {
+      toast.success('TTL extended by 1 hour');
+      await invalidate();
+    },
+    onError: (error) => toast.error('Extend TTL failed', { description: error.message }),
+  });
+
   // Audit history (WP2 T5) — collapsed by default; fetched lazily on expand.
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const auditLog = trpc.memory.auditLog.useQuery(
@@ -379,7 +404,9 @@ export function MemoryDetailSheet({
                   </MetaRow>
                   <MetaRow label="Embedding">
                     <span className="flex flex-wrap items-center gap-2">
-                      {data.embeddingStale ? (
+                      {data.type === 'short-term' ? (
+                        <span className="text-muted-foreground">n/a (live tier)</span>
+                      ) : data.embeddingStale ? (
                         <span className="text-destructive">
                           Stale — content changed but the vector didn’t
                         </span>
@@ -415,11 +442,18 @@ export function MemoryDetailSheet({
                   <MetaRow label="Updated">
                     <span title={absoluteTime(data.updatedAt)}>{relativeTime(data.updatedAt)}</span>
                   </MetaRow>
+                  {data.type === 'short-term' && data.ttlSeconds !== null && (
+                    <MetaRow label="TTL">{formatUptime(data.ttlSeconds)} remaining</MetaRow>
+                  )}
                   {data.expiresAt && (
                     <MetaRow label="Expires">
-                      <span title={absoluteTime(data.expiresAt)}>
-                        {relativeTime(data.expiresAt)}
-                      </span>
+                      {data.type === 'short-term' ? (
+                        <ExpiryBadge expiresAt={data.expiresAt} />
+                      ) : (
+                        <span title={absoluteTime(data.expiresAt)}>
+                          {relativeTime(data.expiresAt)}
+                        </span>
+                      )}
                     </MetaRow>
                   )}
                 </div>
@@ -536,12 +570,47 @@ export function MemoryDetailSheet({
                   </Button>
                 </>
               ) : (
-                <WriteActions
-                  canWrite={canWrite}
-                  reason={writeBlockedReason}
-                  onEdit={beginEdit}
-                  onDelete={() => setConfirmingDelete(true)}
-                />
+                <>
+                  {/* STM-only affordances (WP2 T3): extend the TTL window, or
+                      promote the memory to durable long-term storage. */}
+                  {canWrite && data.type === 'short-term' && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mr-auto"
+                        disabled={extendTtl.isPending}
+                        onClick={() =>
+                          extendTtl.mutate({
+                            userId,
+                            memoryId: data.id,
+                            // Reset the window to the current remaining time + 1h.
+                            ttl: Math.max((data.ttlSeconds ?? 0) + 3600, 60),
+                            scope: data.scope ?? undefined,
+                          })
+                        }
+                      >
+                        {extendTtl.isPending && <Loader2 className="size-4 animate-spin" />}
+                        +1h TTL
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={promote.isPending}
+                        onClick={() => promote.mutate({ userId, memoryId: data.id })}
+                      >
+                        {promote.isPending && <Loader2 className="size-4 animate-spin" />}
+                        Promote to long-term
+                      </Button>
+                    </>
+                  )}
+                  <WriteActions
+                    canWrite={canWrite}
+                    reason={writeBlockedReason}
+                    onEdit={beginEdit}
+                    onDelete={() => setConfirmingDelete(true)}
+                  />
+                </>
               )}
             </SheetFooter>
           </>

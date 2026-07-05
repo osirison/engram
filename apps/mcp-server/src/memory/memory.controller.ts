@@ -618,11 +618,18 @@ export class MemoryController {
         after: { type: 'long-term', memoryId: promotedMemory.id },
       });
 
+      // Structured first item (WP2 T3/D2): promotion mints a NEW long-term id and
+      // deletes the STM row, so the caller can't re-read by the old id — it must
+      // learn the promoted memory from the result. Human prose stays second.
       return {
         content: [
           {
             type: 'text',
-            text: `Successfully promoted memory ${promotedMemory.id} to long-term storage: ${JSON.stringify(promotedMemory, null, 2)}`,
+            text: JSON.stringify({ promoted: true, memory: promotedMemory }),
+          },
+          {
+            type: 'text',
+            text: `Successfully promoted memory ${promotedMemory.id} to long-term storage`,
           },
         ],
       };

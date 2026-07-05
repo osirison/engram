@@ -180,6 +180,14 @@ describe('memory router', () => {
     });
   });
 
+  it('delegates promote with the operator email as actorLabel (WP2 T3)', async () => {
+    const promoteMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ promoteMemory });
+    const api = caller(backend);
+    await api.memory.promote({ userId: 'qp', memoryId: 'm1' });
+    expect(promoteMemory).toHaveBeenCalledWith('qp', 'm1', 'op@example.com');
+  });
+
   it('delegates reembed to the backend (WP2 T7)', async () => {
     const reembedMemory = vi.fn().mockResolvedValue({ id: 'm1' });
     const backend = makeBackend({ reembedMemory });

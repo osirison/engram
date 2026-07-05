@@ -536,6 +536,35 @@ export class PrismaEngramBackend implements EngramBackend {
     return updated;
   }
 
+  async promoteMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Promoting memories requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    // Promotion mints a NEW long-term id, so read the promoted memory from the
+    // structured tool result (WP2 T3/D2) rather than re-reading by the old id.
+    const result = await this.mcp.call<{ promoted?: boolean; memory?: McpMemoryJson } | string>(
+      'promote_memory',
+      {
+        userId,
+        memoryId,
+        ...(actorLabel ? { actorLabel } : {}),
+      }
+    );
+    if (result && typeof result === 'object' && result.memory) {
+      return mapMcpMemory(result.memory);
+    }
+    // Fallback for a legacy server that returned prose: re-read by the old id
+    // (works only if promotion happened to preserve it).
+    const promoted = await this.getMemory(userId, memoryId);
+    if (!promoted) {
+      throw new BackendError('Memory not found after promotion.', 'NOT_FOUND');
+    }
+    return promoted;
+  }
+
   async reembedMemory(
     userId: string,
     memoryId: string,

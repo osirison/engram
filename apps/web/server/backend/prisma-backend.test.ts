@@ -428,6 +428,37 @@ describe('PrismaEngramBackend writes', () => {
     );
   });
 
+  it('promotes via MCP and returns the promoted memory from the structured result (WP2 T3)', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        promoted: true,
+        memory: {
+          id: 'ltm-new',
+          userId: 'qp',
+          content: 'promoted',
+          tags: [],
+          type: 'long-term',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
+        },
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const promoted = await backend.promoteMemory('qp', 'stm-old', 'op@example.com');
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'promote_memory',
+      expect.objectContaining({ userId: 'qp', memoryId: 'stm-old', actorLabel: 'op@example.com' })
+    );
+    // Reads the NEW long-term id from the structured result, not the old STM id.
+    expect(promoted.id).toBe('ltm-new');
+    expect(promoted.type).toBe('long-term');
+  });
+
   it('bulk-deletes through one MCP call and parses the per-item report (WP2 T6)', async () => {
     const mcp = {
       call: vi.fn().mockResolvedValue({

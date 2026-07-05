@@ -796,8 +796,15 @@ describe('MemoryController', () => {
         memoryId,
         undefined,
       );
-      expect(response.content[0]?.text).toContain('Successfully promoted');
-      expect(response.content[0]?.text).toContain(memoryId);
+      // Structured first item (WP2 T3/D2): the promoted memory (new LTM id) is
+      // machine-readable; prose stays second.
+      const parsed = JSON.parse(response.content[0]?.text ?? '{}') as {
+        promoted: boolean;
+        memory: { id: string };
+      };
+      expect(parsed.promoted).toBe(true);
+      expect(parsed.memory.id).toBe(memoryId);
+      expect(response.content[1]?.text).toContain('Successfully promoted');
     });
 
     it('rejects invalid input', async () => {

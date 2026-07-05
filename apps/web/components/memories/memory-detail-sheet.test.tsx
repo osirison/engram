@@ -17,6 +17,7 @@ function renderWithClient(ui: React.ReactElement) {
 const h = vi.hoisted(() => ({
   updateMutate: vi.fn(),
   reembedMutate: vi.fn(),
+  promoteMutate: vi.fn(),
   onError: undefined as ((e: unknown) => void) | undefined,
   refetch: vi.fn(),
   memory: undefined as unknown,
@@ -36,8 +37,11 @@ vi.mock('@/trpc/react', () => {
           useQuery: () => ({ data: h.memory, isLoading: false, refetch: h.refetch }),
         },
         update: {
+          // Called twice per render (the primary `update` and the TTL-extend
+          // mutation both use memory.update); capture only the first onError —
+          // the primary update's CONFLICT handler the conflict tests drive.
           useMutation: (opts: { onError?: (e: unknown) => void }) => {
-            h.onError = opts.onError;
+            if (h.onError === undefined) h.onError = opts.onError;
             return { mutate: h.updateMutate, isPending: false };
           },
         },
@@ -52,6 +56,9 @@ vi.mock('@/trpc/react', () => {
         },
         restore: {
           useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+        },
+        promote: {
+          useMutation: () => ({ mutate: h.promoteMutate, isPending: false }),
         },
       },
     },
@@ -86,9 +93,36 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
   beforeEach(() => {
     h.updateMutate.mockReset();
     h.reembedMutate.mockReset();
+    h.promoteMutate.mockReset();
     h.refetch.mockReset();
     h.onError = undefined;
     h.memory = fixture();
+  });
+
+  it('offers Promote + TTL affordances for a short-term memory (WP2 T3)', () => {
+    h.memory = fixture({
+      type: 'short-term',
+      ttlSeconds: 3600,
+      expiresAt: '2999-01-01T00:00:00.000Z',
+    });
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    expect(screen.getByText('Promote to long-term')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('+1h TTL'));
+    // Extend resets the window to remaining + 1h (3600 + 3600).
+    expect(h.updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ memoryId: 'm1', ttl: 7200 })
+    );
+
+    fireEvent.click(screen.getByText('Promote to long-term'));
+    expect(h.promoteMutate).toHaveBeenCalledWith({ userId: 'qp', memoryId: 'm1' });
+  });
+
+  it('does not offer Promote/TTL for a long-term memory (WP2 T3)', () => {
+    h.memory = fixture({ type: 'long-term' });
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    expect(screen.queryByText('Promote to long-term')).not.toBeInTheDocument();
+    expect(screen.queryByText('+1h TTL')).not.toBeInTheDocument();
   });
 
   it('shows a stale-vector badge and a Re-embed action that calls the mutation', () => {

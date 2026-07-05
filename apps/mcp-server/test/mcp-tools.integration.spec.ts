@@ -609,7 +609,8 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toContain(
+      // Prose is the second content item now (WP2 T3/D2); the first is JSON.
+      expect(prose(response)).toContain(
         `Successfully promoted memory ${MEMORY_ID_2} to long-term storage`,
       );
     });
@@ -626,7 +627,13 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toContain('Promoted content');
+      // The structured first item carries the promoted memory.
+      const parsed = parseToolResponse<{
+        promoted: boolean;
+        memory: { content: string };
+      }>(response);
+      expect(parsed.promoted).toBe(true);
+      expect(parsed.memory.content).toBe('Promoted content');
     });
 
     it('should throw wrapped error when STM memory not found', async () => {

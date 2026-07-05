@@ -10,6 +10,7 @@ import { BulkDeleteDialog } from '@/components/memories/bulk-delete-dialog';
 import { MemoryDetailSheet } from '@/components/memories/memory-detail-sheet';
 import { MemoryFiltersBar } from '@/components/memories/memory-filters';
 import { MemoryList } from '@/components/memories/memory-list';
+import { StmStrip } from '@/components/memories/stm-strip';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -82,6 +83,9 @@ export function MemoryNavigator() {
   const dateFrom = React.useMemo(() => rangeToDateFrom(filters.range), [filters.range]);
   const enabled = userId.length > 0;
   const isSearch = filters.q.trim().length > 0;
+  // The short-term tier is a separate live (Redis) source (WP2 T3/D3), paged by
+  // its SCAN cursor — never interleaved into the persisted Postgres list.
+  const isStmView = filters.type === 'short-term' && !isSearch;
 
   const list = trpc.memory.list.useInfiniteQuery(
     {
@@ -95,8 +99,22 @@ export function MemoryNavigator() {
       limit: 25,
     },
     {
-      enabled: enabled && !isSearch,
+      enabled: enabled && !isSearch && !isStmView,
       getNextPageParam: (last) => last.nextCursor,
+    }
+  );
+
+  const stmList = trpc.memory.listStm.useInfiniteQuery(
+    {
+      userId,
+      tags: filters.tags.length ? filters.tags : undefined,
+      scope: filters.scope || undefined,
+      limit: 25,
+    },
+    {
+      enabled: enabled && isStmView,
+      getNextPageParam: (last) => last.nextCursor,
+      refetchInterval: 30_000,
     }
   );
 
@@ -112,12 +130,15 @@ export function MemoryNavigator() {
     { enabled: enabled && isSearch }
   );
 
+  // Resolve the active source: semantic search, the STM live tier, or the
+  // persisted (Postgres) list.
+  const activeList = isStmView ? stmList : list;
   const items = isSearch
     ? (search.data?.items ?? [])
-    : (list.data?.pages.flatMap((p) => p.items) ?? []);
-  const total = isSearch ? search.data?.count : list.data?.pages[0]?.totalCount;
-  const isLoading = isSearch ? search.isLoading : list.isLoading;
-  const queryError = isSearch ? search.error : list.error;
+    : (activeList.data?.pages.flatMap((p) => p.items) ?? []);
+  const total = isSearch ? search.data?.count : activeList.data?.pages[0]?.totalCount;
+  const isLoading = isSearch ? search.isLoading : activeList.isLoading;
+  const queryError = isSearch ? search.error : activeList.error;
 
   const [selected, setSelected] = React.useState<{ id: string; score?: number | null } | null>(
     null
@@ -246,10 +267,16 @@ export function MemoryNavigator() {
             </div>
           </div>
 
-          {queryError ? (
+          {isStmView && stmList.data?.pages[0]?.unavailableReason ? (
+            <EmptyState
+              icon={Database}
+              title="Short-term memories unavailable"
+              description={stmList.data.pages[0].unavailableReason}
+            />
+          ) : queryError ? (
             <ErrorState
               message={queryError.message}
-              onRetry={() => (isSearch ? void search.refetch() : void list.refetch())}
+              onRetry={() => (isSearch ? void search.refetch() : void activeList.refetch())}
             />
           ) : !isLoading && items.length === 0 ? (
             <EmptyState
@@ -263,6 +290,14 @@ export function MemoryNavigator() {
             />
           ) : (
             <>
+              {/* Live short-term strip is shown by default on the `all` view. */}
+              {filters.type === 'all' && !isSearch && (
+                <StmStrip
+                  userId={userId}
+                  onOpen={(id) => setSelected({ id })}
+                  onViewAll={() => writeFilters({ type: 'short-term' })}
+                />
+              )}
               {selectedIds.size > 0 && (
                 <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-sm">
                   <span>{selectedIds.size} selected</span>
@@ -288,14 +323,14 @@ export function MemoryNavigator() {
                 }}
               />
 
-              {!isSearch && list.hasNextPage && (
+              {!isSearch && activeList.hasNextPage && (
                 <div className="flex justify-center pt-1">
                   <Button
                     variant="outline"
-                    onClick={() => void list.fetchNextPage()}
-                    disabled={list.isFetchingNextPage}
+                    onClick={() => void activeList.fetchNextPage()}
+                    disabled={activeList.isFetchingNextPage}
                   >
-                    {list.isFetchingNextPage && <Loader2 className="size-4 animate-spin" />}
+                    {activeList.isFetchingNextPage && <Loader2 className="size-4 animate-spin" />}
                     Load more
                   </Button>
                 </div>

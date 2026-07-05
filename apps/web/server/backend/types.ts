@@ -293,6 +293,8 @@ export interface EngramBackend {
   getMemory(userId: string, memoryId: string): Promise<MemoryDTO | null>;
   searchMemories(params: SearchMemoriesParams): Promise<SearchMemoriesResult>;
   updateMemory(params: UpdateMemoryParams): Promise<MemoryDTO>;
+  /** Promote a short-term memory to long-term storage (WP2 T3). */
+  promoteMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO>;
   /** Regenerate the vector for a memory's current content (WP2 T7). */
   reembedMemory(
     userId: string,

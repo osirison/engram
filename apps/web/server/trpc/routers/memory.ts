@@ -135,6 +135,13 @@ export const memoryRouter = router({
       )
     ),
 
+  // Promote a short-term memory to long-term storage (WP2 T3).
+  promote: protectedProcedure
+    .input(z.object({ userId, memoryId }))
+    .mutation(({ ctx, input }) =>
+      ctx.backend.promoteMemory(input.userId, input.memoryId, ctx.session?.user?.email ?? undefined)
+    ),
+
   // Audit history for a memory (WP2 T5). Read-only; served from Postgres.
   auditLog: protectedProcedure
     .input(z.object({ userId, memoryId, limit: z.number().int().min(1).max(200).default(50) }))
