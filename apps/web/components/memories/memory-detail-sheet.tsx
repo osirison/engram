@@ -132,6 +132,15 @@ export function MemoryDetailSheet({
     onError: (error) => toast.error('Delete failed', { description: error.message }),
   });
 
+  // Repair a stale vector by regenerating the embedding for current content (T7).
+  const reembed = trpc.memory.reembed.useMutation({
+    onSuccess: async () => {
+      toast.success('Memory re-embedded');
+      await invalidate();
+    },
+    onError: (error) => toast.error('Re-embed failed', { description: error.message }),
+  });
+
   const saveEdit = () => {
     if (!memoryId) return;
     setConflict(false);
@@ -288,7 +297,36 @@ export function MemoryDetailSheet({
                     {data.importance !== null ? data.importance.toFixed(2) : '—'}
                   </MetaRow>
                   <MetaRow label="Embedding">
-                    {data.hasEmbedding ? 'Indexed' : 'Not indexed'}
+                    <span className="flex flex-wrap items-center gap-2">
+                      {data.embeddingStale ? (
+                        <span className="text-destructive">
+                          Stale — content changed but the vector didn’t
+                        </span>
+                      ) : data.hasEmbedding ? (
+                        'Indexed'
+                      ) : (
+                        'Not indexed'
+                      )}
+                      {canWrite &&
+                        data.type === 'long-term' &&
+                        (data.embeddingStale || !data.hasEmbedding) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={reembed.isPending}
+                            onClick={() =>
+                              reembed.mutate({
+                                userId,
+                                memoryId: data.id,
+                                scope: data.scope ?? undefined,
+                              })
+                            }
+                          >
+                            {reembed.isPending && <Loader2 className="size-4 animate-spin" />}
+                            Re-embed
+                          </Button>
+                        )}
+                    </span>
                   </MetaRow>
                   <MetaRow label="Created">
                     <span title={absoluteTime(data.createdAt)}>{relativeTime(data.createdAt)}</span>

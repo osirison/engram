@@ -7,6 +7,7 @@ import { MemoryDetailSheet } from './memory-detail-sheet';
 // Capture the update mutation's callbacks/mutate so the test can drive them.
 const h = vi.hoisted(() => ({
   updateMutate: vi.fn(),
+  reembedMutate: vi.fn(),
   onError: undefined as ((e: unknown) => void) | undefined,
   refetch: vi.fn(),
   memory: undefined as unknown,
@@ -34,6 +35,9 @@ vi.mock('@/trpc/react', () => {
         delete: {
           useMutation: () => ({ mutate: vi.fn(), isPending: false }),
         },
+        reembed: {
+          useMutation: () => ({ mutate: h.reembedMutate, isPending: false }),
+        },
       },
     },
   };
@@ -52,6 +56,7 @@ const fixture = (overrides: Partial<MemoryItem> = {}): MemoryItem => ({
   metadata: null,
   importance: null,
   hasEmbedding: true,
+  embeddingStale: false,
   isInsight: false,
   version: 3,
   createdAt: '2026-06-01T00:00:00.000Z',
@@ -65,9 +70,26 @@ const fixture = (overrides: Partial<MemoryItem> = {}): MemoryItem => ({
 describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
   beforeEach(() => {
     h.updateMutate.mockReset();
+    h.reembedMutate.mockReset();
     h.refetch.mockReset();
     h.onError = undefined;
     h.memory = fixture();
+  });
+
+  it('shows a stale-vector badge and a Re-embed action that calls the mutation', () => {
+    h.memory = fixture({ embeddingStale: true });
+    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    expect(screen.getByText(/Stale — content changed but the vector/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Re-embed'));
+    expect(h.reembedMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'qp', memoryId: 'm1' })
+    );
+  });
+
+  it('does not offer Re-embed when the vector is healthy', () => {
+    h.memory = fixture({ embeddingStale: false, hasEmbedding: true });
+    render(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    expect(screen.queryByText('Re-embed')).not.toBeInTheDocument();
   });
 
   it('sends expectedVersion from the loaded memory on save', async () => {

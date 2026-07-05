@@ -114,6 +114,14 @@ describe('memory router', () => {
     );
   });
 
+  it('delegates reembed to the backend (WP2 T7)', async () => {
+    const reembedMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ reembedMemory });
+    const api = caller(backend);
+    await api.memory.reembed({ userId: 'qp', memoryId: 'm1' });
+    expect(reembedMemory).toHaveBeenCalledWith('qp', 'm1', undefined);
+  });
+
   it('delegates listStm with parsed defaults', async () => {
     const listStmMemories = vi
       .fn()

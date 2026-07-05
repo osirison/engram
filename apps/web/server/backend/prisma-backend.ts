@@ -81,6 +81,7 @@ function mapRow(row: MemoryRow, hasEmbedding: boolean): MemoryDTO {
     metadata,
     importance,
     hasEmbedding,
+    embeddingStale: metadata?.embeddingStale === true,
     isInsight,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
@@ -134,6 +135,7 @@ function mapMcpMemory(m: McpMemoryJson): MemoryDTO {
     metadata,
     importance,
     hasEmbedding: false,
+    embeddingStale: metadata?.embeddingStale === true,
     isInsight: tags.includes('insight'),
     version: typeof m.version === 'number' ? m.version : 1,
     createdAt: m.createdAt ?? new Date(0).toISOString(),
@@ -526,6 +528,25 @@ export class PrismaEngramBackend implements EngramBackend {
     const updated = await this.getMemory(params.userId, params.memoryId);
     if (!updated) {
       throw new BackendError('Memory not found after update.', 'NOT_FOUND');
+    }
+    return updated;
+  }
+
+  async reembedMemory(userId: string, memoryId: string, scope?: string | null): Promise<MemoryDTO> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Re-embedding requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    await this.mcp.call('reembed_memory', {
+      userId,
+      memoryId,
+      ...(scope ? { scope } : {}),
+    });
+    const updated = await this.getMemory(userId, memoryId);
+    if (!updated) {
+      throw new BackendError('Memory not found after re-embedding.', 'NOT_FOUND');
     }
     return updated;
   }

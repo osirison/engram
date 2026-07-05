@@ -22,6 +22,12 @@ export interface MemoryDTO {
   /** Derived `metadata.importance` when the engine has annotated it. */
   importance: number | null;
   hasEmbedding: boolean;
+  /**
+   * True when `metadata.embeddingStale` — a content edit could not be re-embedded,
+   * so the stored vector no longer matches the content (WP2 T7). Repairable via
+   * `reembedMemory`.
+   */
+  embeddingStale: boolean;
   /** True when `metadata.isInsight` — a synthesised insight memory. */
   isInsight: boolean;
   /** Optimistic-concurrency counter (WP2 T4); sent back as `expectedVersion` on edit. */
@@ -253,6 +259,8 @@ export interface EngramBackend {
   getMemory(userId: string, memoryId: string): Promise<MemoryDTO | null>;
   searchMemories(params: SearchMemoriesParams): Promise<SearchMemoriesResult>;
   updateMemory(params: UpdateMemoryParams): Promise<MemoryDTO>;
+  /** Regenerate the vector for a memory's current content (WP2 T7). */
+  reembedMemory(userId: string, memoryId: string, scope?: string | null): Promise<MemoryDTO>;
   deleteMemory(params: DeleteMemoryParams): Promise<{ deleted: boolean }>;
 
   getHealth(): Promise<HealthReport>;

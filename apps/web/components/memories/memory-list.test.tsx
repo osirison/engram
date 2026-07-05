@@ -18,6 +18,7 @@ function item(overrides: Partial<MemoryItem> = {}): MemoryItem {
     metadata: null,
     importance: null,
     hasEmbedding: true,
+    embeddingStale: false,
     isInsight: false,
     version: 1,
     createdAt: '2026-06-01T00:00:00.000Z',

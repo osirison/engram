@@ -41,6 +41,7 @@ describe('MemoryController', () => {
     updateMemory: jest.fn(),
     deleteMemory: jest.fn(),
     promoteMemory: jest.fn(),
+    reembedMemory: jest.fn(),
     recall: jest.fn(),
     reindex: jest.fn(),
   };
@@ -815,6 +816,43 @@ describe('MemoryController', () => {
         'Failed to promote memory',
         'quota exceeded',
       );
+    });
+  });
+
+  describe('reembedMemory (WP2 T7)', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('registers reembed_memory as a delegable memories:write tool', () => {
+      const tool = controller
+        .getMcpTools()
+        .find((t) => t.name === 'reembed_memory');
+      expect(tool).toBeDefined();
+      expect(tool?.delegable).toBe(true);
+      expect(tool?.requiredScope).toBe('memories:write');
+    });
+
+    it('re-embeds and returns the memory', async () => {
+      mockMemoryService.reembedMemory.mockResolvedValue({
+        id: memoryId,
+        userId,
+      });
+      const response = await controller.reembedMemory({ userId, memoryId });
+      expect(mockMemoryService.reembedMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+        undefined,
+      );
+      expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('surfaces a provider-unavailable error with a client-safe message', async () => {
+      const err = new Error('Cannot re-embed: provider down');
+      err.name = 'LtmEmbeddingUnavailableError';
+      mockMemoryService.reembedMemory.mockRejectedValue(err);
+      await expect(
+        controller.reembedMemory({ userId, memoryId }),
+      ).rejects.toThrow(/embeddings provider is unavailable/);
     });
   });
 

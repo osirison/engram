@@ -28,6 +28,7 @@ import {
   LtmPromotionError,
   LtmDatabaseError,
   LtmVersionConflictError,
+  LtmEmbeddingUnavailableError,
   SemanticSearchOptions,
   SemanticSearchResult,
   ReindexOptions,
@@ -355,12 +356,28 @@ export class MemoryLtmService {
       }
 
       // Resolve final metadata: full-replace wins over patch; patch merges into existing.
-      const nextMetadata: Record<string, unknown> | null =
+      let nextMetadata: Record<string, unknown> | null =
         validatedInput.metadata !== undefined
           ? (validatedInput.metadata ?? null)
           : validatedInput.metadataMerge !== undefined
             ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
             : (existing.metadata ?? null);
+
+      // Embedding staleness (WP2 T7/A9/D10): a content edit that could NOT be
+      // re-embedded (provider down or absent) leaves the OLD vector pointing at
+      // the previous text — flag it so recall drift is visible and repairable;
+      // clear the flag whenever a fresh embedding is written. Scoped strictly to
+      // "embedding column vs content": an indexVector throw below leaves a correct
+      // embedding in Postgres (reindex-recoverable) and does NOT set this flag.
+      if (validatedInput.content !== undefined) {
+        const meta = { ...(nextMetadata ?? {}) };
+        if (newEmbedding === undefined) {
+          meta.embeddingStale = true;
+        } else {
+          delete meta.embeddingStale;
+        }
+        nextMetadata = meta;
+      }
 
       const nextContent = validatedInput.content ?? existing.content;
       const nextTags = validatedInput.tags ?? existing.tags;
@@ -439,6 +456,61 @@ export class MemoryLtmService {
       this.logger.error(`Failed to update LTM memory ${memoryId}: ${error}`);
       throw new LtmDatabaseError('update', error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /**
+   * Regenerate the embedding for a memory's CURRENT content and re-index it,
+   * clearing `metadata.embeddingStale` (WP2 T7/D10). Repairs a memory whose
+   * content was edited during an embeddings outage.
+   *
+   * Deliberately does NOT bump `version`: re-sending identical content through
+   * `update()` would trip the T4 compare-and-swap for other writers. `updatedAt`
+   * is allowed to move. Throws `LtmEmbeddingUnavailableError` when no embedding
+   * can be produced, leaving the staleness flag in place for a later retry.
+   */
+  async reembed(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<LtmMemory> {
+    const existingRow = await this.findRawMemory(userId, memoryId, organizationId, scope);
+    if (!existingRow) {
+      throw new LtmMemoryNotFoundError(memoryId);
+    }
+    const existing = this.mapToLtmMemory(existingRow);
+
+    if (!this.embeddingsService) {
+      throw new LtmEmbeddingUnavailableError(memoryId);
+    }
+    const result = await this.embeddingsService
+      .generate({ text: existing.content })
+      .catch(() => null);
+    if (!result?.embedding) {
+      throw new LtmEmbeddingUnavailableError(memoryId);
+    }
+
+    const metadata = { ...(existing.metadata ?? {}) };
+    delete metadata.embeddingStale;
+
+    const updateWhere: Record<string, unknown> = {
+      id: memoryId,
+      userId,
+      type: MemoryType.LONG_TERM,
+    };
+    if (organizationId !== undefined) {
+      updateWhere.organizationId = organizationId;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updated = (await (this.prisma as any).memory.update({
+      where: updateWhere,
+      data: { embedding: result.embedding, metadata },
+    })) as PrismaMemory;
+
+    const ltmMemory = this.mapToLtmMemory(updated);
+    await this.indexVector(ltmMemory, result.embedding);
+    return ltmMemory;
   }
 
   /**
