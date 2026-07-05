@@ -12,6 +12,7 @@ import {
   LtmConfig,
   DEFAULT_LTM_CONFIG,
   LtmMemoryNotFoundError,
+  LtmVersionConflictError,
   LtmMemoryQuotaExceededError,
   LtmPromotionError,
   LtmDatabaseError,
@@ -79,6 +80,7 @@ export class InMemoryLtmAdapter {
         metadata: validated.metadata ?? null,
         tags: validated.tags ?? [],
         type: 'long-term',
+        version: 1,
         createdAt: now,
         updatedAt: now,
         expiresAt: null,
@@ -119,6 +121,11 @@ export class InMemoryLtmAdapter {
     if (!existing) {
       throw new LtmMemoryNotFoundError(memoryId);
     }
+    // Optimistic concurrency (WP2 T4): mirror the Prisma-backed service.
+    const existingVersion = existing.version ?? 1;
+    if (validated.expectedVersion !== undefined && validated.expectedVersion !== existingVersion) {
+      throw new LtmVersionConflictError(memoryId, existingVersion);
+    }
     let embedding = existing.embedding;
     if (validated.content !== undefined && this.embeddingsService) {
       const result = await this.embeddingsService
@@ -141,6 +148,7 @@ export class InMemoryLtmAdapter {
       metadata: nextMetadata,
       embedding,
       updatedAt: new Date(),
+      version: existingVersion + 1,
     };
     this.memories.set(updated.id, updated);
     return updated;

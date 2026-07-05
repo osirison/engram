@@ -683,10 +683,36 @@ describe('MemoryController', () => {
           metadata: undefined,
           tags: undefined,
           ttl: undefined,
+          expectedVersion: undefined,
         },
         undefined,
       );
       expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('threads expectedVersion to the service and surfaces conflicts as CONFLICT: (WP2 T4)', async () => {
+      const conflict = new Error(
+        'Long-term memory clm1 was modified (currentVersion=7)',
+      );
+      conflict.name = 'LtmVersionConflictError';
+      mockMemoryService.updateMemory.mockRejectedValue(conflict);
+
+      await expect(
+        controller.updateMemory({
+          userId,
+          memoryId,
+          content: 'x',
+          expectedVersion: 3,
+        }),
+      ).rejects.toThrow(/CONFLICT:/);
+
+      // expectedVersion reaches the service DTO.
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+        expect.objectContaining({ expectedVersion: 3 }),
+        undefined,
+      );
     });
 
     it('rejects invalid memoryId', async () => {

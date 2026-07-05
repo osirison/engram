@@ -11,6 +11,7 @@ import {
   StmMemoryNotFoundError,
   StmMemoryExpiredError,
   StmTtlValidationError,
+  StmVersionConflictError,
   DEFAULT_STM_CONFIG,
   StmConfig,
   createStmMemorySchema,
@@ -83,6 +84,7 @@ export class InMemoryStmAdapter {
       ttl,
       embedding,
       accessCount: 0,
+      version: 1,
     };
 
     const key = this.keyBuilder.buildMemoryKey(
@@ -143,6 +145,12 @@ export class InMemoryStmAdapter {
       throw new StmMemoryExpiredError(memoryId);
     }
 
+    // Optimistic concurrency (WP2 T4): mirror the Redis-backed service.
+    const existingVersion = existing.version ?? 1;
+    if (validated.expectedVersion !== undefined && validated.expectedVersion !== existingVersion) {
+      throw new StmVersionConflictError(memoryId, existingVersion);
+    }
+
     const newTtl = validated.ttl ?? existing.ttl;
     this.validateTtl(newTtl);
     const now = new Date();
@@ -160,6 +168,7 @@ export class InMemoryStmAdapter {
       updatedAt: now,
       expiresAt,
       ttl: newTtl,
+      version: existingVersion + 1,
     };
     this.store.set(key, updated);
     if (validated.ttl !== undefined) {

@@ -29,6 +29,7 @@ const makeMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   createdAt: new Date('2025-01-01'),
   updatedAt: new Date('2025-01-01'),
   expiresAt: null,
+  version: 1,
   ...overrides,
 });
 
@@ -711,6 +712,7 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
     createdAt: new Date('2025-01-01'),
     updatedAt: new Date('2025-01-01'),
     expiresAt: null,
+    version: 1,
     ...overrides,
   });
 

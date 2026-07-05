@@ -33,9 +33,11 @@ export function toTRPCError(error: unknown): TRPCError {
           ? 'PRECONDITION_FAILED'
           : error.code === 'BAD_REQUEST'
             ? 'BAD_REQUEST'
-            : error.code === 'UNAVAILABLE'
-              ? 'SERVICE_UNAVAILABLE'
-              : 'INTERNAL_SERVER_ERROR';
+            : error.code === 'CONFLICT'
+              ? 'CONFLICT'
+              : error.code === 'UNAVAILABLE'
+                ? 'SERVICE_UNAVAILABLE'
+                : 'INTERNAL_SERVER_ERROR';
     return new TRPCError({ code, message: error.message, cause: error });
   }
   return new TRPCError({

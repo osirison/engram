@@ -27,6 +27,7 @@ import {
   LtmMemoryQuotaExceededError,
   LtmPromotionError,
   LtmDatabaseError,
+  LtmVersionConflictError,
   SemanticSearchOptions,
   SemanticSearchResult,
   ReindexOptions,
@@ -60,6 +61,7 @@ type PrismaMemory = {
   metadata: unknown; // Using unknown for type safety; must be type-checked before use
   tags: string[];
   type: string;
+  version: number;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
@@ -67,10 +69,10 @@ type PrismaMemory = {
 };
 
 // Input shape for an LTM row insert: mirrors PrismaMemory but with the
-// server-defaulted columns (id/createdAt/updatedAt) optional. Keeps the single
-// insert choke point (createRowWithQuota) strongly typed against its callers.
-type LtmMemoryCreateData = Omit<PrismaMemory, 'id' | 'createdAt' | 'updatedAt'> &
-  Partial<Pick<PrismaMemory, 'id' | 'createdAt' | 'updatedAt'>>;
+// server-defaulted columns (id/createdAt/updatedAt/version) optional. Keeps the
+// single insert choke point (createRowWithQuota) strongly typed against callers.
+type LtmMemoryCreateData = Omit<PrismaMemory, 'id' | 'createdAt' | 'updatedAt' | 'version'> &
+  Partial<Pick<PrismaMemory, 'id' | 'createdAt' | 'updatedAt' | 'version'>>;
 
 @Injectable()
 export class MemoryLtmService {
@@ -372,6 +374,11 @@ export class MemoryLtmService {
         lastAccessedAt: this.readLastAccessedAt(nextMetadata),
       });
 
+      // Optimistic concurrency (WP2 T4/G4): always bump version; when the caller
+      // supplied expectedVersion, fold it into the compare-and-swap `where` so a
+      // stale writer's update matches no row (Prisma P2025) instead of clobbering.
+      updateData.version = { increment: 1 };
+
       // Build the where clause; Prisma requires a unique filter for update.
       // We enforce org scope via the prior get() call and pass it here too so
       // a concurrent row move cannot be exploited between the two queries.
@@ -383,13 +390,31 @@ export class MemoryLtmService {
       if (organizationId !== undefined) {
         updateWhere.organizationId = organizationId;
       }
+      if (validatedInput.expectedVersion !== undefined) {
+        updateWhere.version = validatedInput.expectedVersion;
+      }
 
       // Update memory in database
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const memory = await (this.prisma as any).memory.update({
-        where: updateWhere,
-        data: updateData,
-      });
+      let memory: PrismaMemory;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        memory = await (this.prisma as any).memory.update({
+          where: updateWhere,
+          data: updateData,
+        });
+      } catch (updateError) {
+        // P2025 = no row matched the where. Either the version moved (conflict)
+        // or the row is gone (not-found). Re-fetch without the version filter to
+        // tell them apart.
+        if ((updateError as { code?: string }).code === 'P2025') {
+          const current = await this.findRawMemory(userId, memoryId, organizationId, scope);
+          if (current) {
+            throw new LtmVersionConflictError(memoryId, current.version);
+          }
+          throw new LtmMemoryNotFoundError(memoryId);
+        }
+        throw updateError;
+      }
 
       this.logger.debug(`LTM memory updated: ${memoryId}`);
       const ltmMemory = this.mapToLtmMemory(memory);
@@ -406,7 +431,9 @@ export class MemoryLtmService {
 
       return ltmMemory;
     } catch (error) {
-      if (error instanceof LtmMemoryNotFoundError) {
+      // Not-found and version conflicts are expected control-flow, not DB faults —
+      // surface them unchanged so callers can map them (T4 conflict → 409).
+      if (error instanceof LtmMemoryNotFoundError || error instanceof LtmVersionConflictError) {
         throw error;
       }
       this.logger.error(`Failed to update LTM memory ${memoryId}: ${error}`);

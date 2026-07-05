@@ -48,6 +48,10 @@ const updateInput = z.object({
   content: z.string().min(1).max(10_240).optional(),
   tags: z.array(z.string().max(100)).max(50).optional(),
   scope: z.string().max(256).nullish(),
+  // STM-only: reset the TTL window on save (mirrors update-memory.dto.ts).
+  ttl: z.number().int().min(60).max(604800).optional(),
+  // Optimistic-concurrency guard (WP2 T4).
+  expectedVersion: z.number().int().min(1).optional(),
 });
 
 const deleteInput = z.object({
@@ -112,6 +116,8 @@ export const memoryRouter = router({
       content: input.content,
       tags: input.tags,
       scope: input.scope ?? undefined,
+      ttl: input.ttl,
+      expectedVersion: input.expectedVersion,
     })
   ),
 

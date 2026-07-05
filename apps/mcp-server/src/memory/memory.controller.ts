@@ -310,6 +310,7 @@ export class MemoryController {
         metadata: validatedInput.metadata,
         tags: validatedInput.tags,
         ttl: validatedInput.ttl,
+        expectedVersion: validatedInput.expectedVersion,
       };
 
       // Update memory using service
@@ -330,6 +331,19 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Error in update_memory tool:', error);
+      // Optimistic-concurrency conflict (WP2 T4/D5): surface it as a client-facing
+      // `CONFLICT:` message (checked by name to avoid coupling to the store
+      // packages) so the web maps it to tRPC CONFLICT / HTTP 409.
+      if (
+        error instanceof Error &&
+        (error.name === 'LtmVersionConflictError' ||
+          error.name === 'StmVersionConflictError')
+      ) {
+        throw toClientError(
+          new ClientFacingError(`CONFLICT: ${error.message}`),
+          'Failed to update memory',
+        );
+      }
       throw toClientError(error, 'Failed to update memory');
     }
   }

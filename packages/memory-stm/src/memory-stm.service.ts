@@ -12,6 +12,7 @@ import {
   StmMemoryNotFoundError,
   StmMemoryExpiredError,
   StmTtlValidationError,
+  StmVersionConflictError,
   DEFAULT_STM_CONFIG,
   createStmMemorySchema,
   updateStmMemorySchema,
@@ -75,6 +76,7 @@ export class MemoryStmService {
       ttl,
       embedding,
       accessCount: 0,
+      version: 1,
     };
 
     // Store in Redis with TTL
@@ -162,6 +164,19 @@ export class MemoryStmService {
     // scope enforces namespace isolation — a mismatch surfaces as not-found.
     const existing = await this.findById(userId, memoryId, organizationId, scope);
 
+    // Optimistic concurrency (WP2 T4/G4): reject the write if another writer
+    // bumped the version since the caller last read it. This is read-compare-set
+    // (findById above, SET below), not an atomic CAS — the race window is
+    // milliseconds on TTL-bounded data. A true CAS would need a Redis Lua script
+    // (deferred). expectedVersion is optional, so legacy callers keep LWW.
+    const existingVersion = existing.version ?? 1;
+    if (
+      validatedInput.expectedVersion !== undefined &&
+      validatedInput.expectedVersion !== existingVersion
+    ) {
+      throw new StmVersionConflictError(memoryId, existingVersion);
+    }
+
     // Validate new TTL if provided
     const newTtl = validatedInput.ttl ?? existing.ttl;
     this.validateTtl(newTtl);
@@ -179,6 +194,7 @@ export class MemoryStmService {
       updatedAt: now,
       expiresAt,
       ttl: newTtl,
+      version: existingVersion + 1,
     };
 
     // Store updated memory in Redis with new TTL
@@ -523,6 +539,8 @@ export class MemoryStmService {
       createdAt: new Date(m.createdAt),
       updatedAt: new Date(m.updatedAt),
       expiresAt: new Date(m.expiresAt),
+      // Payloads written before WP2 T4 have no version — treat them as 1.
+      version: m.version ?? 1,
     };
   }
 

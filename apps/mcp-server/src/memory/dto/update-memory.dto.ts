@@ -18,6 +18,12 @@ export const updateMemoryToolSchema = z
      * filters which memory is updated rather than changing its scope.
      */
     scope: z.string().min(1).max(256).optional(),
+    /**
+     * Optimistic-concurrency guard (WP2 T4/G4). When set, the update is applied
+     * only if the memory is still at this version; otherwise it fails with a
+     * `CONFLICT:` error. Optional so existing agent callers keep last-write-wins.
+     */
+    expectedVersion: z.coerce.number().int().min(1).optional(),
   })
   .strict();
 
