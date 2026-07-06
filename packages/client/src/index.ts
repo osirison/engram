@@ -13,6 +13,8 @@ export type {
   ReflectResult,
   PromptContextInput,
   PromptContextResult,
+  LoadContextInput,
+  LoadContextResult,
   ConversationRole,
   ConversationTurn,
   IngestConversationInput,

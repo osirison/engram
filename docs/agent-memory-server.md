@@ -1,0 +1,212 @@
+---
+title: ENGRAM Agent Memory Server
+description: Runbook for running one persistent, loopback-bound ENGRAM MCP server that all five AI coding agents share as primary memory
+---
+
+# ENGRAM agent memory server
+
+## Overview
+
+This runbook covers running **one** long-lived ENGRAM MCP server that every AI
+coding agent — Claude Code, GitHub Copilot, Cursor, OpenAI Codex, and Gemini —
+connects to as a single shared **primary memory**. The five agents point at the
+same process, so a fact one agent stores is immediately recallable by the others.
+
+The server runs as a persistent process configured for shared HTTP access:
+
+| Setting              | Value                            | Notes                                              |
+| -------------------- | -------------------------------- | -------------------------------------------------- |
+| `MCP_TRANSPORT`      | `streamable-http`                | One shared HTTP server instead of per-client stdio |
+| `PORT`               | `3000`                           |                                                    |
+| `HOST`               | `127.0.0.1`                      | Loopback only — per-machine (see caveat below)     |
+| `AUTH_REQUIRED`      | `true`                           | Per-agent API keys enforced                        |
+| `DEPLOYMENT_PROFILE` | `memory` / `lite` / `enterprise` | Pick per durability needs (see below)              |
+
+- **MCP endpoint:** `http://127.0.0.1:3000/mcp` — a single route that handles
+  `POST` (JSON-RPC requests), `GET` (server-to-client SSE stream), and `DELETE`
+  (session teardown), keyed by a per-session `mcp-session-id` header.
+- **Health endpoint:** `http://127.0.0.1:3000/health`.
+- There is **no REST memory API.** Every memory operation is MCP JSON-RPC over
+  the `/mcp` route. Store, recall, and the rest of the tool surface are MCP
+  tools, not HTTP verbs.
+
+The rules every agent follows once connected live in
+[agent-memory-contract.md](agent-memory-contract.md); the per-agent client
+wiring lives in [agent-memory-clients.md](agent-memory-clients.md).
+
+## Why one server
+
+ENGRAM's **default** transport is stdio: each MCP client spawns its own server
+subprocess. Five agents would mean five independent processes, five lifecycles,
+and five separate pools of connections to Postgres/Redis/Qdrant — with no shared
+in-process session state.
+
+WP5 D1 chooses a single shared HTTP server instead. All five agents open MCP
+sessions against the same `http://127.0.0.1:3000/mcp` endpoint, so they share:
+
+- **One process and one memory store** — the whole point of "primary memory."
+- **One lifecycle** — started once at login, supervised, restarted on crash.
+- **One set of backing-service connections** — Postgres, Redis, and Qdrant are
+  opened once, not once per agent.
+
+The rest of this document shows how to run that one server durably (systemd
+user service or Docker Compose) and how to verify it.
+
+## systemd user service
+
+The recommended way to run the persistent server on a single Linux machine is
+the systemd **user** unit that ships with the repository at
+[deploy/systemd/engram-mcp.service](../deploy/systemd/engram-mcp.service). It
+fixes `MCP_TRANSPORT=streamable-http`, `PORT=3000`, and `HOST=127.0.0.1`; sets
+`WorkingDirectory=%h/Cloud/Projects/engram` and
+`EnvironmentFile=%h/.engram/engram-mcp.env`; and hardens the process with
+`Restart=always`, `NoNewPrivileges=true`, and `PrivateTmp=true`.
+
+### Build first
+
+`ExecStart` runs `node apps/mcp-server/dist/main.js`, so the checkout must be
+built before the unit will start:
+
+```bash
+pnpm build
+```
+
+### Install and enable
+
+```bash
+cp deploy/systemd/engram-mcp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now engram-mcp.service
+```
+
+### Survive logout and reboot
+
+A user service stops when the user logs out unless lingering is enabled. Turn it
+on so the memory server keeps running (and restarts on boot) without an active
+session:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+### Follow logs and check status
+
+```bash
+journalctl --user -u engram-mcp -f          # live logs
+systemctl --user status engram-mcp          # current state
+systemctl --user restart engram-mcp         # after a rebuild or env change
+```
+
+## EnvironmentFile
+
+The unit reads all secrets and connection settings from
+`~/.engram/engram-mcp.env`. This file is **never committed** and must be
+readable only by its owner:
+
+```bash
+mkdir -p ~/.engram
+touch ~/.engram/engram-mcp.env
+chmod 600 ~/.engram/engram-mcp.env
+```
+
+At minimum it must set the datastore URLs, the auth gate, the deployment
+profile, the admin token, and the embeddings configuration. Transport, port,
+and host are **not** set here — the unit fixes those.
+
+```bash
+# ~/.engram/engram-mcp.env — placeholders only, never commit real secrets
+
+# Datastores (enterprise profile). For VECTOR_BACKEND=pgvector, drop QDRANT_URL.
+DATABASE_URL=postgresql://engram:CHANGE_ME@127.0.0.1:5432/engram
+REDIS_URL=redis://127.0.0.1:6379
+QDRANT_URL=http://127.0.0.1:6333
+# VECTOR_BACKEND=pgvector   # alternative to a separate Qdrant service
+
+# Auth gate — every agent authenticates with a per-agent API key.
+AUTH_REQUIRED=true
+
+# Durability profile: memory | lite | enterprise (see docs/SETUP.md).
+DEPLOYMENT_PROFILE=enterprise
+
+# Admin-only operations (reindex, backfill). Not an agent key.
+MCP_ADMIN_TOKEN=CHANGE_ME_ADMIN_TOKEN
+
+# Embeddings: openai (needs a key), local (deterministic, for testing), or disabled.
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-CHANGE_ME
+```
+
+Choose `DEPLOYMENT_PROFILE` for your durability and infrastructure needs — the
+profile table and per-profile setup live in [SETUP.md](SETUP.md). A single-user
+machine can run `memory` (no external services, data lost on exit) or `lite`
+(Postgres only, encrypted at rest); the sample above shows the full-stack
+`enterprise` variables. Leaner profiles need fewer of the datastore URLs, so
+delete the ones that profile does not use.
+
+Generating and rotating the per-agent API keys (and turning the `AUTH_REQUIRED`
+gate on) is covered in [security/agent-keys.md](security/agent-keys.md).
+
+## Docker Compose alternative
+
+To run the server in a container instead of directly on the host, use the
+production image path: [docker-compose.prod.yml](../docker-compose.prod.yml)
+(which builds from `apps/mcp-server/Dockerfile`, listening on port `3000`). The
+full container build and release flow is documented in [deploy.md](deploy.md).
+
+The container path serves the same shared MCP server, so it must run with the
+same environment as the systemd unit — in particular
+`MCP_TRANSPORT=streamable-http` and `AUTH_REQUIRED=true`. Publish the container
+port to loopback only (for example `127.0.0.1:3000:3000`) so the endpoint stays
+per-machine, matching the `HOST=127.0.0.1` bind described above.
+
+## Health and verification
+
+The repository ships a verification script at
+[scripts/verify-engram-server.sh](../scripts/verify-engram-server.sh). It runs
+four checks against a running server:
+
+1. `/health` answers `200`.
+2. The MCP Streamable-HTTP handshake works — an `initialize` request returns an
+   `mcp-session-id` header.
+3. `tools/list` advertises the memory tools (it looks for `recall`).
+4. With auth enabled, an **unauthenticated** protected `tools/call` is rejected
+   with `401`.
+
+Run it with the auth gate asserted:
+
+```bash
+AUTH_REQUIRED=true ./scripts/verify-engram-server.sh
+```
+
+Setting `AUTH_REQUIRED=true` in the script's shell makes check 4 a hard
+assertion (the run fails if the server returns anything but `401`); without it
+the script only notes the observed status. Override the target with
+`ENGRAM_MCP_URL` and, if needed, supply a key via `ENGRAM_API_KEY`.
+
+For a quick manual liveness probe:
+
+```bash
+curl http://127.0.0.1:3000/health
+```
+
+## Loopback caveat
+
+Binding to `127.0.0.1` makes the server **per-machine**: only agents running on
+the same host can reach it. That is the intended WP5 D1 topology for one machine.
+
+If agents run on more than one machine, they cannot share this loopback server.
+Reaching ENGRAM across hosts requires a **hosted endpoint with TLS and
+authentication** — network exposure, certificates, and a routed address. That is
+an operations concern tracked under WP6; do **not** widen the bind or expose the
+port directly. Keep this server on loopback.
+
+## See also
+
+- [agent-memory-contract.md](agent-memory-contract.md) — the one contract every
+  agent follows so ENGRAM behaves as shared primary memory.
+- [agent-memory-clients.md](agent-memory-clients.md) — per-agent client wiring
+  for Claude Code, Copilot, Cursor, Codex, and Gemini.
+- [security/agent-keys.md](security/agent-keys.md) — per-agent API keys and
+  enabling the `AUTH_REQUIRED` gate.
+- [SETUP.md](SETUP.md) — profiles, local development, and MCP client setup.
+- [deploy.md](deploy.md) — production Docker image build and release flow.

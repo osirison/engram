@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "tsc && node dist/run.js",
+    "eval:gate": "tsc && node dist/gate.js",
     "bench": "tsc && node dist/bench.js"
   },
   "keywords": [

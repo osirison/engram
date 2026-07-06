@@ -9,6 +9,9 @@ export {
 export { createEmbeddingRetriever, cosineSimilarity } from './retrievers/embedding-retriever.js';
 export { recallFixtures } from './fixtures/recall-fixtures.js';
 export { formatReport } from './report.js';
+export { RECALL_GATE_THRESHOLDS, evaluateGate } from './thresholds.js';
+export type { GateThresholds, GateResult } from './thresholds.js';
+export { buildRecallGateReport } from './gate.js';
 export { percentile, summarize, runLatencyBenchmark } from './latency.js';
 export { createVectorStoreLatencyTarget } from './latency-adapters.js';
 export type {

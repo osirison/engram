@@ -1,0 +1,40 @@
+{
+  "name": "@engram/agent-bridge",
+  "version": "0.1.0",
+  "description": "The `engram` CLI: a non-blocking MCP client that lets AI coding agents (hooks, watchers) store to and recall from ENGRAM as primary memory",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "engram": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "engram",
+    "memory",
+    "mcp",
+    "cli",
+    "agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@engram/client": "workspace:*",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^25.9.1",
+    "eslint": "^9.39.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

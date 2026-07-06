@@ -345,6 +345,60 @@ describe('EngramClient', () => {
     });
   });
 
+  // ─── loadContext ─────────────────────────────────────────────────────────────
+
+  describe('loadContext()', () => {
+    const contextText = 'Recent: Use PostgreSQL.\n\nImportant: qp prefers pnpm.';
+
+    it('returns context text and priming metadata', async () => {
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      server = new Server(
+        { name: 'engram-stub', version: '1.0.0' },
+        { capabilities: { tools: {} } }
+      );
+      server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+      server.setRequestHandler(CallToolRequestSchema, () => ({
+        content: [
+          { type: 'text', text: contextText },
+          { type: 'text', text: JSON.stringify({ memoryCount: 2, charCount: contextText.length }) },
+        ],
+      }));
+      await server.connect(st);
+      client = new EngramClient({ baseUrl: 'http://unused' }, ct);
+
+      const result = await client.loadContext({ userId: USER_ID, scope: 'project:engram' });
+      expect(result.context).toBe(contextText);
+      expect(result.memoryCount).toBe(2);
+      expect(result.charCount).toBe(contextText.length);
+    });
+
+    it('passes scope and budget through to the server', async () => {
+      let captured: Record<string, unknown> = {};
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      server = new Server(
+        { name: 'engram-stub', version: '1.0.0' },
+        { capabilities: { tools: {} } }
+      );
+      server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+      server.setRequestHandler(CallToolRequestSchema, (request) => {
+        captured = (request.params.arguments ?? {}) as Record<string, unknown>;
+        return {
+          content: [
+            { type: 'text', text: '' },
+            { type: 'text', text: '{"memoryCount":0,"charCount":0}' },
+          ],
+        };
+      });
+      await server.connect(st);
+      client = new EngramClient({ baseUrl: 'http://unused' }, ct);
+
+      await client.loadContext({ userId: USER_ID, scope: 'project:engram', maxChars: 4000 });
+      expect(captured['userId']).toBe(USER_ID);
+      expect(captured['scope']).toBe('project:engram');
+      expect(captured['maxChars']).toBe(4000);
+    });
+  });
+
   // ─── ingestConversation ────────────────────────────────────────────────────
 
   describe('ingestConversation()', () => {

@@ -155,6 +155,9 @@ jobs:
       - name: Run retrieval eval (baseline regression)
         run: pnpm eval
 
+      - name: Run recall-quality regression gate
+        run: pnpm eval:gate
+
       - name: Run pgvector integration tests
         run: pnpm --filter @engram/vector-store test
         env:
