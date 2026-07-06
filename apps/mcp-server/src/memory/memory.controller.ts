@@ -527,20 +527,23 @@ export class MemoryController {
 
       // Snapshot every target BEFORE deleting so each row remains restorable
       // (WP2 T5/T6). Snapshotting is best-effort; a missing pre-image just means
-      // that id can't be restored later.
+      // that id can't be restored later. De-duplicate ids and read in bounded
+      // parallel batches so up to 100 targets don't serialise into N round-trips
+      // before the first delete (PR #222 review).
       const snapshots = new Map<
         string,
         Awaited<ReturnType<MemoryController['snapshotOf']>>
       >();
-      for (const id of validatedInput.memoryIds) {
-        snapshots.set(
-          id,
-          await this.snapshotOf(
-            validatedInput.userId,
-            id,
-            validatedInput.scope,
+      const uniqueIds = [...new Set(validatedInput.memoryIds)];
+      const SNAPSHOT_BATCH = 10;
+      for (let i = 0; i < uniqueIds.length; i += SNAPSHOT_BATCH) {
+        const batch = uniqueIds.slice(i, i + SNAPSHOT_BATCH);
+        const pre = await Promise.all(
+          batch.map((id) =>
+            this.snapshotOf(validatedInput.userId, id, validatedInput.scope),
           ),
         );
+        batch.forEach((id, j) => snapshots.set(id, pre[j] ?? null));
       }
 
       const result = await this.memoryService.bulkDeleteMemories(

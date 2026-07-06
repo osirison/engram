@@ -1262,4 +1262,32 @@ describe('MemoryController audit wiring (WP2 T5)', () => {
     );
     expect(bulkRows).toHaveLength(2);
   });
+
+  it('de-duplicates ids before snapshotting so each unique target is read once (PR #222)', async () => {
+    svc.getMemory.mockResolvedValue({
+      id: 'x',
+      userId,
+      content: 'c',
+      tags: [],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 1,
+    });
+    svc.bulkDeleteMemories.mockResolvedValue({
+      deleted: ['a', 'b'],
+      failed: [],
+    });
+
+    await controller.bulkDeleteMemories(
+      { userId, memoryIds: ['a', 'a', 'b', 'b', 'a'] },
+      ctx,
+    );
+
+    // snapshotOf → memoryService.getMemory: one read per UNIQUE id (a, b), not
+    // once per (duplicated) input id.
+    expect(svc.getMemory).toHaveBeenCalledTimes(2);
+  });
 });
