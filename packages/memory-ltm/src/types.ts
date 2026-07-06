@@ -18,6 +18,11 @@ export const DEFAULT_LTM_CONFIG: LtmConfig = {
 export interface LtmMemory extends Memory {
   type: 'long-term';
   expiresAt: null; // LTM memories never expire
+  /**
+   * Optimistic-concurrency counter (WP2 T4/G4). Defaults to 1 at the DB level;
+   * bumped on every update. Enforced via a compare-and-swap `where` clause.
+   */
+  version: number;
 }
 
 // LTM creation input
@@ -43,6 +48,12 @@ export interface UpdateLtmMemoryData {
   /** Shallow-merge these fields into existing metadata instead of replacing it. */
   metadataMerge?: Record<string, unknown>;
   tags?: string[];
+  /**
+   * Optimistic-concurrency guard (WP2 T4). When set, the update fails with
+   * `LtmVersionConflictError` unless it matches the stored version. Optional so
+   * legacy callers keep last-write-wins.
+   */
+  expectedVersion?: number;
 }
 
 // LTM query options
@@ -228,6 +239,7 @@ export const updateLtmMemorySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   metadataMerge: z.record(z.string(), z.unknown()).optional(),
   tags: z.array(z.string()).optional(),
+  expectedVersion: z.number().int().min(1).optional(),
 });
 
 // LTM query options schema
@@ -254,6 +266,33 @@ export class LtmMemoryNotFoundError extends Error {
   constructor(memoryId: string) {
     super(`Long-term memory with ID ${memoryId} not found`);
     this.name = 'LtmMemoryNotFoundError';
+  }
+}
+
+/**
+ * Raised by `reembed()` when the embeddings provider is unavailable or its
+ * generation fails (WP2 T7/D10). The staleness flag stays set so the repair can
+ * be retried once the provider is back.
+ */
+export class LtmEmbeddingUnavailableError extends Error {
+  constructor(memoryId: string) {
+    super(`Cannot re-embed memory ${memoryId}: the embeddings provider is unavailable`);
+    this.name = 'LtmEmbeddingUnavailableError';
+  }
+}
+
+/**
+ * Raised when an update's `expectedVersion` no longer matches the stored version
+ * (WP2 T4/G4 — optimistic concurrency). Carries the current version so the caller
+ * can reload and re-diff.
+ */
+export class LtmVersionConflictError extends Error {
+  constructor(
+    memoryId: string,
+    readonly currentVersion: number
+  ) {
+    super(`Long-term memory ${memoryId} was modified (currentVersion=${currentVersion})`);
+    this.name = 'LtmVersionConflictError';
   }
 }
 

@@ -31,6 +31,7 @@ describe('MemoryLtmService', () => {
     metadata: { test: 'data' },
     tags: ['test', 'memory'],
     type: MemoryType.LONG_TERM,
+    version: 1,
     createdAt: new Date('2025-01-01T00:00:00Z'),
     updatedAt: new Date('2025-01-01T00:00:00Z'),
     expiresAt: null,
@@ -323,8 +324,12 @@ describe('MemoryLtmService', () => {
         },
         data: {
           content: updateInput.content,
-          metadata: updateInput.metadata,
+          // Content changed but this service has no embeddings provider, so the
+          // stored vector is now stale (WP2 T7).
+          metadata: { ...updateInput.metadata, embeddingStale: true },
           tags: updateInput.tags,
+          // Version is always bumped, even without an expectedVersion (WP2 T4).
+          version: { increment: 1 },
         },
       });
       expect(result.content).toBe(updateInput.content);
@@ -336,6 +341,63 @@ describe('MemoryLtmService', () => {
       await expect(service.update(mockUserId, mockMemoryId, updateInput)).rejects.toThrow(
         LtmMemoryNotFoundError
       );
+    });
+
+    it('folds expectedVersion into the CAS where clause on success (WP2 T4)', async () => {
+      prismaService.memory.findFirst.mockResolvedValue({ ...mockMemory, version: 3 });
+      prismaService.memory.update.mockResolvedValue({ ...mockMemory, version: 4 });
+
+      const result = await service.update(mockUserId, mockMemoryId, {
+        ...updateInput,
+        expectedVersion: 3,
+      });
+
+      expect(prismaService.memory.update).toHaveBeenCalledWith({
+        where: {
+          id: mockMemoryId,
+          userId: mockUserId,
+          type: MemoryType.LONG_TERM,
+          version: 3, // compare-and-swap guard
+        },
+        data: expect.objectContaining({ version: { increment: 1 } }),
+      });
+      expect(result.version).toBe(4);
+    });
+
+    it('maps a stale expectedVersion (P2025 with the row still present) to a conflict', async () => {
+      prismaService.memory.findFirst.mockResolvedValue({ ...mockMemory, version: 5 });
+      prismaService.memory.update.mockRejectedValue({ code: 'P2025' });
+
+      await expect(
+        service.update(mockUserId, mockMemoryId, { ...updateInput, expectedVersion: 3 })
+      ).rejects.toMatchObject({
+        name: 'LtmVersionConflictError',
+        currentVersion: 5,
+      });
+    });
+
+    it('maps P2025 with no surviving row to not-found, not a conflict', async () => {
+      // First find (pre-update) sees the row; the re-fetch after P2025 sees none
+      // (deleted concurrently) → not-found.
+      prismaService.memory.findFirst
+        .mockResolvedValueOnce({ ...mockMemory, version: 3 })
+        .mockResolvedValueOnce(null);
+      prismaService.memory.update.mockRejectedValue({ code: 'P2025' });
+
+      await expect(
+        service.update(mockUserId, mockMemoryId, { ...updateInput, expectedVersion: 3 })
+      ).rejects.toBeInstanceOf(LtmMemoryNotFoundError);
+    });
+
+    it('omits the version guard when no expectedVersion is given (last-write-wins)', async () => {
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockResolvedValue({ ...mockMemory, version: 2 });
+
+      await service.update(mockUserId, mockMemoryId, updateInput);
+
+      const call = prismaService.memory.update.mock.calls[0][0];
+      expect(call.where.version).toBeUndefined();
+      expect(call.data.version).toEqual({ increment: 1 });
     });
 
     it('should only update provided fields', async () => {
@@ -359,6 +421,143 @@ describe('MemoryLtmService', () => {
           }),
         }),
       });
+    });
+  });
+
+  describe('embeddingStale + reembed (WP2 T7)', () => {
+    const stubStm = () => ({ findById: vi.fn(), delete: vi.fn() });
+    const stubEmbeddings = (embedding: number[] | null) => ({
+      generate: vi
+        .fn()
+        .mockResolvedValue(embedding ? { embedding, model: 'm', cached: false } : null),
+    });
+    const stubVectorStore = () => ({
+      backend: 'qdrant' as const,
+      upsert: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      search: vi.fn().mockResolvedValue([]),
+      ensureReady: vi.fn().mockResolvedValue(undefined),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const withEmbeddings = (embedding: number[] | null, vs?: any) =>
+      new MemoryLtmService(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        prismaService as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stubStm() as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stubEmbeddings(embedding) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (vs ?? stubVectorStore()) as any
+      );
+
+    it('marks embeddingStale when a content edit cannot be re-embedded', async () => {
+      // The default `service` has no embeddings provider → a content edit leaves
+      // the old vector in place and must flag the drift.
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      await service.update(mockUserId, mockMemoryId, { content: 'changed text' });
+
+      const data = prismaService.memory.update.mock.calls[0][0].data;
+      expect(data.metadata).toMatchObject({ embeddingStale: true });
+    });
+
+    it('clears embeddingStale (and writes the new vector) when re-embedding succeeds', async () => {
+      const svc = withEmbeddings([0.1, 0.2, 0.3]);
+      prismaService.memory.findFirst.mockResolvedValue({
+        ...mockMemory,
+        metadata: { test: 'data', embeddingStale: true },
+      });
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      await svc.update(mockUserId, mockMemoryId, { content: 'changed text' });
+
+      const data = prismaService.memory.update.mock.calls[0][0].data;
+      expect(data.embedding).toEqual([0.1, 0.2, 0.3]);
+      expect(data.metadata.embeddingStale).toBeUndefined();
+    });
+
+    it('reembed regenerates the vector, clears the flag, and does NOT bump version', async () => {
+      const vs = stubVectorStore();
+      const svc = withEmbeddings([0.4, 0.5], vs);
+      prismaService.memory.findFirst.mockResolvedValue({
+        ...mockMemory,
+        version: 5,
+        metadata: { test: 'data', embeddingStale: true },
+      });
+      prismaService.memory.update.mockResolvedValue({ ...mockMemory, version: 5 });
+
+      await svc.reembed(mockUserId, mockMemoryId);
+
+      const call = prismaService.memory.update.mock.calls[0][0];
+      expect(call.data.embedding).toEqual([0.4, 0.5]);
+      expect(call.data.metadata.embeddingStale).toBeUndefined();
+      // Critical (WP2 T7/D10): no version bump, so a repair never trips T4 CAS.
+      expect(call.data.version).toBeUndefined();
+      expect(vs.upsert).toHaveBeenCalled();
+    });
+
+    it('reembed throws LtmEmbeddingUnavailableError with no provider', async () => {
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      await expect(service.reembed(mockUserId, mockMemoryId)).rejects.toMatchObject({
+        name: 'LtmEmbeddingUnavailableError',
+      });
+    });
+
+    it('reembed throws LtmEmbeddingUnavailableError when generation fails', async () => {
+      const svc = withEmbeddings(null);
+      prismaService.memory.findFirst.mockResolvedValue(mockMemory);
+      await expect(svc.reembed(mockUserId, mockMemoryId)).rejects.toMatchObject({
+        name: 'LtmEmbeddingUnavailableError',
+      });
+    });
+
+    it('reembed throws not-found when the memory is absent', async () => {
+      const svc = withEmbeddings([0.1]);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      await expect(svc.reembed(mockUserId, mockMemoryId)).rejects.toBeInstanceOf(
+        LtmMemoryNotFoundError
+      );
+    });
+
+    it('restore recreates the row under its original id, re-embeds, and re-indexes', async () => {
+      const vs = stubVectorStore();
+      const svc = withEmbeddings([0.7, 0.8], vs);
+      prismaService.memory.count.mockResolvedValue(0); // under quota
+      prismaService.memory.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({
+            ...mockMemory,
+            ...data,
+            version: 1,
+          })
+      );
+
+      const restored = await svc.restore({
+        id: mockMemoryId,
+        userId: mockUserId,
+        content: 'recovered content',
+        tags: ['x'],
+        metadata: { note: 'from delete snapshot' },
+        scope: 'agent:a',
+      });
+
+      // Preserves the original id (id-keyed vector upsert stays idempotent).
+      const created = prismaService.memory.create.mock.calls[0][0].data;
+      expect(created.id).toBe(mockMemoryId);
+      expect(created.content).toBe('recovered content');
+      expect(created.embedding).toEqual([0.7, 0.8]);
+      expect(restored.id).toBe(mockMemoryId);
+      expect(vs.upsert).toHaveBeenCalled();
+    });
+
+    it('restore surfaces a quota-exceeded error unchanged', async () => {
+      const svc = withEmbeddings([0.1]);
+      prismaService.memory.count.mockResolvedValue(DEFAULT_LTM_CONFIG.maxMemoriesPerUser);
+      await expect(
+        svc.restore({ id: mockMemoryId, userId: mockUserId, content: 'x' })
+      ).rejects.toBeInstanceOf(LtmMemoryQuotaExceededError);
     });
   });
 

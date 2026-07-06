@@ -57,6 +57,39 @@ export function formatUptime(seconds: number | null | undefined): string {
   return `${s}s`;
 }
 
+/**
+ * Countdown to an expiry instant (WP2 T3), e.g. "expires in 3h 12m",
+ * "expires in 45s", or "expired" once past. `nowMs` is injectable for tests.
+ */
+export function formatCountdown(
+  expiresAt: string | null | undefined,
+  nowMs: number = Date.now()
+): string {
+  if (!expiresAt) return '—';
+  const remainingMs = new Date(expiresAt).getTime() - nowMs;
+  if (Number.isNaN(remainingMs)) return '—';
+  if (remainingMs <= 0) return 'expired';
+  const s = Math.floor(remainingMs / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `expires in ${d}d ${h}h`;
+  if (h > 0) return `expires in ${h}h ${m}m`;
+  if (m > 0) return `expires in ${m}m`;
+  return `expires in ${s % 60}s`;
+}
+
+/** Seconds until an expiry instant (WP2 T3); negative once past, null if absent. */
+export function secondsUntil(
+  expiresAt: string | null | undefined,
+  nowMs: number = Date.now()
+): number | null {
+  if (!expiresAt) return null;
+  const t = new Date(expiresAt).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.floor((t - nowMs) / 1000);
+}
+
 /** Title-case a memory type for display. */
 export function memoryTypeLabel(type: string): string {
   if (type === 'short-term') return 'Short-term';

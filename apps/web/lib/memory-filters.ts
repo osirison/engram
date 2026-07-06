@@ -24,9 +24,11 @@ export const DEFAULT_FILTERS: MemoryFilters = {
 };
 
 export const TYPE_OPTIONS: { value: MemoryTypeFilter; label: string }[] = [
-  { value: 'all', label: 'All types' },
+  // 'all' shows the persisted (Postgres) list plus a live short-term strip above
+  // it — the STM tier is a separate live source (WP2 T3/D3).
+  { value: 'all', label: 'All (persisted)' },
   { value: 'long-term', label: 'Long-term' },
-  { value: 'short-term', label: 'Short-term' },
+  { value: 'short-term', label: 'Short-term (live)' },
 ];
 
 export const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [

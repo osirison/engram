@@ -38,6 +38,7 @@ The dashboard talks to the ENGRAM backend through a single, mockable seam,
   detected mode (`delegation`: `admin` / `tenant-limited` / `unrestricted` /
   `unknown`) and the Settings page shows a warning when the console is
   tenant-limited.
+
 - **Health & metrics — the MCP server HTTP endpoints** (`/health`,
   `/health/metrics`).
 
@@ -80,6 +81,29 @@ for all variables.
 | Lint               | `pnpm --filter web lint`      |
 | Type-check         | `pnpm --filter web typecheck` |
 | Tests              | `pnpm --filter web test`      |
+
+## Security model (WP2)
+
+The console's trust model has three layers, from coarsest to finest:
+
+1. **Operator allow-list** (`ENGRAM_ADMIN_EMAILS`) — who may sign in at all. An
+   allow-listed operator is a full admin over whatever the configured API key can
+   reach; `userId` is a **data-owner selector**, not an identity, honoured only
+   under an admin-scoped key (or an auth-disabled server).
+2. **Per-operator tenant binding** (`ENGRAM_OPERATOR_TENANTS`, optional) — scopes
+   each operator to specific data owners, e.g.
+   `alice@x.com:qp|ci-bot;bob@x.com:*`. Enforced **server-side** by
+   `assertCanManageUser` on every `userId`-taking tRPC procedure (memory +
+   analytics); unset ⇒ every operator manages every owner (zero-config default).
+   The switcher only filters client-side — the server is the enforcement point.
+3. **API-key scopes + delegation** (MCP server) — the tenant boundary for
+   agent-facing tools. A non-admin (`tenant-limited`) key can only act on its own
+   tenant; the console **fails cross-tenant writes fast** with the key's
+   limitation text rather than a confusing downstream not-found.
+
+The persistent **audit trail** (`memory_audits`) is the detective control across
+all three. Full per-agent authentication remains gap **G1**; this binding is a
+mitigation, not a replacement.
 
 ## Related Docs
 

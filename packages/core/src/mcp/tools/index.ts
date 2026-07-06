@@ -28,13 +28,39 @@ import { pingTool } from './ping.tool.js';
 export type ToolAuthMode = 'identity' | 'admin' | 'public';
 
 /**
+ * Verified per-call actor facts derived from the dispatch's auth decision, passed
+ * as an OPTIONAL second argument to `Tool.handler`. This is the single canonical
+ * actor shape shared across consumers (WP2 audit, WP4 provenance, WP5 per-agent
+ * attribution — see GAPS A30); do not fork a divergent one.
+ *
+ * It is built from the transport's verified auth info, never from the tool input,
+ * so a handler can attribute a mutation to the real principal. All fields are
+ * optional: an unauthenticated/legacy call carries none of them.
+ */
+export interface ToolCallContext {
+  /** The verified tenant/principal the call acts as (post-delegation). */
+  actorUserId?: string;
+  /** The calling API key's id, when the request was API-key authenticated. */
+  apiKeyId?: string;
+  /** The principal's granted scopes. */
+  scopes?: string[];
+  /** True when an admin-scoped key delegated to another tenant's userId. */
+  delegated?: boolean;
+}
+
+/**
  * Tool definition interface
  */
 export interface Tool {
   name: string;
   description: string;
   inputSchema: z.ZodSchema;
-  handler: (input: unknown) => Promise<unknown>;
+  /**
+   * Execute the tool. The optional second argument carries verified actor facts
+   * ({@link ToolCallContext}) for handlers that audit/attribute the call; it is
+   * backward-compatible — existing one-arg handlers keep working unchanged.
+   */
+  handler: (input: unknown, context?: ToolCallContext) => Promise<unknown>;
   /** Defaults to `identity`. See {@link ToolAuthMode}. */
   auth?: ToolAuthMode;
   /**
@@ -274,6 +300,10 @@ export function registerTools(
       // on behalf of another tenant (e.g. the multi-tenant operator console).
       // Delegated calls are audited.
       let args: unknown = request.params.arguments ?? {};
+      const rawApiKeyId = extra?.authInfo?.extra?.apiKeyId;
+      const apiKeyId = typeof rawApiKeyId === 'string' ? rawApiKeyId : undefined;
+      let delegated = false;
+      let actorUserId = userId;
       if (mode === 'identity' && userId && schemaAcceptsUserId(tool.inputSchema)) {
         const record = args as Record<string, unknown>;
         const decision = resolveActingUserId(
@@ -282,11 +312,12 @@ export function registerTools(
           authenticatedScopes(extra),
           tool.delegable === true
         );
+        delegated = decision.delegated;
+        actorUserId = decision.effectiveUserId;
         if (decision.delegated) {
-          const apiKeyId = extra?.authInfo?.extra?.apiKeyId;
           logger.log(
             `delegated_user_id tool=${toolName} actor=${userId} target=${decision.effectiveUserId}` +
-              (typeof apiKeyId === 'string' ? ` apiKeyId=${apiKeyId}` : '')
+              (apiKeyId ? ` apiKeyId=${apiKeyId}` : '')
           );
         }
         args = { ...record, userId: decision.effectiveUserId };
@@ -295,8 +326,19 @@ export function registerTools(
       // Validate input with Zod
       const validatedInput = tool.inputSchema.parse(args);
 
+      // Verified actor facts for handlers that audit/attribute the call (WP2 T5,
+      // GAPS A30). Built from the transport's auth info + the delegation decision,
+      // never from the tool input. `actorUserId` reflects the post-delegation
+      // tenant the call acts on.
+      const context: ToolCallContext = {
+        actorUserId,
+        apiKeyId,
+        scopes: authenticatedScopes(extra),
+        delegated,
+      };
+
       // Execute tool handler
-      const result = await tool.handler(validatedInput);
+      const result = await tool.handler(validatedInput, context);
 
       logger.log(`Tool ${toolName} executed successfully`);
 

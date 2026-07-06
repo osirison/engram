@@ -138,3 +138,105 @@ describe('PrismaEngramBackend (real Postgres)', () => {
     expect(me?.lastActivityAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
+
+// WP2 T1/D8: keyset pagination must not skip or duplicate rows under concurrent
+// inserts/deletes, including when many rows share a createdAt (the id tiebreak).
+const KEYSET_USER = '__dashboard_keyset_test__';
+const KEYSET_TOTAL = 60;
+
+describe('PrismaEngramBackend keyset pagination (real Postgres)', () => {
+  function backend() {
+    return new PrismaEngramBackend({ prisma: prisma!, mcpUrl: null, mcpApiKey: null });
+  }
+
+  beforeAll(async () => {
+    if (!available || !prisma) return;
+    await prisma.memory.deleteMany({ where: { userId: KEYSET_USER } });
+    await prisma.user.upsert({
+      where: { id: KEYSET_USER },
+      create: { id: KEYSET_USER, email: `${KEYSET_USER}@test.local` },
+      update: {},
+    });
+    // 60 rows across only 12 distinct timestamps → 5 rows per createdAt, so the
+    // (createdAt, id) tiebreak is exercised heavily.
+    await prisma.memory.createMany({
+      data: Array.from({ length: KEYSET_TOTAL }, (_, i) => ({
+        userId: KEYSET_USER,
+        content: `keyset row ${i}`,
+        type: 'long-term' as const,
+        tags: [],
+        embedding: [],
+        createdAt: new Date(2026, 5, 1 + (i % 12), 0, 0, 0),
+      })),
+    });
+  });
+
+  afterAll(async () => {
+    if (prisma) {
+      await prisma.memory.deleteMany({ where: { userId: KEYSET_USER } }).catch(() => undefined);
+      await prisma.user.deleteMany({ where: { id: KEYSET_USER } }).catch(() => undefined);
+    }
+  });
+
+  async function walkAll(
+    sortOrder: 'asc' | 'desc',
+    pageSize: number,
+    onPage?: (seen: string[]) => Promise<void>
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    let cursor: string | null | undefined;
+    // Generous safety bound so a pagination bug loops finitely, not forever.
+    for (let page = 0; page < 200; page++) {
+      const result = await backend().listMemories({
+        userId: KEYSET_USER,
+        limit: pageSize,
+        sortBy: 'createdAt',
+        sortOrder,
+        cursor,
+      });
+      ids.push(...result.items.map((m) => m.id));
+      if (onPage) await onPage(ids);
+      if (!result.hasMore || !result.nextCursor) break;
+      cursor = result.nextCursor;
+    }
+    return ids;
+  }
+
+  it('walks every row exactly once, descending, with a small page size', async () => {
+    if (!available) return;
+    const ids = await walkAll('desc', 7);
+    expect(ids).toHaveLength(KEYSET_TOTAL);
+    expect(new Set(ids).size).toBe(KEYSET_TOTAL); // no duplicates
+  });
+
+  it('walks every row exactly once, ascending', async () => {
+    if (!available) return;
+    const ids = await walkAll('asc', 9);
+    expect(ids).toHaveLength(KEYSET_TOTAL);
+    expect(new Set(ids).size).toBe(KEYSET_TOTAL);
+  });
+
+  it('never skips or duplicates surviving rows when a row is deleted mid-walk', async () => {
+    if (!available || !prisma) return;
+    let deletedId: string | null = null;
+    const ids = await walkAll('desc', 7, async (seen) => {
+      // After the first page, delete a not-yet-seen row. Offset pagination would
+      // shift every later row forward by one and skip a survivor; keyset does not.
+      if (deletedId === null && seen.length >= 7) {
+        const victim = await prisma!.memory.findFirst({
+          where: { userId: KEYSET_USER, id: { notIn: seen } },
+          select: { id: true },
+        });
+        if (victim) {
+          deletedId = victim.id;
+          await prisma!.memory.delete({ where: { id: victim.id } });
+        }
+      }
+    });
+    expect(deletedId).not.toBeNull();
+    // No duplicates, and the deleted row is the only one that may be missing.
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).not.toContain(deletedId);
+    expect(ids.length).toBeGreaterThanOrEqual(KEYSET_TOTAL - 1);
+  });
+});
