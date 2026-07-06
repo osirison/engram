@@ -1,3 +1,8 @@
+---
+title: WP2 Memory-UI Execution State
+description: Resumable progress index for executing the WP2 memory-management console (SHARED-2 + T1–T9)
+---
+
 # WP2 Memory-UI — Execution State
 
 Resumable progress index for executing WP2 (Memory Management UI). The durable record
@@ -72,7 +77,9 @@ no e2e spec asserts prose on the changed `get_memory`/`delete_memory`/`promote_m
 - SHARED-2 migration is additive (defaulted `version`, new `MemoryAudit`) — apply with
   `pnpm db:migrate`, verify SQL has no destructive statements; never `db:reset` the shared DB.
 - Per-task gate: affected package tests + `pnpm build` + `pnpm typecheck`; full `pnpm test`
-  at milestones (post-SHARED-2, post-server-tasks, end).
+  at milestones (post-SHARED-2, post-server-tasks, end). **Also `pnpm docs:check`** before push —
+  CI's "Check docs" job requires YAML frontmatter (`title:` + `description:`) on every
+  `docs/**/*.md`, including this STATE file (caught in PR #222 CI).
 - **T2 live-verification debt** (advisor): T2 is entirely mock-verified. Its acceptance
   criteria need a live STM round-trip (web → `list_memories(type:'short-term')` → real
   Redis SCAN → paged back), proving: the loosened SCAN cursor survives the schema +
