@@ -142,6 +142,20 @@ describe('round-trip: parseDocument(serializeMemory(x))', () => {
     const parsed = parseDocument(serializeMemory({ memory: m, edges: edges() }));
     expect(parsed.body).toBe(normalizeContent(content));
   });
+
+  it('reproduces content that embeds the literal <!-- engram:links --> sentinel', () => {
+    // Plausible when documenting ENGRAM's own export format: the marker must be
+    // escaped in the body so parse cannot truncate the content at it.
+    const content =
+      'The export uses a sentinel:\n\n<!-- engram:links -->\n\nfollowed by a ## Related block.';
+    const withEdges = parseDocument(
+      serializeMemory({ memory: memory({ content }), edges: edges() })
+    );
+    expect(withEdges.body).toBe(normalizeContent(content));
+    // Also with NO edges (no real marker in the doc at all).
+    const noEdges = parseDocument(serializeMemory({ memory: memory({ content }), edges: [] }));
+    expect(noEdges.body).toBe(normalizeContent(content));
+  });
 });
 
 describe('serializeMemory omissions + optionals', () => {

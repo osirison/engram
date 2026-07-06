@@ -1,7 +1,7 @@
 import { parse as yamlParse } from 'yaml';
 import { frontmatterSchema, type Frontmatter } from './frontmatter.schema.js';
 import { unescapeWikilinkBrackets } from './wikilink.js';
-import { RELATED_MARKER } from './serialize.js';
+import { RELATED_MARKER, unescapeRelatedMarker } from './serialize.js';
 
 export interface ParsedDocument {
   /** Validated canonical frontmatter (the authoritative edge list lives here). */
@@ -45,5 +45,5 @@ export function parseDocument(md: string): ParsedDocument {
   const markerIdx = rest.indexOf(`\n\n${RELATED_MARKER}`);
   const contentRegion = markerIdx >= 0 ? rest.slice(0, markerIdx) : rest.replace(/\n$/, '');
 
-  return { frontmatter, body: unescapeWikilinkBrackets(contentRegion) };
+  return { frontmatter, body: unescapeWikilinkBrackets(unescapeRelatedMarker(contentRegion)) };
 }

@@ -40,6 +40,8 @@ export {
   buildFrontmatter,
   normalizeContent,
   sortEdges,
+  escapeRelatedMarker,
+  unescapeRelatedMarker,
   RELATED_MARKER,
   type CanonicalMemory,
   type SerializeInput,

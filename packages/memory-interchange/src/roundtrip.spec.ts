@@ -83,6 +83,11 @@ describe('round-trip durable projection (G6)', () => {
     );
   });
 
+  it('preserves content that embeds the literal links sentinel (no truncation)', () => {
+    const content = 'Docs about export:\n\n<!-- engram:links -->\n\nand more body after it.';
+    expect(roundTrip(ltm({ content }), [durableEdge]).content).toBe(content);
+  });
+
   it('round-trips an STM memory without requiring its (volatile) TTL', () => {
     const stm = ltm({
       id: 'clstm00000000000000000001',

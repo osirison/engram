@@ -113,6 +113,7 @@ import {
  * 6b. restore_memory         - Recreate a deleted memory from its audit snapshot
  * 6c. get_memory_audit       - Read a memory's audit history (WP2 T5)
  * 7.  recall                 - Semantic (vector) recall over long-term memories
+ * 7a. export_memories        - Export memories as an Obsidian markdown vault (WP3 T7)
  * 8.  reindex_memories       - Backfill/rebuild the vector store from Postgres
  * 9.  queue_reindex_memories - Queue resumable reindex processing as a job
  * 10. get_reindex_status     - Poll queued reindex progress by job id

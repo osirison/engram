@@ -70,3 +70,16 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 (additive; the `loadMemoryLinks` seam in `MemoryExportService` reads it when present).
 Usable today: CLI (`pnpm --filter mcp-server export`), MCP tool `export_memories`, and the
 web Export button.
+
+**Live boot verification (2026-07-06):** ran the CLI export against the real dev Postgres —
+the full `AppModule.forRoot()` DI graph resolved, `MemoryExportService`/`MemoryLtmService`
+booted, the real DB was queried, and a valid `index.md` + `manifest.json` were written to
+disk (exit 0). This closes the "green-but-does-it-boot" gap the unit/wiring specs (which use
+mocked/injected services) don't cover. The dev DB has no `qp` rows, so non-empty per-memory
+serialization is covered by the T5 fixtures + the leaf-lib golden/round-trip specs, not the
+live run (the shared DB was read-only; not seeded).
+
+**Post-review fix (2026-07-06):** escaped the `<!-- engram:links -->` sentinel inside memory
+content (`escapeRelatedMarker`/`unescapeRelatedMarker`) — previously, content embedding the
+literal marker (plausible when documenting the export format) would be truncated at parse,
+breaking the G6 round-trip. Round-trip fixtures added in `serialize.spec.ts` + `roundtrip.spec.ts`.
