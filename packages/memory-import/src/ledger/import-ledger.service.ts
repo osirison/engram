@@ -96,6 +96,16 @@ export class ImportLedgerService {
     return rows.map(toEntry);
   }
 
+  /**
+   * Every ledger row for a user — the cross-run locator index the link resolver
+   * (T5 Pass B) builds in memory to resolve `slug:`/`path:` targets imported in
+   * an earlier batch. One row per imported fact, so bounded by the user's corpus.
+   */
+  async listByUser(userId: string): Promise<LedgerEntry[]> {
+    const rows = await this.prisma.memoryImportSource.findMany({ where: { userId } });
+    return rows.map(toEntry);
+  }
+
   /** All ledger rows written under one import batch (for summaries/audits). */
   async listBatch(importBatchId: string): Promise<LedgerEntry[]> {
     const rows = await this.prisma.memoryImportSource.findMany({

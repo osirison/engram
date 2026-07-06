@@ -1,0 +1,18 @@
+This legacy cursorrules file predates the .mdc format and is plain markdown
+with no frontmatter at all. It should be split at each H2 heading into its own
+memory so that individually addressable sections survive re-import cleanly and
+the overview preamble becomes its own anchored chunk when it is long enough.
+
+## Formatting Conventions
+
+Always run the formatter before committing. Two-space indentation everywhere,
+trailing commas in multi-line literals, and no unused imports. Keep lines under
+one hundred columns wide so that side-by-side diffs stay readable. This section
+is padded well beyond the fragment-fold threshold so it survives as its own fact.
+
+## Testing Policy
+
+Every feature needs both a unit test and an integration test. Prefer table
+driven tests where practical, and never mock the thing under test. This section
+is deliberately verbose so that it clears the two-hundred character minimum and
+does not fold forward into a neighboring section during heading based chunking.

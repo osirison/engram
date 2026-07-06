@@ -1,0 +1,18 @@
+---
+description: TypeScript conventions for this repo
+globs:
+  - "src/**/*.ts"
+  - "src/**/*.tsx"
+alwaysApply: false
+---
+
+# TypeScript Rules
+
+Prefer strict types. When editing modules see [[coding-standards]] for the
+shared style guide.
+
+Reuse the logger from @src/utils/logger.ts instead of console.log, and follow
+the template in @src/templates/service-template.ts.
+
+Do not reach into @engram/memory-interchange internals — import from its public
+barrel only. Never decorate DTOs with @Deprecated in this codebase.
