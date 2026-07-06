@@ -16,6 +16,7 @@ import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
 import { InsightExtractionService } from './insight-extraction.service';
+import { MemoryExportService } from './export/memory-export.service';
 import type { ProfileCapabilities } from '@engram/config';
 import { MetricsModule } from '../metrics/metrics.module';
 
@@ -58,6 +59,9 @@ export class MemoryModule {
     if (capabilities.requiresDatabase) {
       providers.push(MemoryAuditService);
       exports.push(MemoryAuditService);
+      // Markdown export (WP3 T5) reads LTM (+ optional STM) via Postgres.
+      providers.push(MemoryExportService);
+      exports.push(MemoryExportService);
     }
 
     return {

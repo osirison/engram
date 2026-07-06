@@ -21,7 +21,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 | T2       | slug + wikilink utilities                            | ✅     | service ✓         | slugify/buildFilename + emit/parse/escape wikilinks; 26 specs                     |
 | T3       | `serializeMemory()` + `parseDocument()`              | ✅     | service ✓         | golden doc + round-trip (---/[[x]]/## Related content) + single mode; 48 specs    |
 | T4       | edge collector (metadata + MemoryLink)               | ✅     | service ✓         | all 4 metadata kinds + MemoryLink (guarded) → canonical edges; dangling; 12 specs |
-| T5       | `MemoryExportService` orchestrator                   | ⬜     |                   |                                                                                   |
+| T5       | `MemoryExportService` orchestrator                   | ✅     | service ✓         | LTM/STM paging, sanitize, MOC, manifest, determinism, single mode; 9 specs        |
 | T6       | CLI `export` (first surface)                         | ⬜     |                   |                                                                                   |
 | T7       | MCP tool `export_memories`                           | ⬜     |                   |                                                                                   |
 | T8       | Web UI download-as-zip (last surface)                | ⬜     |                   |                                                                                   |
