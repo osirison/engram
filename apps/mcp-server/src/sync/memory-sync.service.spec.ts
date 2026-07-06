@@ -33,22 +33,26 @@ function ledgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
 interface Mocks {
   run: jest.Mock;
   listByUser: jest.Mock;
-  findUnique: jest.Mock;
+  findMany: jest.Mock;
   service: MemorySyncService;
 }
 
 function build(entries: LedgerEntry[], memoryUpdatedAt: Date | null): Mocks {
   const run = jest.fn().mockResolvedValue(SUMMARY);
   const listByUser = jest.fn().mockResolvedValue(entries);
-  const findUnique = jest
+  const findMany = jest
     .fn()
-    .mockResolvedValue(memoryUpdatedAt ? { updatedAt: memoryUpdatedAt } : null);
+    .mockResolvedValue(
+      memoryUpdatedAt
+        ? entries.map((e) => ({ id: e.memoryId, updatedAt: memoryUpdatedAt }))
+        : [],
+    );
   const service = new MemorySyncService(
     { run } as unknown as MemoryImportService,
     { listByUser } as unknown as ImportLedgerService,
-    { memory: { findUnique } } as unknown as PrismaService,
+    { memory: { findMany } } as unknown as PrismaService,
   );
-  return { run, listByUser, findUnique, service };
+  return { run, listByUser, findMany, service };
 }
 
 const SPEC: SyncSpec = {
@@ -119,25 +123,26 @@ describe('MemorySyncService', () => {
       }),
       ledgerEntry(),
     ];
-    const findUnique = jest.fn(({ where }: { where: { id: string } }) =>
-      where.id === 'other'
-        ? { updatedAt: new Date('2026-07-20T00:00:00.000Z') }
-        : { updatedAt: new Date('2026-07-01T00:00:00.000Z') },
-    );
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'm1', updatedAt: new Date('2026-07-01T00:00:00.000Z') },
+      ]);
     const run = jest.fn().mockResolvedValue(SUMMARY);
     const service = new MemorySyncService(
       { run } as unknown as MemoryImportService,
       {
         listByUser: jest.fn().mockResolvedValue(entries),
       } as unknown as ImportLedgerService,
-      { memory: { findUnique } } as unknown as PrismaService,
+      { memory: { findMany } } as unknown as PrismaService,
     );
 
     const result = await service.syncSource(SPEC);
     expect(result.skipped).toBe(false);
     expect(run).toHaveBeenCalledTimes(1);
-    // only the claude-code memory was checked
-    expect(findUnique).toHaveBeenCalledTimes(1);
+    // one batched query, scoped to only the claude-code memory id (codex 'other' excluded)
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findMany.mock.calls[0]![0].where.id.in).toEqual(['m1']);
   });
 
   it('omits scope and embed from the import input when not provided', async () => {

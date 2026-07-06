@@ -162,17 +162,42 @@ async function main(): Promise<void> {
     });
   });
 
-  const watchers: FSWatcher[] = roots.map((root) =>
-    watch(root, { recursive: true }, (_event, filename) => {
-      if (!filename) return;
-      const abs = resolve(root, filename.toString());
-      const source = mapFileToSource(abs);
-      if (!source) return;
-      // Import from the dir the adapter expects (may differ from the watch root).
-      const importRoot = deriveImportRoot(abs) ?? root;
-      debouncer.trigger(encodeWatchKey(importRoot, source));
-    }),
-  );
+  // Recursive watching (needed for nested .github/instructions, .cursor/rules,
+  // .claude/**/memory) requires Node >= 20 on Linux. Guard so an unsupported
+  // platform gives a clear message instead of a raw crash.
+  const watchers: FSWatcher[] = [];
+  for (const root of roots) {
+    try {
+      watchers.push(
+        watch(root, { recursive: true }, (_event, filename) => {
+          if (!filename) return;
+          const abs = resolve(root, filename.toString());
+          const source = mapFileToSource(abs);
+          if (!source) return;
+          // Import from the dir the adapter expects (may differ from the watch root).
+          const importRoot = deriveImportRoot(abs) ?? root;
+          debouncer.trigger(encodeWatchKey(importRoot, source));
+        }),
+      );
+    } catch (err) {
+      if (
+        (err as NodeJS.ErrnoException).code ===
+        'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'
+      ) {
+        logger.error(
+          `recursive file watching requires Node >=20; cannot watch ${root}`,
+        );
+      } else {
+        throw err;
+      }
+    }
+  }
+  if (watchers.length === 0) {
+    logger.error('no roots could be watched — exiting');
+    await app.close();
+    process.exitCode = 1;
+    return;
+  }
   logger.log(
     `watching ${roots.join(', ')} for user ${userId} (debounce ${debounceMs}ms)`,
   );

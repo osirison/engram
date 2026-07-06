@@ -110,14 +110,19 @@ export class MemorySyncService {
     const entries = (await this.ledger.listByUser(spec.userId)).filter(
       (e) => e.sourceTool === spec.source,
     );
+    if (entries.length === 0) return [];
+
+    // One query for all candidate memories (avoids an N+1 per ledger entry).
+    const memories = await this.prisma.memory.findMany({
+      where: { id: { in: entries.map((e) => e.memoryId) } },
+      select: { id: true, updatedAt: true },
+    });
+    const updatedById = new Map(memories.map((m) => [m.id, m.updatedAt]));
+
     const conflicts: SyncConflict[] = [];
     for (const entry of entries) {
-      const memory = await this.prisma.memory.findUnique({
-        where: { id: entry.memoryId },
-        select: { updatedAt: true },
-      });
-      if (!memory) continue;
-      if (isEngramNewer(memory.updatedAt, entry.updatedAt, skewMs)) {
+      const updatedAt = updatedById.get(entry.memoryId);
+      if (updatedAt && isEngramNewer(updatedAt, entry.updatedAt, skewMs)) {
         conflicts.push({
           memoryId: entry.memoryId,
           sourcePath: entry.sourcePath,

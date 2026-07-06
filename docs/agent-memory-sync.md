@@ -44,6 +44,11 @@ files is WP3's job, kept separate.)
 
 ## Running it
 
+> Requires **Node ≥ 20** — the daemon watches recursively (for nested
+> `.github/instructions/`, `.cursor/rules/`, `.claude/**/memory/`), which older
+> Node does not support on Linux. On an unsupported runtime it logs a clear error
+> and exits instead of silently missing changes.
+
 One-off pass (verification / cron):
 
 ```bash

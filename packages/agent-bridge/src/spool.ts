@@ -75,12 +75,18 @@ export class SpoolStore {
    * Call `commitDrain(survivors)` after replay.
    */
   takeSnapshot(): SpoolEntry[] {
-    const entries = this.readFile(this.tempPath); // recover a crashed prior drain
+    // Fold the live spool into the (possibly leftover) drain temp so every pending
+    // entry lives durably in the temp before we read it — a crash after this point
+    // is fully recoverable from the temp on the next run (nothing is memory-only).
     if (existsSync(this.path)) {
-      renameSync(this.path, this.tempPath); // overwrite the already-read temp
-      entries.push(...this.readFile(this.tempPath));
+      if (existsSync(this.tempPath)) {
+        appendFileSync(this.tempPath, readFileSync(this.path, 'utf8'), 'utf8');
+        rmSync(this.path);
+      } else {
+        renameSync(this.path, this.tempPath);
+      }
     }
-    return entries;
+    return this.readFile(this.tempPath);
   }
 
   /** Finish a drain: drop the snapshot temp and re-queue any survivors onto the live spool. */
