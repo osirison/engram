@@ -93,3 +93,52 @@ no e2e spec asserts prose on the changed `get_memory`/`delete_memory`/`promote_m
 - T4 seams to thread: `MemoryDTO.version`, `memorySelect` + `mapRow` in prisma-backend (none
   carry `version` yet), and confirm STM `create` stamps `version:1` into the Redis payload
   (CAS compares against it).
+
+---
+
+## Independent verification (2026-07-06, qp session — post-merge audit)
+
+This section was **not** written by the WP2 executor. It is an independent audit of the
+merged code on `main` @`109e0d8` (PR #222), done from the planning worktree. It confirms
+the bulk of the executor's claims and records two genuine acceptance-criterion misses the
+executor's record above did **not** flag. See the suite tracker
+[`../STATE.md`](../STATE.md) for the cross-WP view and the full follow-up list.
+
+### Quality gate (re-run against `main` @109e0d8)
+
+`build` ✅ · `typecheck` ✅ · `lint` ✅ · `test` ✅ (25/25 turbo tasks; mcp-server 651
+tests). **Caveat:** if a checkout of `main` fails `build`/`typecheck`/`lint` with
+`Property 'memoryAudit' does not exist on type 'PrismaService'` (while `pnpm test` still
+passes — vitest mocks Prisma), run `pnpm db:generate`. The generated client is gitignored
+(`node_modules/.prisma`) with no `postinstall` hook, so a checkout predating SHARED-2's
+schema lags behind; CI regenerates it, which is why PR #222 was green. After regenerating,
+the gate is fully green — not a WP2 defect. The executor's "all green" claim holds. The 4
+live DB/Redis integration suites were not re-run here (need docker + the shared DB).
+
+### Per-task verdicts (static code + test audit, 10 parallel verifiers)
+
+Method: each verifier read the task card from `PLAN.md` and the real implementation + tests
+from the `main` checkout; adversarial (built to catch overclaiming). All 10 tasks have
+tests at both the service and wiring levels; T3 and T6 are each missing a specific
+plan-required case (see the follow-ups in [`../STATE.md`](../STATE.md)).
+
+| Task     | Verdict        | Finding                                                                                                                                                                                                                                                                                                  |
+| -------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SHARED-2 | ✅ implemented | Schema/migration match the plan field-for-field; version-1-on-create + audit-survives-hard-delete asserted.                                                                                                                                                                                              |
+| T1       | ✅ implemented | `cursor.ts` exact per D8; 60-row real-PG asc/desc walk with dup timestamps + mid-walk delete proves no gaps/dupes.                                                                                                                                                                                       |
+| T2       | ✅ implemented | Delegable get/list/promote; type filter honoured; structured JSON. **Caught + fixed a real STM SCAN drop-items bug.** Undefined-type merge bug left intact by design (D3 bypasses it).                                                                                                                   |
+| T3       | 🟨 **partial** | StmStrip, expiry badge, promote, +1h extend, unavailable state all present + tested — **but the D4 "TTL preserve-by-default" edit input is missing**, so a plain console edit of an STM item resets its expiry to a full window. Plan-required navigator source-switch test + ttl-threading test absent. |
+| T4       | ✅ implemented | LTM CAS `where` (P2025→conflict/not-found) + STM read-compare-set → tRPC CONFLICT. Minor: "expectedVersion reaches the store" and prisma-backend `CONFLICT:` parsing not directly asserted (service mocked).                                                                                             |
+| T5       | ✅ implemented | `ToolCallContext` through dispatch; audit never throws; restore-by-original-id verified live. Minor: detail-sheet history/restore component test mocks trpc; no wiring test for "audit failure doesn't fail mutation" (covered at service level).                                                        |
+| T6       | 🟨 **partial** | Tool + service loop + dialog + checkbox + multi-select all present/tested — **but ">100 blocked client-side with a hint" is unmet** (server Zod only). Plan-required DTO-bounds + concurrency-cap tests absent; expandable failure list not built.                                                       |
+| T7       | ✅ implemented | `embeddingStale` flag + `reembed_memory` (no version bump) + STM guard; clean, no gaps.                                                                                                                                                                                                                  |
+| T8       | ✅ implemented | Optimistic single-delete cache surgery correct; edits stay server-confirmed. Round-trip test asserts the extracted pure eviction helper rather than driving the mutation.                                                                                                                                |
+| T9       | ✅ implemented | `assertCanManageUser` guards every userId-taking procedure (13-proc matrix); tenant-limited pre-flight. Client polish deferred exactly as the executor noted.                                                                                                                                            |
+
+### Bottom line
+
+**8/10 tasks fully implemented and verified; T3 and T6 partial.** The executor's
+"ALL TASKS COMPLETE" slightly overclaims: T3's TTL-preserve behaviour (D4) and T6's client
+cap are unmet, and several plan-mandated tests are missing. None is a security or
+data-correctness hole and the gate is green, so WP2 ships — the residual items are logged
+as follow-ups in [`../STATE.md`](../STATE.md).
