@@ -529,6 +529,46 @@ describe('PrismaEngramBackend writes', () => {
     expect(restored.id).toBe('m1');
   });
 
+  it('pre-flight blocks a cross-tenant write under a tenant-limited key (WP2 T9)', async () => {
+    // /auth/me resolves a non-admin key bound to tenant "svc"; a write for "qp"
+    // must fail fast with the limitation text instead of a downstream not-found.
+    const fetchImpl = mockFetch({
+      '/auth/me': { ok: true, json: { user: { userId: 'svc', scopes: [] } } },
+    });
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'svc-key',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    await expect(backend.deleteMemory({ userId: 'qp', memoryId: 'm1' })).rejects.toMatchObject({
+      code: 'WRITES_DISABLED',
+    });
+    // The block is pre-flight: the delete tool is never called.
+    expect(mcp.call as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it('allows a same-tenant write under a tenant-limited key (WP2 T9)', async () => {
+    const fetchImpl = mockFetch({
+      '/auth/me': { ok: true, json: { user: { userId: 'svc', scopes: [] } } },
+    });
+    const mcp = {
+      call: vi.fn().mockResolvedValue({ deleted: true, memoryId: 'm1' }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'svc-key',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    await expect(backend.deleteMemory({ userId: 'svc', memoryId: 'm1' })).resolves.toEqual({
+      deleted: true,
+    });
+  });
+
   it('reports the truthful {deleted:false} the tool returns (A10)', async () => {
     // Previously deleteMemory returned {deleted:true} unconditionally; now it
     // reflects the tool's structured result so an already-gone row is truthful.

@@ -283,6 +283,27 @@ export class PrismaEngramBackend implements EngramBackend {
     };
   }
 
+  /**
+   * Fail a cross-tenant write fast, with the honest limitation text, when the
+   * configured API key is `tenant-limited` and the target userId is not its own
+   * tenant (WP2 T9/D11/A10). Without this the MCP server would silently rewrite
+   * the userId back to the key tenant and the write would surface downstream as a
+   * confusing not-found. A no-op under an admin/unrestricted key.
+   */
+  private async assertTenantWriteAllowed(userId: string): Promise<void> {
+    const delegation = await this.resolveDelegation();
+    if (
+      delegation.mode === 'tenant-limited' &&
+      delegation.keyTenant !== null &&
+      userId !== delegation.keyTenant
+    ) {
+      throw new BackendError(
+        delegation.limitation ?? "This action is limited to the API key's own tenant.",
+        'WRITES_DISABLED'
+      );
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Reads (Postgres — source of truth)
   // ---------------------------------------------------------------------------
@@ -506,6 +527,7 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
+    await this.assertTenantWriteAllowed(params.userId);
     try {
       await this.mcp.call('update_memory', {
         userId: params.userId,
@@ -543,6 +565,7 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
+    await this.assertTenantWriteAllowed(userId);
     // Promotion mints a NEW long-term id, so read the promoted memory from the
     // structured tool result (WP2 T3/D2) rather than re-reading by the old id.
     const result = await this.mcp.call<{ promoted?: boolean; memory?: McpMemoryJson } | string>(
@@ -577,6 +600,7 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
+    await this.assertTenantWriteAllowed(userId);
     await this.mcp.call('reembed_memory', {
       userId,
       memoryId,
@@ -635,6 +659,7 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
+    await this.assertTenantWriteAllowed(userId);
     await this.mcp.call('restore_memory', {
       userId,
       memoryId,
@@ -654,6 +679,7 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
+    await this.assertTenantWriteAllowed(params.userId);
     // Parse the structured result (WP2 T2/D2/A10): the tool now reports the true
     // outcome as JSON, so an already-gone row no longer looks like a success.
     // Legacy servers returned prose — a missing/unparseable `deleted` defaults to
@@ -678,6 +704,7 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
+    await this.assertTenantWriteAllowed(params.userId);
     const result = await this.mcp.call<{
       deleted?: string[];
       failed?: Array<{ id: string; reason: string }>;

@@ -26,6 +26,38 @@ function normaliseUrl(value: string | undefined): string | null {
   return value.replace(/\/+$/, '');
 }
 
+/**
+ * Per-operator tenant binding (WP2 T9/D11). Parses
+ * `ENGRAM_OPERATOR_TENANTS="alice@x.com:qp|ci-bot;bob@x.com:*"` into a map of
+ * lower-cased operator email → allowed data-owner userIds (or `'*'` for any).
+ * Unset/empty ⇒ empty map ⇒ every operator manages every tenant (zero-config,
+ * preserving the single-operator default). Malformed segments are skipped
+ * defensively rather than throwing at boot.
+ */
+export function parseOperatorTenants(value: string | undefined): Map<string, string[] | '*'> {
+  const map = new Map<string, string[] | '*'>();
+  if (!value) return map;
+  for (const segment of value.split(';')) {
+    const trimmed = segment.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf(':');
+    if (idx <= 0) continue; // no email, or empty email — skip
+    const email = trimmed.slice(0, idx).trim().toLowerCase();
+    const rhs = trimmed.slice(idx + 1).trim();
+    if (!email || !rhs) continue;
+    if (rhs === '*') {
+      map.set(email, '*');
+      continue;
+    }
+    const tenants = rhs
+      .split('|')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tenants.length > 0) map.set(email, tenants);
+  }
+  return map;
+}
+
 export const serverEnv = {
   /**
    * Postgres connection string for the dashboard's read/analytics path. Prefer
@@ -52,6 +84,12 @@ export const serverEnv = {
   defaultUserId: process.env.ENGRAM_DEFAULT_USER_ID ?? null,
 
   /**
+   * Optional per-operator tenant binding (WP2 T9/D11). Empty map ⇒ every
+   * operator may manage every data owner (current zero-config behaviour).
+   */
+  operatorTenants: parseOperatorTenants(process.env.ENGRAM_OPERATOR_TENANTS),
+
+  /**
    * Enables the passwordless email development credentials provider. Requires
    * the explicit flag AND `NODE_ENV === 'development'`. This is an allow-list,
    * not a `!== 'production'` deny-list: staging, preview, and unset-NODE_ENV
@@ -73,4 +111,23 @@ export function isAllowedOperator(email: string | null | undefined): boolean {
   if (serverEnv.adminEmails.length === 0) return !serverEnv.isProduction;
   if (!email) return false;
   return serverEnv.adminEmails.includes(email.toLowerCase());
+}
+
+/**
+ * The data owners an operator may manage (WP2 T9). Returns `'*'` (any) when no
+ * binding is configured for this operator — the zero-config default — or the
+ * explicit list from `ENGRAM_OPERATOR_TENANTS`.
+ */
+export function allowedTenantsFor(email: string | null | undefined): '*' | string[] {
+  if (serverEnv.operatorTenants.size === 0) return '*';
+  if (!email) return [];
+  const binding = serverEnv.operatorTenants.get(email.toLowerCase());
+  if (binding === undefined) return []; // bindings exist but not for this operator
+  return binding;
+}
+
+/** Whether `email` may manage data owner `userId` (WP2 T9). */
+export function canOperatorManageUser(email: string | null | undefined, userId: string): boolean {
+  const allowed = allowedTenantsFor(email);
+  return allowed === '*' || allowed.includes(userId);
 }

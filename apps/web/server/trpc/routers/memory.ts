@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { protectedProcedure, router } from '../trpc';
+import { assertCanManageUser, protectedProcedure, router } from '../trpc';
 
 const userId = z.string().min(1, 'A user is required.').max(256);
 const memoryId = z.string().min(1).max(256);
@@ -61,8 +61,9 @@ const deleteInput = z.object({
 });
 
 export const memoryRouter = router({
-  list: protectedProcedure.input(listInput).query(({ ctx, input }) =>
-    ctx.backend.listMemories({
+  list: protectedProcedure.input(listInput).query(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.listMemories({
       userId: input.userId,
       type: input.type,
       tags: input.tags,
@@ -75,21 +76,23 @@ export const memoryRouter = router({
       sortOrder: input.sortOrder,
       limit: input.limit,
       cursor: input.cursor ?? undefined,
-    })
-  ),
+    });
+  }),
 
   // Live short-term (Redis) tier — served through the MCP server, never the DB.
-  listStm: protectedProcedure.input(listStmInput).query(({ ctx, input }) =>
-    ctx.backend.listStmMemories({
+  listStm: protectedProcedure.input(listStmInput).query(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.listStmMemories({
       userId: input.userId,
       tags: input.tags,
       scope: input.scope ?? undefined,
       limit: input.limit,
       cursor: input.cursor ?? undefined,
-    })
-  ),
+    });
+  }),
 
   get: protectedProcedure.input(z.object({ userId, memoryId })).query(async ({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
     const memory = await ctx.backend.getMemory(input.userId, input.memoryId);
     if (!memory) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Memory not found.' });
@@ -97,8 +100,9 @@ export const memoryRouter = router({
     return memory;
   }),
 
-  search: protectedProcedure.input(searchInput).query(({ ctx, input }) =>
-    ctx.backend.searchMemories({
+  search: protectedProcedure.input(searchInput).query(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.searchMemories({
       userId: input.userId,
       query: input.query,
       limit: input.limit,
@@ -106,11 +110,12 @@ export const memoryRouter = router({
       scope: input.scope ?? undefined,
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
-    })
-  ),
+    });
+  }),
 
-  update: protectedProcedure.input(updateInput).mutation(({ ctx, input }) =>
-    ctx.backend.updateMemory({
+  update: protectedProcedure.input(updateInput).mutation(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.updateMemory({
       userId: input.userId,
       memoryId: input.memoryId,
       content: input.content,
@@ -121,42 +126,51 @@ export const memoryRouter = router({
       // Audit label is the signed-in operator, injected server-side — never
       // trusted from the browser (WP2 T5).
       actorLabel: ctx.session?.user?.email ?? undefined,
-    })
-  ),
+    });
+  }),
 
   reembed: protectedProcedure
     .input(z.object({ userId, memoryId, scope: z.string().max(256).nullish() }))
-    .mutation(({ ctx, input }) =>
-      ctx.backend.reembedMemory(
+    .mutation(({ ctx, input }) => {
+      assertCanManageUser(ctx.session, input.userId);
+      return ctx.backend.reembedMemory(
         input.userId,
         input.memoryId,
         input.scope ?? undefined,
         ctx.session?.user?.email ?? undefined
-      )
-    ),
+      );
+    }),
 
   // Promote a short-term memory to long-term storage (WP2 T3).
-  promote: protectedProcedure
-    .input(z.object({ userId, memoryId }))
-    .mutation(({ ctx, input }) =>
-      ctx.backend.promoteMemory(input.userId, input.memoryId, ctx.session?.user?.email ?? undefined)
-    ),
+  promote: protectedProcedure.input(z.object({ userId, memoryId })).mutation(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.promoteMemory(
+      input.userId,
+      input.memoryId,
+      ctx.session?.user?.email ?? undefined
+    );
+  }),
 
   // Audit history for a memory (WP2 T5). Read-only; served from Postgres.
   auditLog: protectedProcedure
     .input(z.object({ userId, memoryId, limit: z.number().int().min(1).max(200).default(50) }))
-    .query(({ ctx, input }) =>
-      ctx.backend.listMemoryAudit(input.userId, input.memoryId, input.limit)
-    ),
+    .query(({ ctx, input }) => {
+      assertCanManageUser(ctx.session, input.userId);
+      return ctx.backend.listMemoryAudit(input.userId, input.memoryId, input.limit);
+    }),
 
   // Restore a hard-deleted memory from its delete snapshot (WP2 T5/G5).
-  restore: protectedProcedure
-    .input(z.object({ userId, memoryId }))
-    .mutation(({ ctx, input }) =>
-      ctx.backend.restoreMemory(input.userId, input.memoryId, ctx.session?.user?.email ?? undefined)
-    ),
+  restore: protectedProcedure.input(z.object({ userId, memoryId })).mutation(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.restoreMemory(
+      input.userId,
+      input.memoryId,
+      ctx.session?.user?.email ?? undefined
+    );
+  }),
 
   delete: protectedProcedure.input(deleteInput).mutation(async ({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
     const result = await ctx.backend.deleteMemory({
       userId: input.userId,
       memoryId: input.memoryId,
@@ -182,12 +196,13 @@ export const memoryRouter = router({
         })
         .strict()
     )
-    .mutation(({ ctx, input }) =>
-      ctx.backend.bulkDeleteMemories({
+    .mutation(({ ctx, input }) => {
+      assertCanManageUser(ctx.session, input.userId);
+      return ctx.backend.bulkDeleteMemories({
         userId: input.userId,
         memoryIds: input.memoryIds,
         scope: input.scope ?? undefined,
         actorLabel: ctx.session?.user?.email ?? undefined,
-      })
-    ),
+      });
+    }),
 });
