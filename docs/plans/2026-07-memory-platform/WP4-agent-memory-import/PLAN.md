@@ -1,3 +1,8 @@
+---
+title: WP4 — Agentic Memory Import Plan
+description: Implementation plan for importing agent memories (Claude/Copilot/Cursor/Codex/Gemini) with links, provenance, and dedup (SHARED-1 + T1–T16)
+---
+
 # WP4 — Agentic Memory Import (Implementation Plan)
 
 > Status: DRAFT (ready to execute). See `../README.md` for suite-wide conventions
@@ -20,7 +25,7 @@ Gemini) plus generic markdown vaults (Obsidian). Each stores "agent memory" — 
 instructions, learned facts, project conventions — in tool-specific files. This WP adds
 an **importer** that ingests those files into ENGRAM's memory store as first-class
 long-term memories, **preserving the links between them** (e.g. a Claude auto-memory
-fact `[[feedback-worktree]]` wikilink, or a `[AGENTS.md](../AGENTS.md)` relative link),
+fact `[[feedback-worktree]]` wikilink, or a `[AGENTS.md] → ../AGENTS.md` relative link),
 so the imported corpus keeps its graph structure inside ENGRAM.
 
 The importer must be safe to re-run (idempotent), must not leak secrets that instruction
@@ -137,10 +142,10 @@ relevant adapter task carries a `Verify` step to confirm before coding.
 
 1. **Wikilinks** `[[target]]`, `[[target|alias]]`, `[[target#heading]]` — used by Claude
    auto-memory fact files and Obsidian vaults. Target = a note/file **stem** (no `.md`). `[V]`
-2. **Relative markdown links** `[text](relative/path.md)` and `[text](../AGENTS.md)` —
+2. **Relative markdown links** `[text] → relative/path.md` and `[text] → ../AGENTS.md` —
    used by instruction files (CLAUDE.md, AGENTS.md, copilot-instructions.md). Target = a
    **path** relative to the containing file. `[V]` (seen in engram
-   `copilot-instructions.md`: `[AGENTS.md](../AGENTS.md)`, `[README.md](../README.md)`).
+   `copilot-instructions.md`: `[AGENTS.md] → ../AGENTS.md`, `[README.md] → ../README.md`).
 
 The link-resolution engine (T5) normalizes both to a `targetLocator` (`slug:<stem>` or
 `path:<normalized-repo-relative-path>[#anchor]`) and resolves against imported facts.
@@ -157,7 +162,7 @@ Sample: `/home/qp/.claude/projects/-home-qp-Cloud-Projects-engram/memory/` (cano
 2. **User instructions** — `~/.claude/CLAUDE.md` (global). Same format; `[V]` exists
    (empty file here: `/home/qp/.claude/CLAUDE.md`).
 3. **Auto-memory** — `~/.claude/projects/<project-slug>/memory/`. `[V]`:
-   - `MEMORY.md` — an **index**, not a fact. Lines: `- [Title](filename.md) — description`.
+   - `MEMORY.md` — an **index**, not a fact. Lines: `- [Title] → filename.md — description`.
      Used to discover fact files + their human titles; **not itself imported as a memory**.
    - Per-fact files `*.md` (e.g. `feedback-worktree.md`) with **YAML frontmatter**:
      ```yaml
@@ -234,7 +239,7 @@ here, `~/.codex/memories/` **empty** (`[V]` that they can be empty).
   `~/.codex/AGENTS.md` (global) → repo-root `AGENTS.md` → nested-dir `AGENTS.md`
   (more-specific wins/appends). Precedence + merge semantics = **`[A]`** — verify in T9.
   Format is plain markdown, optional `title`/`description` frontmatter (`[V]` engram root
-  AGENTS.md has both). Relative md links (`[README.md](README.md)`) `[V]`.
+  AGENTS.md has both). Relative md links (`[README.md] → README.md`) `[V]`.
 - Note: `AGENTS.md` is **shared** with Gemini/others as a de-facto standard; the Codex
   adapter and a generic AGENTS.md handling should not double-import the same file — the
   CLI/tool takes an explicit `source` so the operator picks one adapter per path.
@@ -587,7 +592,7 @@ detect(path:string):Promise<boolean>; parse(path:string, opts:ParseOptions):Prom
    dep if the repo already has one — grep `js-yaml`/`yaml` in the lockfile; else a minimal
    parser). Return `{ frontmatter, body }`.
 5. `parse/links.ts`: extract `[[wikilink]]` / `[[a|b]]` / `[[a#h]]` and
-   `[text](rel.md)` links; normalize to `targetLocator` (`slug:<stem>` for wikilinks;
+   `[text] → rel.md` links; normalize to `targetLocator` (`slug:<stem>` for wikilinks;
    `path:<repo-relative-normalized>[#anchor]` for md links, resolved against the containing
    file's dir). Ignore external `http(s)://`, anchors-only `#x`, and image embeds `![...]`.
 6. `parse/chunk.ts`: implement D6's H2-splitting rule; reuse `INGEST_CHUNK_CHAR_LIMIT` +

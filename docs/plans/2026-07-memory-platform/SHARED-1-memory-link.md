@@ -1,3 +1,8 @@
+---
+title: SHARED-1 — Canonical MemoryLink Schema
+description: Reconciled MemoryLink model (typed memory→memory edges) shared by WP2/WP3/WP4
+---
+
 # SHARED-1 — Canonical `MemoryLink` schema (reconciled)
 
 WP3 (§5) and WP4 (§6) each drafted a `MemoryLink` model; they diverge. **This file is

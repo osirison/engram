@@ -1,3 +1,8 @@
+---
+title: WP2 — Memory Management UI Plan
+description: Implementation plan for the STM+LTM memory-management console (SHARED-2 + T1–T9)
+---
+
 # WP2 — Memory Management UI: Implementation Plan
 
 > Suite conventions (worktree-per-task rebased on `origin/main`, conventional commits with

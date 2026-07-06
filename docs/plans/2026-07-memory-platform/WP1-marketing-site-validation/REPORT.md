@@ -1,3 +1,8 @@
+---
+title: WP1 — Marketing-Site Validation Report
+description: Findings (26, incl. 3 critical) and R1–R13 remediation tasks from validating apps/marketing-site against the codebase
+---
+
 # WP1 — Marketing Site Validation Report
 
 Site under test: `apps/marketing-site` (Vite + React 18). Deployed artifact: `apps/marketing-site/dist/` in the main checkout (CNAME: `engram.events`).

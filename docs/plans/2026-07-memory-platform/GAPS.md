@@ -1,3 +1,8 @@
+---
+title: Memory Platform Suite — Cross-Cutting Gaps
+description: Cross-WP gaps analysis (G1–G12) plus per-agent findings (A1–A35) for the 2026-07 memory-platform suite
+---
+
 # Cross-Cutting Gaps — Things the Six Work Packages Don't Ask For (But Should)
 
 Analysis of what qp's six asks (marketing validation, memory UI, markdown export,

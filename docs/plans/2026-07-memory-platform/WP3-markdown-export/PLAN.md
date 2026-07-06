@@ -1,3 +1,8 @@
+---
+title: WP3 — Rich Markdown Export Plan
+description: Implementation plan for Obsidian-compatible markdown export preserving inter-memory links (SHARED-1 + T1–T9)
+---
+
 # WP3 — Rich Markdown Export (implementation plan)
 
 > Part of the **Memory Platform Work-Package Suite (2026-07-05)**.

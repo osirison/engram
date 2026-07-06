@@ -1,3 +1,8 @@
+---
+title: Memory Platform Work-Package Suite
+description: Master index, conventions, and dependency graph for the six-WP 2026-07 memory-platform suite
+---
+
 # Memory Platform Work-Package Suite (2026-07-05)
 
 Master index for six work packages requested by qp. Each WP is **self-contained** and

@@ -1,3 +1,8 @@
+---
+title: WP5 — Engram as Primary Agent Memory Plan
+description: Integration plan for per-agent MCP wiring + hooks so agents use Engram as primary memory (D1–D8, T1–T13)
+---
+
 # WP5 — Engram as Primary Agent Memory (Integration Plan)
 
 > **Audience:** one executor (Opus 4.8 / Sonnet 5) running **one** task from the Work
