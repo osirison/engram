@@ -178,6 +178,29 @@ describe('export_memories dispatch (delegation + scope enforcement)', () => {
     expect(result.isError).toBe(true);
     expect(exportService.export).not.toHaveBeenCalled();
   });
+
+  it('accepts the web download maxInline (2000) through the real input schema', async () => {
+    // Regression guard: the web backend sends maxInline=WEB_EXPORT_MAX_INLINE
+    // (2000); the tool schema cap must cover it or every web export fails
+    // validation at dispatch. Exercises the REAL schema (not a mock).
+    const exportService = makeExport(1);
+    const call = captureDispatch(await toolFor(exportService));
+    const result = await call(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'export_memories',
+          arguments: { userId: KEY_TENANT, maxInline: 2000 },
+        },
+      },
+      {
+        authInfo: { scopes: ['memories:read'], extra: { userId: KEY_TENANT } },
+      },
+    );
+    expect(result.isError).toBeFalsy();
+    expect(exportService.export).toHaveBeenCalled();
+    expect(JSON.parse(result.content[0]?.text ?? '{}').mode).toBe('inline');
+  });
 });
 
 describe('export_memories handler (inline vs server-path branch)', () => {

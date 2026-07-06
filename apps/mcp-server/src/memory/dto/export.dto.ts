@@ -23,8 +23,13 @@ export const exportToolSchema = z
      * come back as JSON; above it, the export is written to a server directory
      * and only a path reference + manifest summary are returned (never a base64
      * zip — that would flood the MCP text channel).
+     *
+     * The cap must stay ≥ the web download's `WEB_EXPORT_MAX_INLINE`
+     * (`apps/web/server/backend/prisma-backend.ts`, currently 2000): the web
+     * always requests inline files to zip them client-side, so a cap below that
+     * would reject every web export.
      */
-    maxInline: z.coerce.number().int().min(0).max(1000).optional().default(25),
+    maxInline: z.coerce.number().int().min(0).max(5000).optional().default(25),
   })
   .strict();
 

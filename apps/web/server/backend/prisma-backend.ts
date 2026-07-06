@@ -34,6 +34,9 @@ import {
  * Inline cap requested from `export_memories` for a browser download (WP3 T8):
  * high enough that a normal vault comes back as files, not a server path ref.
  * Beyond this the tool returns a path ref and the backend steers users to the CLI.
+ *
+ * MUST stay ≤ the tool's `maxInline` cap (`export.dto.ts`, currently 5000) or the
+ * tool rejects the request and every web export fails.
  */
 const WEB_EXPORT_MAX_INLINE = 2000;
 
