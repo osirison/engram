@@ -218,6 +218,24 @@ describe('MemoryImportService.run', () => {
     expect(summary.embeddingCostEstimate.approxTokens).toBeGreaterThan(0);
   });
 
+  it('dry-run cost excludes flag-policy embeddingExcluded facts (matches the real run)', async () => {
+    const ir = makeIR([
+      fact({ sourceKey: 'markdown:clean.md', content: 'an ordinary note about coffee and books' }),
+      fact({ sourceKey: 'markdown:leak.md', content: 'aws key AKIAIOSFODNN7EXAMPLE in here' }),
+    ]);
+    const summary = await build(ir, makeLedger(), ltm, resolver).run({
+      ...baseInput,
+      dryRun: true,
+      secretsPolicy: 'flag',
+    });
+    // Under `flag` nothing is skipped, but the flagged fact is embedding-excluded,
+    // so the dry-run estimate must count only the clean fact — exactly what the
+    // real run's finalizeEmbeddingAdvice would embed. (Previously it counted both.)
+    expect(summary.secretsSkipped).toBe(0);
+    expect(summary.embeddingCostEstimate.calls).toBe(1);
+    expect(summary.secrets.some((s) => s.path === 'leak.md')).toBe(true);
+  });
+
   it('unknown source: throws a clear error', async () => {
     const svc = build(makeIR([]), makeLedger(), ltm, resolver);
     await expect(svc.run({ ...baseInput, source: 'codex' })).rejects.toThrow(/No import adapter/);

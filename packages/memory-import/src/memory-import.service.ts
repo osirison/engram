@@ -364,6 +364,16 @@ export class MemoryImportService {
 
   // ── dry-run + summaries ─────────────────────────────────────────────────────────
 
+  /**
+   * Contents that will actually reach the embedding provider: not dropped by
+   * the `skip` secrets policy and not `flag`-excluded from embedding. Both the
+   * dry-run preview and the real run estimate cost over exactly this set, so the
+   * two can never diverge (a `flag`'d fact must not inflate the dry-run figure).
+   */
+  private embeddableContents(scanned: ScannedFact[]): string[] {
+    return scanned.filter((s) => !s.skip && !s.embeddingExcluded).map((s) => s.content);
+  }
+
   private finishDryRun(
     summary: ImportSummary,
     scanned: ScannedFact[],
@@ -373,7 +383,7 @@ export class MemoryImportService {
     const persistable = scanned.filter((s) => !s.skip);
     summary.secretsSkipped = scanned.length - persistable.length;
     summary.embeddingCostEstimate = estimateEmbeddingCost(
-      persistable.map((s) => s.content),
+      this.embeddableContents(scanned),
       model !== undefined ? { model } : undefined
     );
     summary.advisories.push('Dry run: no memories, links, or ledger rows were written.');
@@ -386,9 +396,8 @@ export class MemoryImportService {
     embed: boolean,
     model?: string
   ): void {
-    const embeddable = scanned.filter((s) => !s.skip && !s.embeddingExcluded).map((s) => s.content);
     summary.embeddingCostEstimate = estimateEmbeddingCost(
-      embeddable,
+      this.embeddableContents(scanned),
       model !== undefined ? { model } : undefined
     );
     if (!embed) {

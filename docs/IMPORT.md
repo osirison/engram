@@ -77,8 +77,9 @@ them.
 
 ## Secrets (`--secrets`, closes G2)
 
-Every fact is scanned before persistence; no raw secret reaches an external
-embedding provider.
+Every fact is scanned before persistence. Under the default `redact` (and under
+`skip` / `fail`) no raw secret reaches an external embedding provider. `flag` is
+the exception: it deliberately keeps the raw content, so see the caveat below.
 
 | Policy   | Behavior                                                           |
 | -------- | ------------------------------------------------------------------ |
@@ -86,6 +87,13 @@ embedding provider.
 | `flag`   | keep content, set `metadata.embeddingExcluded`, tag `has-secret`   |
 | `skip`   | drop the whole fact (counted `secretsSkipped`)                     |
 | `fail`   | abort the run before any write                                     |
+
+`flag` marks a fact `embeddingExcluded` and omits it from the embedding-cost
+estimate, but persistence still embeds inline when an external provider is
+configured. To keep flagged raw content out of an external provider at import
+time, run `flag` together with `--no-embed` (or `EMBEDDING_PROVIDER=disabled`),
+then backfill with `reindex` — which honors `embeddingExcluded`. Per-fact
+embedding suppression inside `create()` is a tracked follow-up.
 
 Dry-run lists the files + matched pattern names.
 
