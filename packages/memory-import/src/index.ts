@@ -35,6 +35,14 @@ export {
   type Section,
 } from './parse/chunk.js';
 
+// ── Shared adapter fact-assembly (T6–T11) ───────────────────────────────────
+export {
+  buildFacts,
+  makeSourceKey,
+  type ChunkMode,
+  type BuildFactsInput,
+} from './adapters/adapter-utils.js';
+
 // ── Content hash (T3 idempotency / drift) ───────────────────────────────────
 export { computeContentHash } from './content-hash.js';
 
