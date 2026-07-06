@@ -10,35 +10,23 @@ built + verified?).** The [`README.md`](./README.md) "Status" table tracks a dif
 axis — whether each _plan document_ was authored. A WP can be "plan: done" there and
 "execution: not started" here.
 
-- **Last updated:** 2026-07-06 (qp session — verified WP2, started this tracker).
+- **Last updated:** 2026-07-06 (qp session — verified WP2, started this tracker, merged the suite to `main`).
 - **Last run:** WP2 (Memory Management UI) — executed + merged.
 
-## Branch / worktree topology (READ FIRST — divergence needs a decision)
+## Branch / worktree topology (resolved)
 
-Two lines of history share only base commit `fdc0d7d` and have **not** been reconciled:
+`main` now carries **both** the WP2 implementation (#222) and the full plan suite +
+this tracker (#223). No divergence remains.
 
-| Line     | Branch                                             | HEAD      | Has                                                                      |
-| -------- | -------------------------------------------------- | --------- | ------------------------------------------------------------------------ |
-| Planning | `worktree-plans-suite-2026-07` (this worktree)     | `3bae1af` | all plan docs; **not** the WP2 code                                      |
-| Trunk    | `main` (checkout `/home/qp/Cloud/Projects/engram`) | `109e0d8` | WP2 **implementation** + `WP2-memory-ui/STATE.md`; **not** the plan docs |
-
-The WP2 executor branched `feat/memory-ui-wp2` from `origin/main` (not from this planning
-branch), built WP2, and merged it as **PR #222** → `main`. So the plan docs live only
-here; the implementation lives only on main.
-
-> **Decision for qp:** the plan docs (this branch) were never merged to `main`, and the
-> WP2 implementation (main) is not in this worktree. Options: (a) merge this planning
-> branch into `main` so the docs + tracker live alongside the code; (b) rebase this
-> worktree onto `main` so it also carries the WP2 code; (c) leave them separate and use
-> this file as the bridge. I did **not** merge either direction — say which you want.
->
-> **Blocker on option (a):** the whole planning branch currently fails CI's "Check docs"
-> job — every original doc (GAPS, README, all six PLANs, SHARED-1) is **missing YAML
-> frontmatter**, and `WP4-agent-memory-import/PLAN.md` has broken links (`../AGENTS.md`,
-> `filename.md`, `README.md`, `rel.md`, etc.). Merging to `main` needs those fixed first.
-> My three new/updated files (this `STATE.md`, `WP2-memory-ui/STATE.md`, `README.md`)
-> already pass frontmatter — this is pre-existing debt on the older docs, out of scope for
-> this tracking task, and left untouched.
+History: the WP2 executor branched `feat/memory-ui-wp2` from `origin/main` (not from the
+planning branch), built WP2, and merged it as **#222** — so for a while the plan docs
+lived only on `worktree-plans-suite-2026-07` and the implementation only on `main`
+(the two shared only base commit `fdc0d7d`). **Resolved 2026-07-06:** the planning branch
+was merged into `main` as **#223** (option (a)), after adding `title`/`description`
+frontmatter to the eight older plan docs and rewriting `WP4-agent-memory-import/PLAN.md`'s
+illustrative markdown-link examples to arrow form so CI's "Check docs" job passes. The one
+add/add conflict (`WP2-memory-ui/STATE.md`, created on both sides) was resolved by keeping
+the superset — the executor's record plus the independent-verification section.
 
 ## Execution status
 
