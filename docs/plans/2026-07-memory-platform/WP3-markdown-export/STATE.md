@@ -23,7 +23,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 | T4       | edge collector (metadata + MemoryLink)               | ✅     | service ✓          | all 4 metadata kinds + MemoryLink (guarded) → canonical edges; dangling; 12 specs |
 | T5       | `MemoryExportService` orchestrator                   | ✅     | service ✓          | LTM/STM paging, sanitize, MOC, manifest, determinism, single mode; 9 specs        |
 | T6       | CLI `export` (first surface)                         | ✅     | service + wiring ✓ | parseArgs/buildOptions + DirectorySink + runExport→disk wiring; 10 specs          |
-| T7       | MCP tool `export_memories`                           | ⬜     |                    |                                                                                   |
+| T7       | MCP tool `export_memories`                           | ✅     | service + wiring ✓ | inline/path branch + registration/scope-gate/delegation dispatch wiring; 9 specs  |
 | T8       | Web UI download-as-zip (last surface)                | ⬜     |                    |                                                                                   |
 | T9       | round-trip contract test harness                     | ✅     | service + e2e stub | durableProjection helper + 6 parse-side specs; e2e stub (todo, WP4 completes)     |
 | SHARED-1 | `MemoryLink` schema + migration (additive)           | ⬜     |                    | deferred; T4 reads it capability-guarded. Needs docker + serial migration         |
