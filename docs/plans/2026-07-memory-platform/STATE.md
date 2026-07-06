@@ -32,14 +32,14 @@ the superset — the executor's record plus the independent-verification section
 
 Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan authored only.
 
-| WP      | Deliverable                                    | Plan | Execution                                                | Where                                |
-| ------- | ---------------------------------------------- | ---- | -------------------------------------------------------- | ------------------------------------ |
-| WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                          | report in this worktree              |
-| **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (8/10 tasks clean, T3+T6 partial) | **merged `main` @109e0d8 (PR #222)** |
-| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)        | branch `feat/markdown-export-wp3`    |
-| WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ⬜ not started                                           | plan only                            |
-| WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                           | plan only                            |
-| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | ⬜ not started                                           | plan only                            |
+| WP      | Deliverable                                    | Plan | Execution                                                | Where                                       |
+| ------- | ---------------------------------------------- | ---- | -------------------------------------------------------- | ------------------------------------------- |
+| WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                          | report in this worktree                     |
+| **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (8/10 tasks clean, T3+T6 partial) | **merged `main` @109e0d8 (PR #222)**        |
+| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)        | branch `feat/markdown-export-wp3`           |
+| WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)               | worktree `worktree-wp4-agent-memory-import` |
+| WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                           | plan only                                   |
+| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | ⬜ not started                                           | plan only                                   |
 
 ¹ WP1 is a findings report (R1–R13 remediation tasks), not shipped code. One adjacent
 marketing-site commit exists on main (`3241bae` — Pages custom-domain guard + TLS runbook)
@@ -47,10 +47,10 @@ but is not tracked as WP1 remediation here; WP1's R1–R13 are otherwise unstart
 
 ### Shared prerequisites (cross-WP schema — apply migrations serially)
 
-| Task     | Model                                                              | Status                                                                                                                           |
-| -------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| SHARED-1 | `MemoryLink` (typed memory→memory edges) — consumed by WP3/WP4/WP2 | ⬜ not started — **deferred by WP3, owned by WP4** (see note; canonical: [`SHARED-1-memory-link.md`](./SHARED-1-memory-link.md)) |
-| SHARED-2 | `Memory.version` + `MemoryAudit` — consumed by WP2/WP4             | ✅ **done** — migration `20260705190357_memory_version_and_audit` on main                                                        |
+| Task     | Model                                                              | Status                                                                                                                                                                                                               |
+| -------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SHARED-1 | `MemoryLink` (typed memory→memory edges) — consumed by WP3/WP4/WP2 | ✅ **done** (WP4) — canonical model in migration `add_memory_link_and_import_source`; FK source Cascade / target SetNull; DB-gated spec verifies both. WP3's `loadMemoryLinks` export seam still a stub (follow-up). |
+| SHARED-2 | `Memory.version` + `MemoryAudit` — consumed by WP2/WP4             | ✅ **done** — migration `20260705190357_memory_version_and_audit` on main                                                                                                                                            |
 
 > When WP3/WP4 execute, SHARED-2 is already applied to the shared dev Postgres. Serialize
 > SHARED-1's migration with any other pending schema work per the README dependency graph.

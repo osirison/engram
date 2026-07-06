@@ -140,17 +140,30 @@ export function extractFrontmatterLinks(
  * All inter-memory links for one fact: canonical frontmatter edges first (they
  * carry explicit rel types), then inline wikilinks, then relative md links.
  * Deduped by `(relType, targetLocator)` — the identity the link upsert keys on.
+ *
+ * When the frontmatter carries a `schemaVersion` (the marker of a canonical
+ * ENGRAM export from WP3), its `links[]` are authoritative and the inline
+ * `## Related` wikilinks are a lossy MIRROR of them — extracting both would
+ * create a spurious dangling `slug:<id>` link per edge. So for canonical docs
+ * we take only the frontmatter edges, keeping the export→import round-trip clean
+ * (G6).
  */
 export function extractLinks(
   body: string,
   sourceRelPath: string,
   frontmatter?: Record<string, unknown>
 ): ImportedLink[] {
-  const merged = [
-    ...extractFrontmatterLinks(frontmatter),
-    ...extractWikilinks(body),
-    ...extractRelativeLinks(body, sourceRelPath),
-  ];
+  const frontmatterLinks = extractFrontmatterLinks(frontmatter);
+  const isCanonicalExport =
+    typeof frontmatter?.['schemaVersion'] === 'string' &&
+    (frontmatter['schemaVersion'] as string).length > 0;
+  const merged = isCanonicalExport
+    ? frontmatterLinks
+    : [
+        ...frontmatterLinks,
+        ...extractWikilinks(body),
+        ...extractRelativeLinks(body, sourceRelPath),
+      ];
   const seen = new Set<string>();
   const out: ImportedLink[] = [];
   for (const link of merged) {

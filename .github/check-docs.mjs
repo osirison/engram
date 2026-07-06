@@ -3,7 +3,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ignoredDirectories = new Set(['.git', '.next', 'coverage', 'dist', 'node_modules']);
+const ignoredDirectories = new Set([
+  '.git',
+  '.next',
+  'coverage',
+  'dist',
+  'node_modules',
+  // Test fixtures are synthetic sample docs (deliberately missing/varied
+  // frontmatter to exercise parser tolerance); they are not project docs.
+  '__fixtures__',
+]);
 const markdownLinkPattern = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
 const markdownHeadingPattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/gm;
 const failures = [];
