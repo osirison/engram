@@ -1,0 +1,37 @@
+{
+  "name": "@engram/memory-interchange",
+  "version": "0.1.0",
+  "description": "Canonical Obsidian-compatible markdown interchange contract (frontmatter + typed wikilink edges) shared by ENGRAM export (WP3) and import (WP4)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "engram",
+    "memory",
+    "markdown",
+    "obsidian",
+    "interchange",
+    "export",
+    "import"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^25.9.1",
+    "eslint": "^9.39.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1",
+    "zod": "^4.4.3"
+  }
+}
