@@ -20,7 +20,7 @@ describe('emitWikilinkToken', () => {
 describe('emitWikilink', () => {
   it('renders a durable edge as bold rel + live wikilink', () => {
     const edge: MemoryEdge = { rel: 'derived-from', target: 'clx01', origin: 'durable' };
-    expect(emitWikilink(edge, 'Architecture insight')).toBe(
+    expect(emitWikilink(edge, { display: 'Architecture insight' })).toBe(
       '**derived-from** [[clx01|Architecture insight]]'
     );
   });
@@ -32,7 +32,7 @@ describe('emitWikilink', () => {
       origin: 'derived',
       score: 0.981,
     };
-    expect(emitWikilink(edge, 'We chose pgvector')).toBe(
+    expect(emitWikilink(edge, { display: 'We chose pgvector' })).toBe(
       '**duplicate-of** [[clw02|We chose pgvector]] (0.98)'
     );
   });
@@ -44,9 +44,16 @@ describe('emitWikilink', () => {
       origin: 'derived',
       dangling: true,
     };
-    const out = emitWikilink(edge, 'ignored display');
+    const out = emitWikilink(edge, { display: 'ignored display' });
     expect(out).toBe('**duplicate-of** clw0000dupmemory02 (not in export)');
     expect(out).not.toContain('[[');
+  });
+
+  it('targets an intra-doc anchor in single-doc mode', () => {
+    const edge: MemoryEdge = { rel: 'relates-to', target: 'clx01', origin: 'durable' };
+    expect(emitWikilink(edge, { display: 'Other memory', anchor: true })).toBe(
+      '**relates-to** [[#mem-clx01|Other memory]]'
+    );
   });
 });
 
@@ -96,7 +103,7 @@ describe('escape/unescape wikilink brackets (round-trip)', () => {
       origin: 'derived',
       score: 0.981,
     };
-    const line = emitWikilink(edge, 'We chose pgvector');
+    const line = emitWikilink(edge, { display: 'We chose pgvector' });
     expect(parseWikilinks(line)).toEqual([{ target: 'clw02', display: 'We chose pgvector' }]);
   });
 });

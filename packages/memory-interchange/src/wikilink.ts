@@ -28,20 +28,34 @@ export function emitWikilinkToken(target: string, display?: string): string {
   return display !== undefined && display.length > 0 ? `[[${target}|${display}]]` : `[[${target}]]`;
 }
 
+/** Options for {@link emitWikilink}. */
+export interface EmitWikilinkOptions {
+  /** Human display text rendered after `|` inside the link. */
+  display?: string;
+  /**
+   * Single-doc mode: target an intra-document anchor (`#mem-<target>`) instead
+   * of a separate note, so the one-file export's links resolve internally
+   * (WP3 PLAN §4.4).
+   */
+  anchor?: boolean;
+}
+
 /**
  * Render a single edge as one `## Related` list-item body (without the leading
  * `- `), per §4.4. A `dangling` edge (target outside the export set, §4.9) is
  * rendered as plain text — never a live `[[…]]` — so Obsidian does not create a
  * phantom note.
  */
-export function emitWikilink(edge: MemoryEdge, display?: string): string {
+export function emitWikilink(edge: MemoryEdge, options: EmitWikilinkOptions = {}): string {
+  const { display, anchor } = options;
   const scorePart =
     edge.score !== undefined ? ` (${edge.score.toFixed(INLINE_SCORE_DECIMALS)})` : '';
 
   if (edge.dangling) {
     return `**${edge.rel}** ${edge.target}${scorePart} (not in export)`;
   }
-  return `**${edge.rel}** ${emitWikilinkToken(edge.target, display)}${scorePart}`;
+  const linkTarget = anchor ? `#mem-${edge.target}` : edge.target;
+  return `**${edge.rel}** ${emitWikilinkToken(linkTarget, display)}${scorePart}`;
 }
 
 // A real wikilink, not preceded by a backslash (escaped brackets in body

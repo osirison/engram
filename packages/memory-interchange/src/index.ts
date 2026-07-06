@@ -32,4 +32,18 @@ export {
   escapeWikilinkBrackets,
   unescapeWikilinkBrackets,
   type ParsedWikilink,
+  type EmitWikilinkOptions,
 } from './wikilink.js';
+
+export {
+  serializeMemory,
+  buildFrontmatter,
+  normalizeContent,
+  sortEdges,
+  RELATED_MARKER,
+  type CanonicalMemory,
+  type SerializeInput,
+  type ExportMode,
+} from './serialize.js';
+
+export { parseDocument, type ParsedDocument } from './parse.js';
