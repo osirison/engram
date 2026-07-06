@@ -516,10 +516,18 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** ~3+ days.
 ### SHARED-1 — `MemoryLink` schema + migration · size M · depends: none
 
 **Goal:** first-class relationship table (§6) shared with WP3.
-**Paths:** `prisma/schema.prisma` (add `MemoryLink`, reciprocal relation fields on `User`);
-`prisma/migrations/*` (generated). Optionally add a tiny `packages/memory-ltm` helper to
-delete links on memory delete.
-**Steps:**
+
+> **WP4 owns this (WP3 deferred it).** WP3's export already _reads_ `MemoryLink` rows
+> additively through the `loadMemoryLinks` seam in `MemoryExportService` — a no-op until this
+> table exists. Landing SHARED-1 here makes WP3's export emit first-class `MemoryLink` edges
+> with **no WP3 code change**. Implement the **reconciled canonical model** in
+> [`../SHARED-1-memory-link.md`](../SHARED-1-memory-link.md) (it supersedes the §6 draft below —
+> notably it _does_ FK to `Memory`: source `Cascade`, target `SetNull`). Flip the SHARED-1 row
+> in the suite [`STATE.md`](../STATE.md) to ✅ when done.
+> **Paths:** `prisma/schema.prisma` (add `MemoryLink`, reciprocal relation fields on `User`);
+> `prisma/migrations/*` (generated). Optionally add a tiny `packages/memory-ltm` helper to
+> delete links on memory delete.
+> **Steps:**
 
 1. Add the `MemoryLink` model exactly as §6. Add the reciprocal `MemoryLink[]` relation
    field to `User` (name `"MemoryLinkUser"`). Do **not** FK `sourceMemoryId`/
