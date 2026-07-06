@@ -22,3 +22,14 @@ export {
   type Provenance,
   type MemoryTierType,
 } from './frontmatter.schema.js';
+
+export { slugify, buildFilename, firstNonEmptyLine, SLUG_MAX_LENGTH } from './slug.js';
+
+export {
+  emitWikilink,
+  emitWikilinkToken,
+  parseWikilinks,
+  escapeWikilinkBrackets,
+  unescapeWikilinkBrackets,
+  type ParsedWikilink,
+} from './wikilink.js';

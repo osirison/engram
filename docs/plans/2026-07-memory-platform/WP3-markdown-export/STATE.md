@@ -18,7 +18,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 | Task     | Deliverable                                          | Status | Both-levels tests | Notes                                                                     |
 | -------- | ---------------------------------------------------- | ------ | ----------------- | ------------------------------------------------------------------------- |
 | T1       | `packages/memory-interchange` scaffold + frontmatter | ✅     | service ✓         | build/typecheck/lint/test green; 10 schema specs                          |
-| T2       | slug + wikilink utilities                            | ⬜     |                   |                                                                           |
+| T2       | slug + wikilink utilities                            | ✅     | service ✓         | slugify/buildFilename + emit/parse/escape wikilinks; 26 specs             |
 | T3       | `serializeMemory()` + `parseDocument()`              | ⬜     |                   |                                                                           |
 | T4       | edge collector (metadata + MemoryLink)               | ⬜     |                   |                                                                           |
 | T5       | `MemoryExportService` orchestrator                   | ⬜     |                   |                                                                           |
