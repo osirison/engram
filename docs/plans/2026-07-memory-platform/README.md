@@ -20,6 +20,11 @@ transcript. Read `CLAUDE.md` and `AGENTS.md` at repo root before executing any W
 
 ## Status
 
+> This table tracks **plan authoring**. For **execution** status (what has been built +
+> verified), see [`STATE.md`](./STATE.md) — the cross-WP execution tracker. As of
+> 2026-07-06: WP2 is executed + verified (merged `main` @109e0d8, PR #222); all others are
+> plan-only.
+
 | WP  | Deliverable                                       | State                                             |
 | --- | ------------------------------------------------- | ------------------------------------------------- |
 | WP1 | `WP1-marketing-site-validation/REPORT.md`         | done — 26 findings (3 critical), R1–R13           |
