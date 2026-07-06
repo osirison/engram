@@ -79,6 +79,10 @@ import {
   IngestConversationToolInput,
 } from './dto/ingest-conversation.dto';
 import { exportToolSchema, ExportToolInput } from './dto/export.dto';
+import {
+  importAgentMemoryToolSchema,
+  ImportAgentMemoryToolInput,
+} from './dto/import-agent-memory.dto';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import {
@@ -86,6 +90,7 @@ import {
   type MemorySnapshot,
 } from './memory-audit.service';
 import { MemoryExportService } from './export/memory-export.service';
+import { MemoryImportService } from '@engram/memory-import';
 import { CollectingSink } from './export/collecting-sink';
 import { DirectorySink } from './export/directory-sink';
 import type { MemoryExportOptions } from './export/export.types';
@@ -150,6 +155,10 @@ export class MemoryController {
     @Optional()
     @Inject(MemoryExportService)
     private readonly memoryExport: MemoryExportService | null = null,
+    // Agentic memory import (WP4 T13): Postgres-only, optional for the same reason.
+    @Optional()
+    @Inject(MemoryImportService)
+    private readonly memoryImport: MemoryImportService | null = null,
   ) {
     this.activeProfile = coerceDeploymentProfile(
       process.env['DEPLOYMENT_PROFILE'],
@@ -1554,6 +1563,54 @@ export class MemoryController {
     });
   }
 
+  /**
+   * MCP Tool: import_agent_memory (WP4 T13)
+   *
+   * Admin-gated: reads a SERVER-SIDE path with the selected source adapter and
+   * bulk-writes long-term memories + links. Idempotent; `dryRun` writes nothing
+   * and returns the parse/cost estimate.
+   */
+  async importAgentMemory(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('import_agent_memory tool called');
+      const validated: ImportAgentMemoryToolInput =
+        importAgentMemoryToolSchema.parse(input);
+      this.assertAdminAuthorized(
+        validated.adminToken,
+        'import_agent_memory',
+        validated.userId,
+      );
+      if (!this.memoryImport) {
+        throw new ClientFacingError(
+          'Agentic memory import is unavailable in this deployment profile (requires Postgres)',
+        );
+      }
+      const summary = await this.memoryImport.run({
+        source: validated.source,
+        path: validated.path,
+        userId: validated.userId,
+        ...(validated.scope !== undefined ? { scope: validated.scope } : {}),
+        ...(validated.dryRun !== undefined ? { dryRun: validated.dryRun } : {}),
+        ...(validated.secretsPolicy !== undefined
+          ? { secretsPolicy: validated.secretsPolicy }
+          : {}),
+        ...(validated.embed !== undefined ? { embed: validated.embed } : {}),
+        ...(validated.splitHeadings !== undefined
+          ? { splitHeadings: validated.splitHeadings }
+          : {}),
+        ...(validated.includeGlobal !== undefined
+          ? { includeGlobal: validated.includeGlobal }
+          : {}),
+      });
+      return this.jsonContent(summary);
+    } catch (error) {
+      this.logger.error('Error in import_agent_memory tool:', error);
+      throw toClientError(error, 'Failed to import agent memory');
+    }
+  }
+
   /** Wrap a JSON-serializable value as an MCP text-content response. */
   private jsonContent(value: unknown): {
     content: Array<{ type: string; text: string }>;
@@ -1706,6 +1763,16 @@ export class MemoryController {
         // data owner's memories by passing an explicit userId (mirrors recall).
         delegable: true,
         handler: this.exportMemories.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
+      },
+      {
+        name: 'import_agent_memory',
+        description:
+          'Import agent memory files (Claude/Copilot/Cursor/Codex/Gemini/markdown) from a server-side path into long-term memory, preserving inter-memory links. Admin-gated; idempotent; supports dryRun and a secrets policy.',
+        inputSchema: importAgentMemoryToolSchema,
+        auth: 'admin',
+        handler: this.importAgentMemory.bind(this) as (
           input: unknown,
         ) => Promise<unknown>,
       },
@@ -1867,11 +1934,17 @@ export class MemoryController {
       return requiredScope ? { ...tool, requiredScope } : tool;
     });
 
-    // Don't advertise export_memories when its (Postgres-only) service is absent
-    // under the memory/lite profiles — the handler would only ever fail.
-    const available = this.memoryExport
+    // Don't advertise export_memories / import_agent_memory when their
+    // (Postgres-only) services are absent under the memory/lite profiles — the
+    // handlers would only ever fail.
+    let available = this.memoryExport
       ? scoped
       : scoped.filter((tool) => tool.name !== 'export_memories');
+    if (!this.memoryImport) {
+      available = available.filter(
+        (tool) => tool.name !== 'import_agent_memory',
+      );
+    }
 
     return this.filterToolsByProfile(available);
   }

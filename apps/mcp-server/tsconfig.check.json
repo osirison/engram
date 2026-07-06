@@ -9,6 +9,7 @@
       "@engram/core": ["../../packages/core/src/index.ts"],
       "@engram/database": ["../../packages/database/src/index.ts"],
       "@engram/embeddings": ["../../packages/embeddings/src/index.ts"],
+      "@engram/memory-import": ["../../packages/memory-import/src/index.ts"],
       "@engram/memory-lite": ["../../packages/memory-lite/src/index.ts"],
       "@engram/memory-ltm": ["../../packages/memory-ltm/src/index.ts"],
       "@engram/memory-stm": ["../../packages/memory-stm/src/index.ts"],

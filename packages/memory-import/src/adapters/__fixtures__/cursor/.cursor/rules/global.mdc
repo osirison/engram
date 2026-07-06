@@ -1,0 +1,10 @@
+---
+description: Global project guardrails
+globs:
+alwaysApply: true
+---
+
+# Always-On Guardrails
+
+These rules apply to every request. Never commit secrets. See
+[[security-baseline]] for the full checklist.
