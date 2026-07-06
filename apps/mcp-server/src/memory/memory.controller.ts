@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import type { Tool, ToolCallContext } from '@engram/core';
+import { MetricsService } from '../metrics/metrics.service';
 import {
   DeploymentProfile,
   resolveCapabilities,
@@ -159,6 +160,10 @@ export class MemoryController {
     @Optional()
     @Inject(MemoryImportService)
     private readonly memoryImport: MemoryImportService | null = null,
+    // Per-agent memory metrics (WP5 T13): optional — absent when metrics are disabled.
+    @Optional()
+    @Inject(MetricsService)
+    private readonly metrics: MetricsService | null = null,
   ) {
     this.activeProfile = coerceDeploymentProfile(
       process.env['DEPLOYMENT_PROFILE'],
@@ -843,7 +848,9 @@ export class MemoryController {
    */
   async recall(
     input: unknown,
+    context?: ToolCallContext,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    const agent = context?.apiKeyId ?? 'local';
     try {
       this.logger.debug('recall tool called');
 
@@ -862,6 +869,7 @@ export class MemoryController {
           createdTo: validatedInput.createdTo,
         },
       );
+      this.metrics?.recordAgentMemoryOp(agent, 'recall', 'success');
 
       return {
         content: [
@@ -883,6 +891,7 @@ export class MemoryController {
         ],
       };
     } catch (error) {
+      this.metrics?.recordAgentMemoryOp(agent, 'recall', 'error');
       this.logger.error('Error in recall tool:', error);
       throw toClientError(error, 'Failed to recall memories');
     }
@@ -1197,7 +1206,9 @@ export class MemoryController {
    */
   async remember(
     input: unknown,
+    context?: ToolCallContext,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    const agent = context?.apiKeyId ?? 'local';
     try {
       this.logger.debug('remember tool called');
       const validated: RememberToolInput = rememberToolSchema.parse(input);
@@ -1212,6 +1223,7 @@ export class MemoryController {
         ttl: validated.ttl,
         skipDuplicateCheck: validated.skipDuplicateCheck,
       });
+      this.metrics?.recordAgentMemoryOp(agent, 'store', 'success');
 
       return {
         content: [
@@ -1231,6 +1243,7 @@ export class MemoryController {
         ],
       };
     } catch (error) {
+      this.metrics?.recordAgentMemoryOp(agent, 'store', 'error');
       this.logger.error('Error in remember tool:', error);
       throw toClientError(error, 'Failed to remember');
     }

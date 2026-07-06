@@ -14,6 +14,8 @@ supported deployment paths are:
 | Kubernetes     | `docs/k8s/` (coming soon)    | Cluster deployments |
 | Manual         | `apps/mcp-server/Dockerfile` | Custom infra        |
 
+To run one persistent server that all AI agents share as primary memory, see [agent-memory-server.md](agent-memory-server.md).
+
 ---
 
 ## Prerequisites

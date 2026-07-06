@@ -14,6 +14,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "eval": "turbo run eval --filter=@engram/eval",
+    "eval:gate": "turbo run eval:gate --filter=@engram/eval",
     "load:test": "node scripts/load-test.mjs",
     "bench:backends": "node scripts/bench-vector-backends.mjs",
     "bench:ci": "node scripts/bench-vector-backends.mjs --iterations 80 --warmup 20 --p95 120 --output artifacts/bench-results.json",

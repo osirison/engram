@@ -1,0 +1,23 @@
+# ENGRAM file-watcher sync bridge — systemd *user* unit (WP5 T11).
+# Watches native agent-memory files and syncs changes into ENGRAM via the WP4
+# importer, honoring the D7 newest-wins conflict rule. Runs alongside the MCP
+# server (needs the same DB/Redis env). Adjust the roots/--user/--scope below.
+# Install:  cp deploy/systemd/engram-sync.service ~/.config/systemd/user/
+#           systemctl --user daemon-reload && systemctl --user enable --now engram-sync.service
+[Unit]
+Description=ENGRAM file-watcher sync bridge (native memory -> ENGRAM)
+After=network-online.target engram-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Cloud/Projects/engram
+EnvironmentFile=%h/.engram/engram-mcp.env
+ExecStart=/usr/bin/env node apps/mcp-server/dist/watch.cli.js %h/Cloud/Projects/engram --user qp --scope project:engram
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

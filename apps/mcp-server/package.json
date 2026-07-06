@@ -16,6 +16,7 @@
     "reindex": "nest build && node dist/reindex.cli.js",
     "import": "nest build && node dist/import.cli.js",
     "export": "nest build && node dist/export.cli.js",
+    "watch": "nest build && node dist/watch.cli.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "test": "jest",

@@ -1,0 +1,337 @@
+---
+title: Agent Memory Migration Runbook
+description: One-time bulk import of qp's existing native agent-memory files (Claude Code, Copilot, Cursor, Codex, Gemini, markdown) into ENGRAM using WP4's importer CLI, with local-embedding cost control and a real-embedding reindex.
+---
+
+# Agent Memory Migration Runbook
+
+This runbook covers the **one-time bulk migration** of the agent-memory files qp
+already has on disk — `CLAUDE.md`, Claude Code auto-memory, `.github/copilot-instructions.md`,
+Cursor rules, `AGENTS.md`, `GEMINI.md`, and generic markdown notes — into ENGRAM
+long-term memory, so all five AI coding agents share one searchable primary
+memory instead of five per-agent silos.
+
+It uses the WP4 importer CLI (`pnpm --filter mcp-server import`) and follows a
+cheap-first strategy: import with **local hash embeddings** (no API cost), then
+rebuild **real embeddings** with the admin reindex tool. For the full importer
+reference (secrets policies, link resolution, provenance, ledger schema) see
+[Agentic Memory Import](./IMPORT.md). For the identity/scope rules every command
+here relies on, see the [Agent Memory Contract](./agent-memory-contract.md).
+
+## Overview
+
+The migration is four steps:
+
+1. **Dry-run** each source to preview counts, secrets advisories, and embedding
+   cost — writing nothing.
+2. **Execute** the import with `EMBEDDING_PROVIDER=local` (deterministic hash
+   vectors, zero API cost), assigning `--user qp` and the right `--scope`.
+3. **Reindex** to replace the placeholder hash vectors with real embeddings via
+   the admin `reindex_memories` MCP tool (cursor-resumable).
+4. **Verify** with `recall` queries over known historical facts.
+
+The importer is **idempotent**: it keeps a per-source ledger keyed on
+`(userId, sourceKey)` plus a content hash, so re-running skips unchanged files,
+updates changed ones, and never creates duplicates. You can re-run any step
+safely, and you can migrate one source at a time.
+
+## How this differs from the file-watcher sync
+
+This is the **initial bulk load**, run by hand, once. It is distinct from the
+**ongoing file-watcher sync bridge** — a separate long-running component that
+watches those same native files and upserts edits into ENGRAM continuously (with
+newest-wins conflict handling). Both consume the same WP4 importer parsing and
+the same dedup/provenance model, so running this migration first and the watcher
+afterward does **not** create duplicates: the watcher reuses the ledger this
+migration populates. Use this runbook for the first import; the watcher takes
+over for everything after.
+
+## Prerequisites
+
+- **Server, database, and dependencies up.** The importer writes through the LTM
+  service, which needs Postgres (and Redis) reachable. Bring up services and
+  build the workspace:
+
+  ```bash
+  pnpm docker:up
+  pnpm db:generate
+  pnpm db:migrate:deploy
+  pnpm build
+  ```
+
+- **Decide scope before you run.** `userId` is always `qp` (it must be
+  lowercase-alphanumeric; hyphens/uppercase are rejected). Project/agent
+  separation lives entirely in `--scope`, per the
+  [Agent Memory Contract](./agent-memory-contract.md#scope-grammar):
+
+  | Scope            | Use for                                                           |
+  | ---------------- | ----------------------------------------------------------------- |
+  | `global`         | Cross-project facts: preferences, standing conventions, identity. |
+  | `project:<slug>` | Facts about one repository.                                       |
+
+  `<slug>` is the **lowercased basename of the repository root**, derived
+  identically by every agent:
+
+  ```bash
+  basename "$(git rev-parse --show-toplevel)" | tr '[:upper:]' '[:lower:]'
+  ```
+
+  For this repo that is `engram`, so repo-scoped facts use `--scope project:engram`.
+
+- **Auth / keys.** The import CLI runs as a local NestJS process and needs no MCP
+  bearer key. The **reindex step (Step 3)** uses the admin `reindex_memories`
+  tool, which requires `MCP_ADMIN_TOKEN`. If you will run agents against a shared
+  authenticated server afterward, mint per-agent API keys as described in the
+  [agent keys note](./security/agent-keys.md) and the
+  [persistent-server runbook](./agent-memory-server.md). Never place a secret or
+  token in a memory — the importer redacts, but confirm the advisories (Step 1)
+  first.
+
+## Step 1 — Dry-run every source
+
+`--dry-run` parses each source, scans for secrets, and prints an `ImportSummary`
+(parsed/created/updated/skipped/merged/secretsSkipped/failed, link-resolution
+counts, secrets advisories, and an embedding cost estimate) **without writing
+anything**. The `parsed=` count is also your **path-correctness check**: if it is
+0 or lower than expected, the path or source is wrong — fix it before Step 2.
+
+Run one dry-run per source. Adjust the paths to your machine and confirm each
+`parsed=` count looks right:
+
+```bash
+# Claude Code, repo instructions — a dir holding CLAUDE.md/CLAUDE.local.md (H2-chunked)
+pnpm --filter mcp-server import -- claude-code ~/Cloud/Projects/engram \
+  --user qp --scope project:engram --dry-run
+
+# Claude Code, user auto-memory — a dir holding memory/MEMORY.md; each memory/*.md is
+# one atomic fact (MEMORY.md index excluded). These are cross-project → global scope.
+pnpm --filter mcp-server import -- claude-code ~/.claude/projects/-home-qp-Cloud-Projects-engram \
+  --user qp --scope global --dry-run
+
+# GitHub Copilot — .github/copilot-instructions.md + .github/instructions/*.instructions.md
+pnpm --filter mcp-server import -- copilot ~/Cloud/Projects/engram \
+  --user qp --scope project:engram --dry-run
+
+# Cursor — .cursor/rules/*.mdc + legacy .cursorrules
+pnpm --filter mcp-server import -- cursor ~/Cloud/Projects/engram \
+  --user qp --scope project:engram --dry-run
+
+# Codex — AGENTS.md hierarchy (git-root -> cwd)
+pnpm --filter mcp-server import -- codex ~/Cloud/Projects/engram \
+  --user qp --scope project:engram --dry-run
+
+# Gemini — GEMINI.md hierarchy
+pnpm --filter mcp-server import -- gemini ~/Cloud/Projects/engram \
+  --user qp --scope project:engram --dry-run
+
+# Generic markdown vault (add --split-headings to chunk each file on H2)
+pnpm --filter mcp-server import -- markdown ~/Notes \
+  --user qp --scope global --dry-run
+```
+
+The `claude-code` source detects **one layout per path**: a directory containing
+`memory/MEMORY.md` is read as auto-memory (each `memory/*.md` an atomic fact), and
+auto-memory takes precedence over a sibling `CLAUDE.md`. So the repo instructions
+and the user auto-memory are **two separate runs** pointing at different
+directories (as above), not one. You may also pass a `CLAUDE.md` file directly.
+
+**Review before proceeding:**
+
+- **Counts.** Confirm `parsed=` is non-zero and roughly what you expect per
+  source. Record it — Step 2's `created=` should match it on a fresh import.
+- **Secrets advisories.** The importer redacts by default, but the dry-run lists
+  each file with a matched secret pattern and reports `secretsSkipped`. Spot-check
+  every advisory: if a real credential is present, remove it from the source file
+  (or rely on redaction, but confirm nothing sensitive is about to be embedded).
+  Never embed a secret.
+- **Embedding cost estimate.** Reported as `est=$…`. With the local strategy
+  below this is effectively zero at import time; it becomes real at Step 3.
+
+### Cross-project (global) agent files
+
+`--include-global` additionally reads the machine-global agent files
+(`~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`). Those are **cross-project** facts,
+but a single run applies **one** `--scope` to everything it parses. To keep global
+facts in `global` scope, run a **separate** pass for them rather than folding them
+into a project run — for example:
+
+```bash
+pnpm --filter mcp-server import -- codex ~/Cloud/Projects/engram \
+  --user qp --scope global --include-global --dry-run
+```
+
+Confirm this behavior against the installed importer at execution time, and
+prefer the two-run pattern (a `project:<slug>` pass without `--include-global`,
+plus a `global` pass) so cross-project facts are not mis-scoped to one repo.
+
+## Step 2 — Execute the import (local embeddings)
+
+Re-run each dry-run command **without `--dry-run`**, prefixing
+`EMBEDDING_PROVIDER=local`. Local embeddings are deterministic hash vectors, so
+the import completes with **no embedding API cost** and no `OPENAI_API_KEY`:
+
+```bash
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- claude-code ~/Cloud/Projects/engram \
+  --user qp --scope project:engram
+
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- claude-code ~/.claude/projects/-home-qp-Cloud-Projects-engram \
+  --user qp --scope global
+
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- copilot ~/Cloud/Projects/engram \
+  --user qp --scope project:engram
+
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- cursor ~/Cloud/Projects/engram \
+  --user qp --scope project:engram
+
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- codex ~/Cloud/Projects/engram \
+  --user qp --scope project:engram
+
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- gemini ~/Cloud/Projects/engram \
+  --user qp --scope project:engram
+
+EMBEDDING_PROVIDER=local pnpm --filter mcp-server import -- markdown ~/Notes \
+  --user qp --scope global
+```
+
+Check each run's summary: `created` should match the dry-run `parsed` on a first
+import; `skipped`/`updated`/`merged` show up on re-runs; `failed` should be 0
+(per-item failures are counted and skipped — Postgres stays the source of truth).
+The CLI exits non-zero if any fact failed or a quota stop returned a resumable
+cursor.
+
+> **Alternative (real embeddings inline).** If you would rather pay the embedding
+> cost now and skip Step 3, run with `EMBEDDING_PROVIDER=openai` and a valid
+> `OPENAI_API_KEY` instead of `local`. Each memory is embedded as it is written
+> (costs tokens per the dry-run estimate). A third option is `--no-embed` (store
+> empty vectors) — see [Agentic Memory Import](./IMPORT.md#embedding-cost---no-embed-closes-g7);
+> with empty vectors a **default** reindex backfills them, whereas the `local`
+> path below requires the regenerate flag.
+
+## Step 3 — Rebuild real embeddings (reindex)
+
+The `local` import wrote **placeholder hash vectors**, not semantic ones. Recall
+will not work well until they are replaced with real embeddings.
+
+**Important:** `reindex_memories` reuses existing embeddings by default
+(`reuseExistingEmbeddings: true`), which would keep the hash vectors. Because the
+rows already carry non-empty (hash) vectors, you **must** pass
+`reuseExistingEmbeddings: false` to force regeneration.
+
+`reindex_memories` is an **admin MCP tool**: it requires an `adminToken` matching
+`MCP_ADMIN_TOKEN`. It runs on the **persistent server process**, so that server
+must be started with the real embedding provider — `EMBEDDING_PROVIDER=openai`
+and a valid `OPENAI_API_KEY` — or restarted with them before you call the tool.
+
+Call it (admin bearer token elided) with, at minimum:
+
+```json
+{
+  "name": "reindex_memories",
+  "arguments": {
+    "adminToken": "<MCP_ADMIN_TOKEN>",
+    "userId": "qp",
+    "reuseExistingEmbeddings": false,
+    "batchSize": 100
+  }
+}
+```
+
+Notes:
+
+- **Cursor-resumable / rate control.** The tool returns a `cursor` when it stops
+  early; pass it back as `cursor` to resume. Combine with `maxMemories` to cap
+  each call and pace API cost/rate. For a large migration, use the async variant
+  `queue_reindex_memories` (same arguments) and poll `get_reindex_status` with
+  the returned `jobId`.
+- **Scope of work.** `reuseExistingEmbeddings: false` regenerates for **every**
+  matched memory, not only the freshly imported rows. Pass `userId: "qp"` to
+  limit it to qp's long-term memories; expect it to re-embed all of them.
+- **CLI equivalent.** The same job runs from the command line with
+  `EMBEDDING_PROVIDER=openai pnpm --filter mcp-server reindex -- --user qp --regenerate`
+  (`--regenerate` sets `reuseExistingEmbeddings=false`). This spawns its own
+  process, so it does not depend on how the persistent server was started.
+
+## Step 4 — Verify recall
+
+Confirm known historical facts come back through `recall`. Call the `recall` MCP
+tool with `userId: "qp"`; query `project:engram` for repo facts and `global` for
+cross-project ones (or omit `scope` for a blended search). Examples and the topic
+each should surface:
+
+```json
+{
+  "name": "recall",
+  "arguments": {
+    "userId": "qp",
+    "query": "what userId should agents use for ENGRAM tool calls?",
+    "scope": "global"
+  }
+}
+```
+
+expect: the standing convention that all ENGRAM tool calls use `userId: "qp"`.
+
+```json
+{
+  "name": "recall",
+  "arguments": {
+    "userId": "qp",
+    "query": "policy on git --no-verify and bypassing a broken hook",
+    "scope": "global"
+  }
+}
+```
+
+expect: the rule to never bypass verification — fix the broken hook instead.
+
+```json
+{
+  "name": "recall",
+  "arguments": {
+    "userId": "qp",
+    "query": "how to structure large work for parallel execution",
+    "scope": "global"
+  }
+}
+```
+
+expect: the work-packaging convention (parallel work packages under `docs/plans/`,
+resumable via a STATE index and incremental commits).
+
+All three facts above come from the Claude Code **user auto-memory** run
+(`--scope global`), so query them at `global`. To also verify repo-scoped facts,
+query `project:engram` — for example "which vector backends does ENGRAM support"
+should surface pgvector vs Qdrant selected by `VECTOR_BACKEND`, imported from the
+repo `CLAUDE.md`.
+
+If these return empty or off-topic, the most likely cause is that Step 3 did not
+regenerate — the hash vectors from Step 2 are still in place (they are not
+semantic). Re-run Step 3 with `reuseExistingEmbeddings: false` / `--regenerate`
+and confirm the server had the real provider configured. This recall check is the
+safety net that catches a reused-hash-vector mistake.
+
+Where these verification facts overlap the recall-quality regression gate's seed
+dataset, the same queries feed that gate — keep them in sync with
+[Release Gates](./RELEASE_GATES.md) so "primary memory" cannot silently regress.
+
+## Per-source command reference
+
+All commands take the form
+`pnpm --filter mcp-server import -- <source> <path> --user qp --scope <scope>`
+(prefix `EMBEDDING_PROVIDER=local` for the real run; append `--dry-run` to
+preview).
+
+| Source        | Typical path                                     | Reads                                                                        | Recommended scope      |
+| ------------- | ------------------------------------------------ | ---------------------------------------------------------------------------- | ---------------------- |
+| `claude-code` | repo root (e.g. `~/Cloud/Projects/engram`)       | `CLAUDE.md`/`CLAUDE.local.md` (H2-chunked)                                   | `project:<slug>`       |
+| `claude-code` | auto-memory dir (`~/.claude/projects/<encoded>`) | each `memory/*.md` atomic (`MEMORY.md` index excluded)                       | `global`               |
+| `copilot`     | repo root                                        | `.github/copilot-instructions.md` + `.github/instructions/*.instructions.md` | `project:<slug>`       |
+| `cursor`      | repo root                                        | `.cursor/rules/*.mdc` + legacy `.cursorrules`                                | `project:<slug>`       |
+| `codex`       | repo root                                        | `AGENTS.md` hierarchy (`--include-global` adds `~/.codex/AGENTS.md`)         | `project:<slug>`       |
+| `gemini`      | repo root                                        | `GEMINI.md` hierarchy (`--include-global` adds `~/.gemini/GEMINI.md`)        | `project:<slug>`       |
+| `markdown`    | a notes folder / Obsidian vault                  | any `.md` (index/MOC skipped; `--split-headings` chunks on H2)               | `global` (or per-repo) |
+
+Machine-global files pulled in by `--include-global` are cross-project — import
+them in a separate `--scope global` pass (see
+[Step 1](#cross-project-global-agent-files)). Confirm exact paths per machine with
+a `--dry-run` before the real run.

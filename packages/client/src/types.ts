@@ -111,6 +111,21 @@ export interface PromptContextResult {
   candidatesFound: number;
 }
 
+export interface LoadContextInput {
+  userId: string;
+  maxChars?: number;
+  recentLimit?: number;
+  importantLimit?: number;
+  scope?: string;
+  tags?: string[];
+}
+
+export interface LoadContextResult {
+  context: string;
+  memoryCount: number;
+  charCount: number;
+}
+
 export type ConversationRole = 'user' | 'assistant' | 'system';
 
 export interface ConversationTurn {

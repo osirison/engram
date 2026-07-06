@@ -66,6 +66,24 @@ pnpm bench:trend:check --max-p95-delta 20
 | Reindex throughput | `>= 200` memories / s | `pnpm --filter mcp-server reindex -- --max 5000`          |
 | Queue throughput   | `>= 200` memories / s | Background reindex job polled via `get_reindex_status`    |
 
+## Recall quality gate
+
+Because agents now use ENGRAM as their primary memory, recall quality cannot be
+allowed to silently regress. The gate runs the hybrid fusion retriever over a
+sanitized, deterministic fixture set (`packages/eval` — no DB, network, or API
+key required) and fails the build when any metric drops below its pinned floor.
+
+| Objective       | Target    | Measurement      |
+| --------------- | --------- | ---------------- |
+| Fusion recall@5 | `>= 0.90` | `pnpm eval:gate` |
+| Fusion MRR      | `>= 0.95` | `pnpm eval:gate` |
+| Fusion nDCG@5   | `>= 0.90` | `pnpm eval:gate` |
+
+Floors are defined in `packages/eval/src/thresholds.ts` (`RECALL_GATE_THRESHOLDS`)
+and enforced by the "Run recall-quality regression gate" step in
+`.github/workflows/ci.yml`. Current baseline: recall@5 91.7%, MRR 1.000, nDCG@5
+0.922. A deliberately broken ranking weight makes the gate red.
+
 ## Reliability Gates
 
 Reliability gates are enforced by the integration test suite and the

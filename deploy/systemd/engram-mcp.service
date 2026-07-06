@@ -1,0 +1,32 @@
+# ENGRAM MCP memory server — systemd *user* unit (WP5 T2).
+# Install:  cp deploy/systemd/engram-mcp.service ~/.config/systemd/user/
+#           systemctl --user daemon-reload
+#           systemctl --user enable --now engram-mcp.service
+# Survive logout/reboot:  loginctl enable-linger "$USER"
+# Logs:     journalctl --user -u engram-mcp -f
+#
+# Config (secrets, DB/Redis/Qdrant URLs, AUTH_REQUIRED, MCP_ADMIN_TOKEN, profile)
+# lives in the EnvironmentFile below — never commit it. See docs/agent-memory-server.md.
+[Unit]
+Description=ENGRAM MCP memory server (Streamable HTTP, loopback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Point this at your ENGRAM checkout (must be built: `pnpm build`).
+WorkingDirectory=%h/Cloud/Projects/engram
+EnvironmentFile=%h/.engram/engram-mcp.env
+# Transport + bind are fixed here; everything else comes from the EnvironmentFile.
+Environment=MCP_TRANSPORT=streamable-http
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+ExecStart=/usr/bin/env node apps/mcp-server/dist/main.js
+Restart=always
+RestartSec=3
+# Basic hardening — the server only needs loopback + its checkout.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

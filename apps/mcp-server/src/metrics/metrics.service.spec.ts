@@ -24,6 +24,24 @@ describe('MetricsService', () => {
     expect(text).toContain('engram_reindex_operations_total');
     expect(text).toContain('engram_consolidation_runs_total');
     expect(text).toContain('engram_active_mcp_sessions');
+    expect(text).toContain('engram_agent_memory_operations_total');
+  });
+
+  it('records per-agent store/recall operations', async () => {
+    service.recordAgentMemoryOp('key-abc', 'store', 'success');
+    service.recordAgentMemoryOp('key-abc', 'recall', 'success');
+    service.recordAgentMemoryOp('local', 'recall', 'error');
+
+    const text = await service.getMetrics();
+    expect(text).toContain(
+      'engram_agent_memory_operations_total{agent="key-abc",op="store",status="success"} 1',
+    );
+    expect(text).toContain(
+      'engram_agent_memory_operations_total{agent="key-abc",op="recall",status="success"} 1',
+    );
+    expect(text).toContain(
+      'engram_agent_memory_operations_total{agent="local",op="recall",status="error"} 1',
+    );
   });
 
   it('records op increments counter and histogram', async () => {

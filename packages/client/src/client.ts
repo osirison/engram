@@ -14,6 +14,8 @@ import type {
   ReflectResult,
   PromptContextInput,
   PromptContextResult,
+  LoadContextInput,
+  LoadContextResult,
   IngestConversationInput,
   IngestConversationResult,
 } from './types.js';
@@ -105,6 +107,16 @@ export class EngramClient {
     );
     const contextText = content[0]!.text;
     const meta = JSON.parse(content[1]!.text) as Omit<PromptContextResult, 'context'>;
+    return { context: contextText, ...meta };
+  }
+
+  async loadContext(input: LoadContextInput): Promise<LoadContextResult> {
+    const content = await this._callTool(
+      'load_context',
+      input as unknown as Record<string, unknown>
+    );
+    const contextText = content[0]!.text;
+    const meta = JSON.parse(content[1]!.text) as Omit<LoadContextResult, 'context'>;
     return { context: contextText, ...meta };
   }
 

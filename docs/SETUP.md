@@ -342,6 +342,8 @@ remains readable.
 
 ## MCP Client Setup
 
+To run one persistent server that all agents share over HTTP instead of each client spawning its own stdio process, see [agent-memory-server.md](agent-memory-server.md).
+
 Build the server first:
 
 ```bash

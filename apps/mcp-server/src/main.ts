@@ -328,7 +328,9 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = process.env.PORT ?? 3000;
-  await app.listen(port);
+  // Honor HOST so the documented loopback bind (HOST=127.0.0.1, WP5 D1/D6) is
+  // actually enforced; default to all-interfaces to keep the container path unchanged.
+  await app.listen(port, process.env.HOST ?? '0.0.0.0');
 
   logger.log(
     `Application is running on: http://localhost:${port} [transport: ${mcpTransport}]`,

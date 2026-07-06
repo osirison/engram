@@ -13,21 +13,40 @@ curl http://localhost:3000/health/metrics
 
 ### Application metrics
 
-| Metric                                     | Type      | Labels                 | Description                                                            |
-| ------------------------------------------ | --------- | ---------------------- | ---------------------------------------------------------------------- |
-| `engram_memory_operations_total`           | counter   | `op`, `tier`, `status` | Memory operations by type, tier (stm/ltm), and outcome (success/error) |
-| `engram_memory_operation_duration_seconds` | histogram | `op`, `tier`           | Operation latency in seconds                                           |
-| `engram_memories_promoted_total`           | counter   | —                      | STM memories promoted to LTM by the consolidation scheduler            |
-| `engram_consolidation_runs_total`          | counter   | `status`               | Consolidation scheduler runs (success/partial)                         |
-| `engram_reindex_operations_total`          | counter   | `status`               | Vector-store reindex operations                                        |
-| `engram_active_mcp_sessions`               | gauge     | —                      | Active Streamable HTTP MCP sessions                                    |
-| `engram_vector_backend_info`               | gauge     | `backend`              | Active vector backend (qdrant/pgvector)                                |
-| `engram_deployment_profile_info`           | gauge     | `profile`              | Active deployment profile                                              |
-| `engram_pgvector_ready`                    | gauge     | —                      | Whether pgvector extension is reachable                                |
-| `engram_embeddings_cache_hits_total`       | counter   | —                      | Embedding cache hits (from EmbeddingsService)                          |
-| `engram_embeddings_cache_misses_total`     | counter   | —                      | Embedding cache misses                                                 |
+| Metric                                     | Type      | Labels                  | Description                                                            |
+| ------------------------------------------ | --------- | ----------------------- | ---------------------------------------------------------------------- |
+| `engram_memory_operations_total`           | counter   | `op`, `tier`, `status`  | Memory operations by type, tier (stm/ltm), and outcome (success/error) |
+| `engram_memory_operation_duration_seconds` | histogram | `op`, `tier`            | Operation latency in seconds                                           |
+| `engram_memories_promoted_total`           | counter   | —                       | STM memories promoted to LTM by the consolidation scheduler            |
+| `engram_consolidation_runs_total`          | counter   | `status`                | Consolidation scheduler runs (success/partial)                         |
+| `engram_reindex_operations_total`          | counter   | `status`                | Vector-store reindex operations                                        |
+| `engram_active_mcp_sessions`               | gauge     | —                       | Active Streamable HTTP MCP sessions                                    |
+| `engram_vector_backend_info`               | gauge     | `backend`               | Active vector backend (qdrant/pgvector)                                |
+| `engram_deployment_profile_info`           | gauge     | `profile`               | Active deployment profile                                              |
+| `engram_pgvector_ready`                    | gauge     | —                       | Whether pgvector extension is reachable                                |
+| `engram_embeddings_cache_hits_total`       | counter   | —                       | Embedding cache hits (from EmbeddingsService)                          |
+| `engram_embeddings_cache_misses_total`     | counter   | —                       | Embedding cache misses                                                 |
+| `engram_agent_memory_operations_total`     | counter   | `agent`, `op`, `status` | Store/recall ops per agent (API key) — primary-memory adoption (WP5)   |
 
 Standard Node.js process metrics (`process_cpu_seconds_total`, `nodejs_heap_size_bytes`, etc.) are also exposed automatically by `prom-client`.
+
+### Per-agent memory usage
+
+`engram_agent_memory_operations_total` shows whether each agent actually uses
+ENGRAM as primary memory. The `agent` label is the authenticated API-key id (or
+`local` for unauthenticated/stdio calls); `op` is `store` or `recall`.
+
+Store/recall rate per agent:
+
+```promql
+sum by (agent, op) (rate(engram_agent_memory_operations_total[5m]))
+```
+
+Daily adoption (an agent with no series has never used ENGRAM):
+
+```promql
+sum by (agent) (increase(engram_agent_memory_operations_total[1d]))
+```
 
 ### Prometheus scrape config
 

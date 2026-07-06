@@ -16,6 +16,8 @@ export class MetricsService implements OnModuleDestroy {
   readonly memoriesPromotedTotal: Counter;
   readonly reindexOpsTotal: Counter<'status'>;
   readonly consolidationOpsTotal: Counter<'status'>;
+  /** Per-agent store/recall counter so we can tell whether each agent actually uses ENGRAM (WP5 T13). */
+  readonly agentMemoryOpsTotal: Counter<'agent' | 'op' | 'status'>;
   readonly activeMcpSessions: Gauge;
 
   constructor() {
@@ -57,6 +59,13 @@ export class MetricsService implements OnModuleDestroy {
       registers: [this.registry],
     });
 
+    this.agentMemoryOpsTotal = new Counter({
+      name: 'engram_agent_memory_operations_total',
+      help: 'Store/recall operations by agent (API key) and outcome',
+      labelNames: ['agent', 'op', 'status'],
+      registers: [this.registry],
+    });
+
     this.activeMcpSessions = new Gauge({
       name: 'engram_active_mcp_sessions',
       help: 'Number of active Streamable HTTP MCP sessions',
@@ -81,6 +90,18 @@ export class MetricsService implements OnModuleDestroy {
   ): void {
     this.memoryOpsTotal.inc({ op, tier, status });
     this.memoryOpDurationSeconds.observe({ op, tier }, durationMs / 1000);
+  }
+
+  /**
+   * Record a store/recall operation attributed to an agent (WP5 T13). `agent`
+   * is the authenticated API-key id (or a coarse label like `local` for stdio).
+   */
+  recordAgentMemoryOp(
+    agent: string,
+    op: 'store' | 'recall',
+    status: 'success' | 'error',
+  ): void {
+    this.agentMemoryOpsTotal.inc({ agent, op, status });
   }
 
   onModuleDestroy(): void {

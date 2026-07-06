@@ -3,6 +3,7 @@ import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { GENERIC_CLIENT_ERROR_DETAIL } from '../security/client-error.util';
 
 /**
@@ -101,6 +102,69 @@ describe('MemoryController', () => {
 
   it('should have memory service dependency', () => {
     expect(memoryService).toBeDefined();
+  });
+
+  // WP5 T13: per-agent store/recall metrics, labeled by the authenticated apiKeyId.
+  describe('per-agent memory metrics', () => {
+    const recordAgentMemoryOp = jest.fn();
+    let ctl: MemoryController;
+    let svc: { recall: jest.Mock; remember: jest.Mock };
+
+    beforeEach(async () => {
+      jest.clearAllMocks();
+      process.env.MCP_ADMIN_TOKEN = 'test-admin-token-12345';
+      svc = {
+        recall: jest.fn().mockResolvedValue([]),
+        remember: jest.fn().mockResolvedValue({
+          memory: { id: 'm1' },
+          resolvedType: 'long-term',
+          wasDeduped: false,
+        }),
+      };
+      const module: TestingModule = await Test.createTestingModule({
+        controllers: [MemoryController],
+        providers: [
+          { provide: MemoryService, useValue: svc },
+          { provide: ReindexQueueService, useValue: {} },
+          { provide: ConsolidationService, useValue: {} },
+          { provide: MetricsService, useValue: { recordAgentMemoryOp } },
+        ],
+      }).compile();
+      ctl = module.get<MemoryController>(MemoryController);
+    });
+
+    it('records a store op labeled by the authenticated apiKeyId', async () => {
+      await ctl.remember(
+        { userId: 'qp', content: 'a durable fact' },
+        { apiKeyId: 'key-1' },
+      );
+      expect(recordAgentMemoryOp).toHaveBeenCalledWith(
+        'key-1',
+        'store',
+        'success',
+      );
+    });
+
+    it('records a recall op, defaulting the agent to "local" when unauthenticated', async () => {
+      await ctl.recall({ userId: 'qp', query: 'anything' });
+      expect(recordAgentMemoryOp).toHaveBeenCalledWith(
+        'local',
+        'recall',
+        'success',
+      );
+    });
+
+    it('records an error outcome when the store fails', async () => {
+      svc.remember.mockRejectedValueOnce(new Error('boom'));
+      await expect(
+        ctl.remember({ userId: 'qp', content: 'x' }, { apiKeyId: 'key-1' }),
+      ).rejects.toThrow();
+      expect(recordAgentMemoryOp).toHaveBeenCalledWith(
+        'key-1',
+        'store',
+        'error',
+      );
+    });
   });
 
   describe('getMcpTools', () => {
