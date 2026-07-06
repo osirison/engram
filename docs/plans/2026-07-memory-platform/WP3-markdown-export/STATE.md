@@ -15,18 +15,18 @@ Update one row per task as it lands; commit incrementally.
 
 Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 
-| Task     | Deliverable                                          | Status | Both-levels tests | Notes                                                                          |
-| -------- | ---------------------------------------------------- | ------ | ----------------- | ------------------------------------------------------------------------------ |
-| T1       | `packages/memory-interchange` scaffold + frontmatter | ✅     | service ✓         | build/typecheck/lint/test green; 10 schema specs                               |
-| T2       | slug + wikilink utilities                            | ✅     | service ✓         | slugify/buildFilename + emit/parse/escape wikilinks; 26 specs                  |
-| T3       | `serializeMemory()` + `parseDocument()`              | ✅     | service ✓         | golden doc + round-trip (---/[[x]]/## Related content) + single mode; 48 specs |
-| T4       | edge collector (metadata + MemoryLink)               | ⬜     |                   |                                                                                |
-| T5       | `MemoryExportService` orchestrator                   | ⬜     |                   |                                                                                |
-| T6       | CLI `export` (first surface)                         | ⬜     |                   |                                                                                |
-| T7       | MCP tool `export_memories`                           | ⬜     |                   |                                                                                |
-| T8       | Web UI download-as-zip (last surface)                | ⬜     |                   |                                                                                |
-| T9       | round-trip contract test harness                     | ⬜     |                   |                                                                                |
-| SHARED-1 | `MemoryLink` schema + migration (additive)           | ⬜     |                   | deferred; T4 reads it capability-guarded. Needs docker + serial migration      |
+| Task     | Deliverable                                          | Status | Both-levels tests | Notes                                                                             |
+| -------- | ---------------------------------------------------- | ------ | ----------------- | --------------------------------------------------------------------------------- |
+| T1       | `packages/memory-interchange` scaffold + frontmatter | ✅     | service ✓         | build/typecheck/lint/test green; 10 schema specs                                  |
+| T2       | slug + wikilink utilities                            | ✅     | service ✓         | slugify/buildFilename + emit/parse/escape wikilinks; 26 specs                     |
+| T3       | `serializeMemory()` + `parseDocument()`              | ✅     | service ✓         | golden doc + round-trip (---/[[x]]/## Related content) + single mode; 48 specs    |
+| T4       | edge collector (metadata + MemoryLink)               | ✅     | service ✓         | all 4 metadata kinds + MemoryLink (guarded) → canonical edges; dangling; 12 specs |
+| T5       | `MemoryExportService` orchestrator                   | ⬜     |                   |                                                                                   |
+| T6       | CLI `export` (first surface)                         | ⬜     |                   |                                                                                   |
+| T7       | MCP tool `export_memories`                           | ⬜     |                   |                                                                                   |
+| T8       | Web UI download-as-zip (last surface)                | ⬜     |                   |                                                                                   |
+| T9       | round-trip contract test harness                     | ⬜     |                   |                                                                                   |
+| SHARED-1 | `MemoryLink` schema + migration (additive)           | ⬜     |                   | deferred; T4 reads it capability-guarded. Needs docker + serial migration         |
 
 ## Decisions locked (deviations from PLAN noted)
 
@@ -46,3 +46,10 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
   committed style so the diff is only the new importer entry (no churn).
 - **SHARED-1 deferred:** T1→T6 need no docker/DB (leaf lib pure TS; T4/T5 use mocked
   Prisma). Land the usable CLI export first; do SHARED-1 as a separate migration PR.
+- **T4 semantic fix (deviation from PLAN §4.3):** the PLAN table row "source memory
+  `insightId` → derived-from → insight" is backwards. T4 emits `source-of → insight`
+  (the correct inverse of the insight's `derived-from → source`); both metadata
+  encodings converge on the same deduped edge pair. Documented in `edge-collector.ts`.
+- **Worktree env gate:** a fresh worktree must run `pnpm db:generate` then `pnpm build`
+  before `pnpm --filter mcp-server typecheck` passes (Prisma client is gitignored and
+  dependent package `dist` are absent otherwise — not a WP3 defect; see suite STATE).

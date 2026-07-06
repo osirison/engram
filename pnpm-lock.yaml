@@ -129,6 +129,9 @@ importers:
       '@engram/embeddings':
         specifier: workspace:^
         version: link:../../packages/embeddings
+      '@engram/memory-interchange':
+        specifier: workspace:^
+        version: link:../../packages/memory-interchange
       '@engram/memory-lite':
         specifier: workspace:^
         version: link:../../packages/memory-lite
