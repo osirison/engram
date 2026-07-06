@@ -285,8 +285,29 @@ export interface BackendCapabilities {
   limitation: string | null;
 }
 
+/** Filters for a markdown-vault export (WP3 T8). Dates are ISO-8601 strings. */
+export interface ExportMemoriesParams {
+  userId: string;
+  includeStm?: boolean;
+  tags?: string[];
+  scope?: string | null;
+  type?: 'short-term' | 'long-term';
+  dateFrom?: string;
+  dateTo?: string;
+  mode?: 'multi' | 'single';
+}
+
+/** The in-memory vault returned by an export: `relativePath → file content`. */
+export interface ExportMemoriesResult {
+  files: Record<string, string>;
+  manifest: unknown;
+}
+
 export interface EngramBackend {
   capabilities(): Promise<BackendCapabilities>;
+
+  /** Export a user's memories as an Obsidian vault (WP3 T8, via export_memories). */
+  exportMemories(params: ExportMemoriesParams): Promise<ExportMemoriesResult>;
 
   listMemories(params: ListMemoriesParams): Promise<ListMemoriesResult>;
   listStmMemories(params: ListStmMemoriesParams): Promise<ListStmMemoriesResult>;

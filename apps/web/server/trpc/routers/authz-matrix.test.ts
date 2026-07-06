@@ -40,6 +40,7 @@ function makeBackend(): EngramBackend {
     bulkDeleteMemories: vi.fn().mockResolvedValue({ deleted: ['a'], failed: [] }),
     listMemoryAudit: vi.fn().mockResolvedValue([]),
     restoreMemory: vi.fn().mockResolvedValue({ id: 'm1' }),
+    exportMemories: vi.fn().mockResolvedValue({ files: {}, manifest: {} }),
     getMemoryStats: vi.fn().mockResolvedValue({ total: 0 }),
     getActivitySeries: vi.fn().mockResolvedValue([]),
     getHealth: vi.fn(),
@@ -79,6 +80,7 @@ const CALLS: Array<{ name: string; run: (u: string) => Promise<unknown> }> = [
   { name: 'memory.reembed', run: (u) => api().memory.reembed({ userId: u, memoryId: 'm1' }) },
   { name: 'memory.auditLog', run: (u) => api().memory.auditLog({ userId: u, memoryId: 'm1' }) },
   { name: 'memory.restore', run: (u) => api().memory.restore({ userId: u, memoryId: 'm1' }) },
+  { name: 'memory.export', run: (u) => api().memory.export({ userId: u }) },
   { name: 'analytics.stats', run: (u) => api().analytics.stats({ userId: u }) },
   { name: 'analytics.activity', run: (u) => api().analytics.activity({ userId: u }) },
 ];

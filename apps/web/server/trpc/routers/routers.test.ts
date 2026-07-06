@@ -34,6 +34,10 @@ function makeBackend(overrides: Partial<EngramBackend> = {}): EngramBackend {
     getMemoryStats: vi.fn().mockResolvedValue({ total: 0 }),
     getActivitySeries: vi.fn().mockResolvedValue([]),
     listMemoryOwners: vi.fn().mockResolvedValue([]),
+    exportMemories: vi.fn().mockResolvedValue({
+      files: { 'index.md': '# index', 'memories/a--a.md': 'doc a', 'manifest.json': '{}' },
+      manifest: { counts: { total: 1, longTerm: 1, shortTerm: 0, files: 1, failed: 0 } },
+    }),
     ...overrides,
   } as unknown as EngramBackend;
 }
@@ -69,6 +73,32 @@ describe('memory router', () => {
         limit: 25,
       })
     );
+  });
+
+  it('export passes filters through and returns a base64 zip of the vault', async () => {
+    const backend = makeBackend();
+    const api = caller(backend);
+    const result = await api.memory.export({
+      userId: 'qp',
+      includeStm: true,
+      mode: 'single',
+      tags: ['decision'],
+      scope: 'project:engram',
+    });
+    expect(backend.exportMemories).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'qp',
+        includeStm: true,
+        mode: 'single',
+        tags: ['decision'],
+        scope: 'project:engram',
+      })
+    );
+    expect(result.fileName).toBe('engram-memories.zip');
+    expect(result.fileCount).toBe(3);
+    expect(typeof result.zipBase64).toBe('string');
+    expect(result.zipBase64.length).toBeGreaterThan(0);
+    expect(result.counts).toMatchObject({ total: 1, files: 1 });
   });
 
   it('throws NOT_FOUND when a memory is missing', async () => {

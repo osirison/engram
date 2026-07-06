@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { assertCanManageUser, protectedProcedure, router } from '../trpc';
+import { buildVaultZipBase64 } from '../../backend/vault-zip';
 
 const userId = z.string().min(1, 'A user is required.').max(256);
 const memoryId = z.string().min(1).max(256);
@@ -60,7 +61,47 @@ const deleteInput = z.object({
   scope: z.string().max(256).nullish(),
 });
 
+// WP3 T8: markdown-vault export filters.
+const exportInput = z.object({
+  userId,
+  includeStm: z.boolean().optional(),
+  tags: z.array(z.string().max(100)).max(50).optional(),
+  scope: z.string().max(256).nullish(),
+  type: z.enum(['short-term', 'long-term']).optional(),
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional(),
+  mode: z.enum(['multi', 'single']).optional(),
+});
+
 export const memoryRouter = router({
+  // WP3 T8: export the user's memories as an Obsidian-compatible markdown vault,
+  // returned as a base64 zip the browser decodes and downloads. Reuses the
+  // scope-gated, delegable `export_memories` MCP tool through the backend.
+  export: protectedProcedure.input(exportInput).mutation(async ({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    const { files, manifest } = await ctx.backend.exportMemories({
+      userId: input.userId,
+      includeStm: input.includeStm,
+      tags: input.tags,
+      scope: input.scope ?? undefined,
+      type: input.type,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      mode: input.mode,
+    });
+    const zipBase64 = await buildVaultZipBase64(files);
+    const counts =
+      manifest && typeof manifest === 'object' && 'counts' in manifest
+        ? (manifest as { counts: unknown }).counts
+        : null;
+    return {
+      fileName: 'engram-memories.zip',
+      fileCount: Object.keys(files).length,
+      zipBase64,
+      counts,
+    };
+  }),
+
   list: protectedProcedure.input(listInput).query(({ ctx, input }) => {
     assertCanManageUser(ctx.session, input.userId);
     return ctx.backend.listMemories({

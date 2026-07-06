@@ -24,7 +24,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 | T5       | `MemoryExportService` orchestrator                   | ✅     | service ✓          | LTM/STM paging, sanitize, MOC, manifest, determinism, single mode; 9 specs        |
 | T6       | CLI `export` (first surface)                         | ✅     | service + wiring ✓ | parseArgs/buildOptions + DirectorySink + runExport→disk wiring; 10 specs          |
 | T7       | MCP tool `export_memories`                           | ✅     | service + wiring ✓ | inline/path branch + registration/scope-gate/delegation dispatch wiring; 9 specs  |
-| T8       | Web UI download-as-zip (last surface)                | ⬜     |                    |                                                                                   |
+| T8       | Web UI download-as-zip (last surface)                | ✅     | service + wiring ✓ | tRPC export→zip + ExportDialog + navigator button; router/authz/component specs   |
 | T9       | round-trip contract test harness                     | ✅     | service + e2e stub | durableProjection helper + 6 parse-side specs; e2e stub (todo, WP4 completes)     |
 | SHARED-1 | `MemoryLink` schema + migration (additive)           | ⬜     |                    | deferred; T4 reads it capability-guarded. Needs docker + serial migration         |
 
@@ -53,3 +53,20 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 - **Worktree env gate:** a fresh worktree must run `pnpm db:generate` then `pnpm build`
   before `pnpm --filter mcp-server typecheck` passes (Prisma client is gitignored and
   dependent package `dist` are absent otherwise — not a WP3 defect; see suite STATE).
+- **T8 architecture (deviation from PLAN §T8):** the PLAN wanted a new streaming-zip
+  HTTP endpoint _on mcp-server_. Instead T8 reuses the already-tested, scope-gated,
+  delegable `export_memories` MCP tool (T7): the web backend calls it, the tRPC
+  `memory.export` procedure zips the returned files (jszip → base64), and the browser
+  decodes + downloads. **Rationale:** a new data-serving HTTP route on mcp-server is a
+  fresh auth surface (gap G1 / §8 risk 6) that would duplicate the MCP auth logic;
+  reusing the tool avoids that entirely. Trade-off: the vault is assembled in memory
+  (bounded by `WEB_EXPORT_MAX_INLINE=2000`); beyond that the backend steers users to the
+  CLI (T6), which is the true-streaming large-export path.
+
+## Status summary
+
+**T1–T9 all done + verified; full monorepo gate green** (`build` · `typecheck` · `lint` ·
+`docs:check` · `test` — 27/27 turbo tasks). SHARED-1 deferred to a separate migration PR
+(additive; the `loadMemoryLinks` seam in `MemoryExportService` reads it when present).
+Usable today: CLI (`pnpm --filter mcp-server export`), MCP tool `export_memories`, and the
+web Export button.
