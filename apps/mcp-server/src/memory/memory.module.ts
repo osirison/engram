@@ -17,6 +17,14 @@ import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
 import { InsightExtractionService } from './insight-extraction.service';
 import { MemoryExportService } from './export/memory-export.service';
+import {
+  MemoryImportService,
+  ImportLedgerService,
+  LinkResolver,
+  SecretScanner,
+  ADAPTER_REGISTRY,
+  buildAdapterRegistry,
+} from '@engram/memory-import';
 import type { ProfileCapabilities } from '@engram/config';
 import { MetricsModule } from '../metrics/metrics.module';
 
@@ -62,6 +70,17 @@ export class MemoryModule {
       // Markdown export (WP3 T5) reads LTM (+ optional STM) via Postgres.
       providers.push(MemoryExportService);
       exports.push(MemoryExportService);
+      // Agentic memory import (WP4 T3/T12/T13) — provided directly here so it
+      // reuses this module's single MemoryLtmService (like MemoryExportService)
+      // rather than nesting MemoryImportModule (which would duplicate it).
+      providers.push(
+        ImportLedgerService,
+        LinkResolver,
+        SecretScanner,
+        { provide: ADAPTER_REGISTRY, useFactory: buildAdapterRegistry },
+        MemoryImportService,
+      );
+      exports.push(MemoryImportService);
     }
 
     return {
