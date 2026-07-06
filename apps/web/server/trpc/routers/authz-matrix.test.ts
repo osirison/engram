@@ -91,4 +91,16 @@ describe('per-operator tenant binding — allowed/forbidden matrix (WP2 T9)', ()
   it.each(CALLS)('$name forbids an unbound tenant (other) with FORBIDDEN', async ({ run }) => {
     await expect(run('other')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  it('meta.owners filters the switcher list to the bound tenant (WP2 T9)', async () => {
+    const backend = makeBackend();
+    (backend.listMemoryOwners as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { userId: 'qp', count: 3, lastActivityAt: null },
+      { userId: 'other', count: 1, lastActivityAt: null },
+    ]);
+    const ctx: TRPCContext = { session, backend };
+    const owners = await createCaller(ctx).meta.owners();
+    // Only the bound owner (qp) is surfaced; 'other' is filtered out.
+    expect(owners.map((o) => o.userId)).toEqual(['qp']);
+  });
 });

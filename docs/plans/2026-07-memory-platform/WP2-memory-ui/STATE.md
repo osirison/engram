@@ -31,8 +31,24 @@ in one worktree because tasks overlap heavily on shared files (parallel worktree
 collide). Legend: ⬜ todo · 🟨 in-progress · ✅ done (committed).
 
 **ALL TASKS COMPLETE.** SHARED-2 + T1–T9 landed on `feat/memory-ui-wp2`. Closing gate green:
-`pnpm build`/`typecheck`/`lint`/`test` all pass; the 3 DB/Redis-gated integration suites
-(SHARED-2 round-trip, T1 keyset walk, T2 SCAN paging) verified live. Ready for PR/review.
+`pnpm build`/`typecheck`/`lint`/`test` all pass; **4** DB/Redis-gated integration suites
+(SHARED-2 round-trip, T1 keyset walk, T2 SCAN paging, T5 restore-by-original-id) verified
+live against the dev Postgres/Redis.
+
+**Cross-worktree coordination (PR note):** SHARED-2's migration
+`20260705190357_memory_version_and_audit` was applied to the _shared_ dev Postgres — another
+worktree running `prisma migrate status` will see a migration not in its dir (expected drift;
+serialize this migration with other WPs' per the suite README). origin/main advanced by one
+unrelated marketing-site commit (`3241bae`) with zero WP2 overlap.
+
+**Minor client-side polish deferred (server enforcement is complete, tested):** T9 filters the
+scope-switcher owner list server-side (`meta.owners`) + exposes `meta.allowedTenants`, but the
+free-text switcher entry gate and a settings-page binding surface are not wired; T3's optional
+"hide sort/date-range controls on the short-term view" (D3) is not implemented. None are
+security or data-correctness gaps.
+
+**Not run locally:** `test:e2e:docker` (separate CI-only docker command, not in `pnpm test`);
+no e2e spec asserts prose on the changed `get_memory`/`delete_memory`/`promote_memory` tools.
 
 | #        | Task                                                       | Depends  | Status | Commit                                                                                    |
 | -------- | ---------------------------------------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------- |
