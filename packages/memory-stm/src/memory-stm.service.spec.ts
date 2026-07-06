@@ -61,9 +61,11 @@ describe('MemoryStmService', () => {
       expect(result.createdAt).toBeInstanceOf(Date);
       expect(result.updatedAt).toBeInstanceOf(Date);
       expect(result.expiresAt).toBeInstanceOf(Date);
+      // Stamped at version 1 for the optimistic-concurrency CAS (WP2 T4).
+      expect(result.version).toBe(1);
       expect(mockRedisService.set).toHaveBeenCalledWith(
         expect.stringContaining('memory:stm:clq1234567890abcdef1234:'),
-        expect.stringContaining('"content":"Test memory content"'),
+        expect.stringContaining('"version":1'),
         3600
       );
     });
@@ -200,6 +202,71 @@ describe('MemoryStmService', () => {
         expect.stringContaining('"content":"Updated content"'),
         7200
       );
+    });
+
+    // ── WP2 T4: optimistic concurrency (version CAS) ──────────────────────────
+    const versioned = (version: number | undefined) => ({
+      id: 'mem123',
+      userId: 'clq1234567890abcdef1234',
+      content: 'Original content',
+      metadata: { type: 'note' },
+      tags: ['original'],
+      type: 'short-term' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      expiresAt: new Date(Date.now() + 3600000),
+      ttl: 3600,
+      ...(version !== undefined ? { version } : {}),
+    });
+
+    it('bumps version and succeeds when expectedVersion matches', async () => {
+      mockRedisService.get.mockResolvedValue(JSON.stringify(versioned(4)));
+      mockRedisService.set.mockResolvedValue('OK');
+
+      const result = await service.update('clq1234567890abcdef1234', 'mem123', {
+        content: 'new',
+        expectedVersion: 4,
+      });
+
+      expect(result.version).toBe(5);
+      expect(mockRedisService.set).toHaveBeenCalledWith(
+        'memory:stm:clq1234567890abcdef1234:mem123',
+        expect.stringContaining('"version":5'),
+        expect.any(Number)
+      );
+    });
+
+    it('throws StmVersionConflictError when expectedVersion is stale', async () => {
+      mockRedisService.get.mockResolvedValue(JSON.stringify(versioned(6)));
+      mockRedisService.set.mockResolvedValue('OK');
+
+      await expect(
+        service.update('clq1234567890abcdef1234', 'mem123', {
+          content: 'new',
+          expectedVersion: 3,
+        })
+      ).rejects.toMatchObject({ name: 'StmVersionConflictError', currentVersion: 6 });
+      // The write must not happen on conflict.
+      expect(mockRedisService.set).not.toHaveBeenCalled();
+    });
+
+    it('treats a legacy payload with no version as version 1', async () => {
+      mockRedisService.get.mockResolvedValue(JSON.stringify(versioned(undefined)));
+      mockRedisService.set.mockResolvedValue('OK');
+
+      const result = await service.update('clq1234567890abcdef1234', 'mem123', {
+        content: 'new',
+        expectedVersion: 1,
+      });
+      expect(result.version).toBe(2);
+    });
+
+    it('keeps last-write-wins when no expectedVersion is given', async () => {
+      mockRedisService.get.mockResolvedValue(JSON.stringify(versioned(9)));
+      mockRedisService.set.mockResolvedValue('OK');
+
+      const result = await service.update('clq1234567890abcdef1234', 'mem123', { content: 'new' });
+      expect(result.version).toBe(10);
     });
 
     it('should preserve existing fields when not updated', async () => {

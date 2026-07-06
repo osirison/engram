@@ -32,6 +32,7 @@ describe('MemoryService', () => {
     expiresAt: new Date(Date.now() + 86400000),
     ttl: 86400,
     accessCount: 0,
+    version: 1,
   };
 
   const mockLtmMemory: LtmMemory = {
@@ -45,6 +46,7 @@ describe('MemoryService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     expiresAt: null,
+    version: 1,
   };
 
   beforeEach(async () => {
@@ -63,6 +65,7 @@ describe('MemoryService', () => {
       delete: jest.fn(),
       list: jest.fn(),
       promote: jest.fn(),
+      reembed: jest.fn(),
       semanticSearch: jest.fn(),
       reindex: jest.fn(),
     };
@@ -232,6 +235,58 @@ describe('MemoryService', () => {
   });
 
   describe('listMemories', () => {
+    it('type=short-term queries STM only and passes the SCAN cursor through', async () => {
+      stmService.list.mockResolvedValue({
+        items: [mockStmMemory],
+        totalCount: 1,
+        hasNextPage: true,
+        hasPreviousPage: false,
+        startCursor: '0',
+        endCursor: '42',
+      });
+
+      const result = await service.listMemories('user-1', {
+        type: 'short-term',
+        limit: 20,
+        cursor: '17',
+        scope: 'agent:alpha',
+        tags: ['x'],
+      });
+
+      // STM-only: LTM is never touched, and the Redis SCAN cursor is forwarded.
+      expect(ltmService.list).not.toHaveBeenCalled();
+      expect(stmService.list).toHaveBeenCalledWith('user-1', {
+        limit: 20,
+        cursor: '17',
+        scope: 'agent:alpha',
+        tags: ['x'],
+      });
+      expect(result.items).toEqual([mockStmMemory]);
+      expect(result.endCursor).toBe('42');
+      expect(result.hasNextPage).toBe(true);
+    });
+
+    it('type=long-term queries LTM only and never merges STM', async () => {
+      ltmService.list.mockResolvedValue({
+        items: [mockLtmMemory],
+        totalCount: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const result = await service.listMemories('user-1', {
+        type: 'long-term',
+        limit: 20,
+      });
+
+      expect(stmService.list).not.toHaveBeenCalled();
+      expect(ltmService.list).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ limit: 20 }),
+      );
+      expect(result.items).toEqual([mockLtmMemory]);
+    });
+
     it('should combine memories from both STM and LTM', async () => {
       stmService.list.mockResolvedValue({
         items: [mockStmMemory],
@@ -593,6 +648,70 @@ describe('MemoryService', () => {
     });
   });
 
+  describe('bulkDeleteMemories (WP2 T6)', () => {
+    it('reports per-item results across an STM+LTM mix with partial failures', async () => {
+      // stm-1 lives in STM; ltm-1 in LTM; gone-1 in neither (not-found).
+      stmService.delete.mockImplementation((_u: string, id: string) =>
+        id === 'stm-1'
+          ? Promise.resolve() // deleted from STM
+          : Promise.reject(new StmMemoryNotFoundError(id)),
+      );
+      ltmService.delete.mockImplementation((_u: string, id: string) =>
+        Promise.resolve(id === 'ltm-1'),
+      );
+
+      const result = await service.bulkDeleteMemories('user-1', [
+        'stm-1',
+        'ltm-1',
+        'gone-1',
+      ]);
+
+      expect(result.deleted.sort()).toEqual(['ltm-1', 'stm-1']);
+      expect(result.failed).toEqual([{ id: 'gone-1', reason: 'not-found' }]);
+    });
+
+    it('still counts a row as deleted when only vector cleanup failed (Postgres is truth)', async () => {
+      // deleteMemory resolves true even if the vector-store removal failed — the
+      // Postgres row is gone. Model that by returning true from ltm.delete.
+      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError('x'));
+      ltmService.delete.mockResolvedValue(true);
+
+      const result = await service.bulkDeleteMemories('user-1', ['a', 'b']);
+      expect(result.deleted.sort()).toEqual(['a', 'b']);
+      expect(result.failed).toEqual([]);
+    });
+
+    it('does not abort the batch when one id throws a hard error', async () => {
+      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError('x'));
+      ltmService.delete.mockImplementation((_u: string, id: string) =>
+        id === 'boom'
+          ? Promise.reject(new Error('db exploded'))
+          : Promise.resolve(true),
+      );
+
+      const result = await service.bulkDeleteMemories('user-1', [
+        'ok-1',
+        'boom',
+        'ok-2',
+      ]);
+      expect(result.deleted.sort()).toEqual(['ok-1', 'ok-2']);
+      expect(result.failed).toEqual([{ id: 'boom', reason: 'db exploded' }]);
+    });
+
+    it('de-duplicates repeated ids', async () => {
+      stmService.delete.mockRejectedValue(new StmMemoryNotFoundError('x'));
+      ltmService.delete.mockResolvedValue(true);
+
+      const result = await service.bulkDeleteMemories('user-1', [
+        'a',
+        'a',
+        'a',
+      ]);
+      expect(result.deleted).toEqual(['a']);
+      expect(ltmService.delete).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('promoteMemory', () => {
     it('should promote memory from STM to LTM', async () => {
       ltmService.promote.mockResolvedValue(mockLtmMemory);
@@ -618,6 +737,35 @@ describe('MemoryService', () => {
       await expect(service.promoteMemory('user-1', 'stm-123')).rejects.toBe(
         quotaError,
       );
+    });
+  });
+
+  describe('reembedMemory (WP2 T7)', () => {
+    it('delegates to LTM reembed when the id is not a live STM memory', async () => {
+      stmService.findById.mockRejectedValue(
+        new StmMemoryNotFoundError('ltm-1'),
+      );
+      ltmService.reembed.mockResolvedValue(mockLtmMemory);
+
+      const result = await service.reembedMemory('user-1', 'ltm-1');
+
+      expect(result).toEqual(mockLtmMemory);
+      expect(ltmService.reembed).toHaveBeenCalledWith(
+        'user-1',
+        'ltm-1',
+        undefined,
+        undefined,
+      );
+    });
+
+    it('rejects an STM id with a clear error and never calls LTM reembed', async () => {
+      // The id resolves in STM — STM is not vector-indexed, so reembed is invalid.
+      stmService.findById.mockResolvedValue(mockStmMemory);
+
+      await expect(service.reembedMemory('user-1', 'stm-123')).rejects.toThrow(
+        /short-term and is not vector-indexed/,
+      );
+      expect(ltmService.reembed).not.toHaveBeenCalled();
     });
   });
 

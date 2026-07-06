@@ -48,6 +48,11 @@ export interface StmMemory extends Memory {
   expiresAt: Date; // Always set for STM
   ttl: number; // Current TTL in seconds
   /**
+   * Optimistic-concurrency counter (WP2 T4/G4). Stamped `1` on create, bumped on
+   * every update. Legacy payloads without it are treated as version 1 on read.
+   */
+  version: number;
+  /**
    * Number of times this memory has been retrieved via findById().
    * Used by the consolidation policy to identify frequently-accessed memories
    * that should be promoted to LTM. Only direct lookups are counted; list()
@@ -103,6 +108,12 @@ export const updateStmMemorySchema = z.object({
   metadata: metadataSchema,
   tags: tagsSchema,
   ttl: ttlSchema,
+  /**
+   * Optimistic-concurrency guard (WP2 T4). When set, the update fails with
+   * `StmVersionConflictError` unless it matches the stored version. Optional so
+   * legacy callers keep last-write-wins.
+   */
+  expectedVersion: z.number().int().min(1).optional(),
 });
 
 // List STM options schema
@@ -134,6 +145,21 @@ export class StmMemoryExpiredError extends Error {
   constructor(memoryId: string) {
     super(`STM Memory with ID ${memoryId} has expired`);
     this.name = 'StmMemoryExpiredError';
+  }
+}
+
+/**
+ * Raised when an update's `expectedVersion` does not match the stored version
+ * (WP2 T4/G4 — optimistic concurrency). Carries the current version so the
+ * caller can reload and re-diff.
+ */
+export class StmVersionConflictError extends Error {
+  constructor(
+    memoryId: string,
+    readonly currentVersion: number
+  ) {
+    super(`STM memory ${memoryId} was modified (currentVersion=${currentVersion})`);
+    this.name = 'StmVersionConflictError';
   }
 }
 

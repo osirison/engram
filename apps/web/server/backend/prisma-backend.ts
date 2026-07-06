@@ -1,15 +1,21 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
+import { decodeCursor, encodeCursor, keysetWhere } from './cursor';
 import { McpToolClient } from './mcp-client';
 import {
   BackendError,
   type ActivityPoint,
   type BackendCapabilities,
+  type BulkDeleteMemoriesParams,
+  type BulkDeleteResult,
   type DeleteMemoryParams,
   type EngramBackend,
   type HealthReport,
   type ListMemoriesParams,
   type ListMemoriesResult,
+  type ListStmMemoriesParams,
+  type ListStmMemoriesResult,
+  type MemoryAuditEntryDTO,
   type MemoryDTO,
   type MemoryOwner,
   type McpDelegationMode,
@@ -31,6 +37,7 @@ const memorySelect = {
   metadata: true,
   tags: true,
   type: true,
+  version: true,
   createdAt: true,
   updatedAt: true,
   expiresAt: true,
@@ -45,6 +52,7 @@ type MemoryRow = {
   metadata: Prisma.JsonValue;
   tags: string[];
   type: string;
+  version: number;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
@@ -76,10 +84,68 @@ function mapRow(row: MemoryRow, hasEmbedding: boolean): MemoryDTO {
     metadata,
     importance,
     hasEmbedding,
+    embeddingStale: metadata?.embeddingStale === true,
     isInsight,
+    version: row.version,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+    // TTL / access-count are STM-only (Redis); LTM rows never carry them.
+    ttlSeconds: null,
+    accessCount: null,
+  };
+}
+
+/**
+ * Shape of a memory as returned by the MCP `list_memories` / `get_memory` tools.
+ * Short-term items additionally carry `ttl`/`accessCount` and always an
+ * `expiresAt`; long-term items omit them. Dates arrive as ISO strings.
+ */
+type McpMemoryJson = {
+  id: string;
+  userId: string;
+  organizationId?: string | null;
+  scope?: string | null;
+  content: string;
+  metadata?: Prisma.JsonValue;
+  tags?: string[];
+  type?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  expiresAt?: string | null;
+  ttl?: number;
+  accessCount?: number;
+  version?: number;
+};
+
+/**
+ * Map an MCP-returned memory (used for the short-term tier, which has no Postgres
+ * row) to a `MemoryDTO`. STM is never vector-indexed, so `hasEmbedding` is false.
+ */
+function mapMcpMemory(m: McpMemoryJson): MemoryDTO {
+  const metadata = asRecord(m.metadata ?? null);
+  const importance =
+    metadata && typeof metadata.importance === 'number' ? metadata.importance : null;
+  const tags = Array.isArray(m.tags) ? m.tags : [];
+  return {
+    id: m.id,
+    userId: m.userId,
+    organizationId: m.organizationId ?? null,
+    scope: m.scope ?? null,
+    content: m.content,
+    type: (m.type === 'long-term' ? 'long-term' : 'short-term') as MemoryType,
+    tags,
+    metadata,
+    importance,
+    hasEmbedding: false,
+    embeddingStale: metadata?.embeddingStale === true,
+    isInsight: tags.includes('insight'),
+    version: typeof m.version === 'number' ? m.version : 1,
+    createdAt: m.createdAt ?? new Date(0).toISOString(),
+    updatedAt: m.updatedAt ?? m.createdAt ?? new Date(0).toISOString(),
+    expiresAt: m.expiresAt ?? null,
+    ttlSeconds: typeof m.ttl === 'number' ? m.ttl : null,
+    accessCount: typeof m.accessCount === 'number' ? m.accessCount : null,
   };
 }
 
@@ -217,6 +283,27 @@ export class PrismaEngramBackend implements EngramBackend {
     };
   }
 
+  /**
+   * Fail a cross-tenant write fast, with the honest limitation text, when the
+   * configured API key is `tenant-limited` and the target userId is not its own
+   * tenant (WP2 T9/D11/A10). Without this the MCP server would silently rewrite
+   * the userId back to the key tenant and the write would surface downstream as a
+   * confusing not-found. A no-op under an admin/unrestricted key.
+   */
+  private async assertTenantWriteAllowed(userId: string): Promise<void> {
+    const delegation = await this.resolveDelegation();
+    if (
+      delegation.mode === 'tenant-limited' &&
+      delegation.keyTenant !== null &&
+      userId !== delegation.keyTenant
+    ) {
+      throw new BackendError(
+        delegation.limitation ?? "This action is limited to the API key's own tenant.",
+        'WRITES_DISABLED'
+      );
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Reads (Postgres — source of truth)
   // ---------------------------------------------------------------------------
@@ -256,33 +343,86 @@ export class PrismaEngramBackend implements EngramBackend {
   }
 
   async listMemories(params: ListMemoriesParams): Promise<ListMemoriesResult> {
-    const where = this.buildWhere(params);
+    const baseWhere = this.buildWhere(params);
     const limit = Math.min(Math.max(params.limit, 1), 100);
-    const offset = params.cursor ? Math.max(parseInt(params.cursor, 10) || 0, 0) : 0;
     const sortBy = params.sortBy ?? 'createdAt';
     const sortOrder = params.sortOrder ?? 'desc';
+
+    // Keyset (seek) pagination (WP2 T1/D8): AND the direction-aware cursor
+    // predicate into the filter and order by (sortField, id). A malformed or
+    // legacy numeric offset cursor decodes to null → first page.
+    const cursor = decodeCursor(params.cursor);
+    const where: Prisma.MemoryWhereInput = cursor
+      ? { AND: [baseWhere, keysetWhere(sortBy, sortOrder, cursor)] }
+      : baseWhere;
 
     const [rows, totalCount] = await Promise.all([
       this.prisma.memory.findMany({
         where,
         select: memorySelect,
-        orderBy: { [sortBy]: sortOrder },
-        skip: offset,
-        take: limit,
+        orderBy: [{ [sortBy]: sortOrder }, { id: sortOrder }],
+        // Over-fetch by one to detect a further page without a second query.
+        take: limit + 1,
       }),
-      this.prisma.memory.count({ where }),
+      // totalCount is the full result set (base filter only) — a separate count.
+      this.prisma.memory.count({ where: baseWhere }),
     ]);
 
-    const withEmbedding = await this.embeddingFlags(rows.map((r) => r.id));
-    const items = rows.map((row) => mapRow(row as MemoryRow, withEmbedding.has(row.id)));
-    const nextOffset = offset + items.length;
-    const hasMore = nextOffset < totalCount;
+    const hasMore = rows.length > limit;
+    const pageRows = (hasMore ? rows.slice(0, limit) : rows) as MemoryRow[];
+    const withEmbedding = await this.embeddingFlags(pageRows.map((r) => r.id));
+    const items = pageRows.map((row) => mapRow(row, withEmbedding.has(row.id)));
+
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCursor({ v: last[sortBy].getTime(), id: last.id }) : null;
 
     return {
       items,
       totalCount,
-      nextCursor: hasMore ? String(nextOffset) : null,
+      nextCursor,
       hasMore,
+    };
+  }
+
+  /**
+   * List the live short-term (Redis) tier via the MCP server. STM has no Postgres
+   * row, so this never touches the DB. Degrades to an empty result with
+   * `unavailableReason` when no MCP server is configured (WP2 T2/D1).
+   */
+  async listStmMemories(params: ListStmMemoriesParams): Promise<ListStmMemoriesResult> {
+    if (!this.mcp) {
+      return {
+        items: [],
+        totalCount: 0,
+        nextCursor: null,
+        hasMore: false,
+        unavailableReason:
+          'Short-term memories are stored in Redis and require a configured ENGRAM server (ENGRAM_MCP_URL).',
+      };
+    }
+    const limit = Math.min(Math.max(params.limit, 1), 100);
+    const result = await this.mcp.call<{
+      memories?: McpMemoryJson[];
+      pagination?: { totalCount?: number; hasNextPage?: boolean; endCursor?: string };
+    }>('list_memories', {
+      userId: params.userId,
+      type: 'short-term',
+      limit,
+      ...(params.cursor ? { cursor: params.cursor } : {}),
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.tags && params.tags.length ? { tags: params.tags } : {}),
+    });
+
+    const items = (result.memories ?? []).map(mapMcpMemory);
+    // The SCAN cursor is complete when it returns to '0'.
+    const endCursor = result.pagination?.endCursor;
+    const nextCursor = endCursor && endCursor !== '0' ? endCursor : null;
+    return {
+      items,
+      totalCount: result.pagination?.totalCount ?? items.length,
+      nextCursor,
+      hasMore: result.pagination?.hasNextPage ?? false,
     };
   }
 
@@ -291,9 +431,30 @@ export class PrismaEngramBackend implements EngramBackend {
       where: { id: memoryId, userId },
       select: memorySelect,
     });
-    if (!row) return null;
-    const withEmbedding = await this.embeddingFlags([row.id]);
-    return mapRow(row as MemoryRow, withEmbedding.has(row.id));
+    if (row) {
+      const withEmbedding = await this.embeddingFlags([row.id]);
+      return mapRow(row as MemoryRow, withEmbedding.has(row.id));
+    }
+    // Postgres miss: the id may be a live short-term (Redis) memory, which has no
+    // DB row. Fall back to the MCP server, which checks STM then LTM (WP2 T2/D1).
+    if (!this.mcp) return null;
+    let result: (McpMemoryJson & { found?: boolean }) | string | undefined;
+    try {
+      result = await this.mcp.call<McpMemoryJson & { found?: boolean }>('get_memory', {
+        userId,
+        memoryId,
+      });
+    } catch {
+      // Server unreachable — a lookup returns null rather than throwing, matching
+      // the Postgres-only contract. Reachability is surfaced via capabilities().
+      return null;
+    }
+    // Structured not-found sentinel (WP2 T2/D2), or legacy prose (parsed to a
+    // string), or an empty payload — all mean "not found".
+    if (!result || typeof result !== 'object' || result.found === false || !result.id) {
+      return null;
+    }
+    return mapMcpMemory(result);
   }
 
   // ---------------------------------------------------------------------------
@@ -366,18 +527,149 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
-    await this.mcp.call('update_memory', {
-      userId: params.userId,
-      memoryId: params.memoryId,
-      ...(params.content !== undefined ? { content: params.content } : {}),
-      ...(params.tags !== undefined ? { tags: params.tags } : {}),
-      ...(params.scope ? { scope: params.scope } : {}),
-    });
+    await this.assertTenantWriteAllowed(params.userId);
+    try {
+      await this.mcp.call('update_memory', {
+        userId: params.userId,
+        memoryId: params.memoryId,
+        ...(params.content !== undefined ? { content: params.content } : {}),
+        ...(params.tags !== undefined ? { tags: params.tags } : {}),
+        ...(params.scope ? { scope: params.scope } : {}),
+        ...(params.ttl !== undefined ? { ttl: params.ttl } : {}),
+        ...(params.expectedVersion !== undefined
+          ? { expectedVersion: params.expectedVersion }
+          : {}),
+        ...(params.actorLabel ? { actorLabel: params.actorLabel } : {}),
+      });
+    } catch (error) {
+      // Optimistic-concurrency conflict (WP2 T4/D5): the tool surfaces a
+      // `CONFLICT:`-tagged message; re-raise it as a typed BackendError so the
+      // tRPC layer maps it to 409 and the UI shows the reload-and-rediff panel.
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('CONFLICT:')) {
+        throw new BackendError(message, 'CONFLICT');
+      }
+      throw error;
+    }
     const updated = await this.getMemory(params.userId, params.memoryId);
     if (!updated) {
       throw new BackendError('Memory not found after update.', 'NOT_FOUND');
     }
     return updated;
+  }
+
+  async promoteMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Promoting memories requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    await this.assertTenantWriteAllowed(userId);
+    // Promotion mints a NEW long-term id, so read the promoted memory from the
+    // structured tool result (WP2 T3/D2) rather than re-reading by the old id.
+    const result = await this.mcp.call<{ promoted?: boolean; memory?: McpMemoryJson } | string>(
+      'promote_memory',
+      {
+        userId,
+        memoryId,
+        ...(actorLabel ? { actorLabel } : {}),
+      }
+    );
+    if (result && typeof result === 'object' && result.memory) {
+      return mapMcpMemory(result.memory);
+    }
+    // Fallback for a legacy server that returned prose: re-read by the old id
+    // (works only if promotion happened to preserve it).
+    const promoted = await this.getMemory(userId, memoryId);
+    if (!promoted) {
+      throw new BackendError('Memory not found after promotion.', 'NOT_FOUND');
+    }
+    return promoted;
+  }
+
+  async reembedMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string | null,
+    actorLabel?: string
+  ): Promise<MemoryDTO> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Re-embedding requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    await this.assertTenantWriteAllowed(userId);
+    await this.mcp.call('reembed_memory', {
+      userId,
+      memoryId,
+      ...(scope ? { scope } : {}),
+      ...(actorLabel ? { actorLabel } : {}),
+    });
+    const updated = await this.getMemory(userId, memoryId);
+    if (!updated) {
+      throw new BackendError('Memory not found after re-embedding.', 'NOT_FOUND');
+    }
+    return updated;
+  }
+
+  /**
+   * Read a memory's audit history directly from Postgres (WP2 T5). The audit
+   * table lives in the same DB the console already reads; keeping this on the
+   * read path (Prisma) avoids a round-trip through the MCP server.
+   */
+  async listMemoryAudit(
+    userId: string,
+    memoryId: string,
+    limit: number
+  ): Promise<MemoryAuditEntryDTO[]> {
+    const take = Math.min(Math.max(limit, 1), 200);
+    const rows = await this.prisma.memoryAudit.findMany({
+      where: { userId, memoryId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        action: true,
+        actorType: true,
+        actorLabel: true,
+        delegated: true,
+        before: true,
+        after: true,
+        createdAt: true,
+      },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorType: r.actorType,
+      actorLabel: r.actorLabel,
+      delegated: r.delegated,
+      before: asRecord(r.before),
+      after: asRecord(r.after),
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  async restoreMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Restoring requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    await this.assertTenantWriteAllowed(userId);
+    await this.mcp.call('restore_memory', {
+      userId,
+      memoryId,
+      ...(actorLabel ? { actorLabel } : {}),
+    });
+    const restored = await this.getMemory(userId, memoryId);
+    if (!restored) {
+      throw new BackendError('Memory not found after restore.', 'NOT_FOUND');
+    }
+    return restored;
   }
 
   async deleteMemory(params: DeleteMemoryParams): Promise<{ deleted: boolean }> {
@@ -387,12 +679,45 @@ export class PrismaEngramBackend implements EngramBackend {
         'WRITES_DISABLED'
       );
     }
-    await this.mcp.call('delete_memory', {
+    await this.assertTenantWriteAllowed(params.userId);
+    // Parse the structured result (WP2 T2/D2/A10): the tool now reports the true
+    // outcome as JSON, so an already-gone row no longer looks like a success.
+    // Legacy servers returned prose — a missing/unparseable `deleted` defaults to
+    // the prior optimistic `true` so this stays backward-compatible.
+    const result = await this.mcp.call<{ deleted?: boolean } | string>('delete_memory', {
       userId: params.userId,
       memoryId: params.memoryId,
       ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.actorLabel ? { actorLabel: params.actorLabel } : {}),
     });
-    return { deleted: true };
+    const deleted =
+      result && typeof result === 'object' && typeof result.deleted === 'boolean'
+        ? result.deleted
+        : true;
+    return { deleted };
+  }
+
+  async bulkDeleteMemories(params: BulkDeleteMemoriesParams): Promise<BulkDeleteResult> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Deleting memories requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'WRITES_DISABLED'
+      );
+    }
+    await this.assertTenantWriteAllowed(params.userId);
+    const result = await this.mcp.call<{
+      deleted?: string[];
+      failed?: Array<{ id: string; reason: string }>;
+    }>('bulk_delete_memories', {
+      userId: params.userId,
+      memoryIds: params.memoryIds,
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.actorLabel ? { actorLabel: params.actorLabel } : {}),
+    });
+    return {
+      deleted: Array.isArray(result.deleted) ? result.deleted : [],
+      failed: Array.isArray(result.failed) ? result.failed : [],
+    };
   }
 
   // ---------------------------------------------------------------------------

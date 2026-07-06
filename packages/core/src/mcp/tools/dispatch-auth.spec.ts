@@ -323,6 +323,69 @@ describe('auth-aware tool dispatch', () => {
       }
     });
   });
+
+  describe('ToolCallContext passed to handlers (WP2 T5 / GAPS A30)', () => {
+    // A tool that echoes back the second (context) argument it received.
+    const contextTool: Tool = {
+      name: 'echo_context',
+      description: 'echoes its ToolCallContext',
+      inputSchema: z.object({ userId: z.string() }).strict(),
+      delegable: true,
+      handler: (_input, context): Promise<unknown> => Promise.resolve({ context }),
+    };
+
+    it('passes verified apiKeyId, scopes, delegated=false, and actorUserId for a pinned call', async () => {
+      const handler = capture([contextTool], { required: true });
+      const result = await handler(
+        { method: 'tools/call', params: { name: 'echo_context', arguments: { userId: 'x' } } },
+        {
+          authInfo: {
+            scopes: ['memories:write'],
+            extra: { userId: 'real-user', apiKeyId: 'key_abc' },
+          },
+        }
+      );
+      expect(parse(result).context).toEqual({
+        actorUserId: 'real-user',
+        apiKeyId: 'key_abc',
+        scopes: ['memories:write'],
+        delegated: false,
+      });
+    });
+
+    it('reports delegated=true and the target tenant when an admin delegates', async () => {
+      const handler = capture([contextTool], { required: true });
+      const result = await handler(
+        {
+          method: 'tools/call',
+          params: { name: 'echo_context', arguments: { userId: 'other-tenant' } },
+        },
+        {
+          authInfo: { scopes: ['admin'], extra: { userId: 'key-tenant', apiKeyId: 'key_admin' } },
+        }
+      );
+      expect(parse(result).context).toEqual({
+        actorUserId: 'other-tenant',
+        apiKeyId: 'key_admin',
+        scopes: ['admin'],
+        delegated: true,
+      });
+    });
+
+    it('carries no actor facts for an unauthenticated call', async () => {
+      const handler = capture([contextTool], { required: false });
+      const result = await handler({
+        method: 'tools/call',
+        params: { name: 'echo_context', arguments: { userId: 'self' } },
+      });
+      expect(parse(result).context).toEqual({
+        actorUserId: undefined,
+        apiKeyId: undefined,
+        scopes: [],
+        delegated: false,
+      });
+    });
+  });
 });
 
 describe('resolveActingUserId', () => {

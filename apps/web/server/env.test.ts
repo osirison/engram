@@ -67,6 +67,40 @@ describe('devAuthEnabled', () => {
         ENGRAM_DASHBOARD_DEV_AUTH: 'true',
       });
       expect(serverEnv.devAuthEnabled).toBe(false);
-    },
+    }
   );
+});
+
+describe('parseOperatorTenants + canOperatorManageUser (WP2 T9)', () => {
+  it('parses email:tenant|tenant;email:* into a lower-cased map', async () => {
+    const { parseOperatorTenants } = await import('./env');
+    const map = parseOperatorTenants('Alice@x.com:qp|ci-bot; bob@x.com:*');
+    expect(map.get('alice@x.com')).toEqual(['qp', 'ci-bot']);
+    expect(map.get('bob@x.com')).toBe('*');
+  });
+
+  it('skips malformed segments defensively', async () => {
+    const { parseOperatorTenants } = await import('./env');
+    const map = parseOperatorTenants(';:onlycolon;noColon;alice@x.com:;:;good@x.com:qp');
+    expect(map.size).toBe(1);
+    expect(map.get('good@x.com')).toEqual(['qp']);
+  });
+
+  it('allows any userId when no binding is configured (zero-config)', async () => {
+    const { canOperatorManageUser } = await loadEnv({ ENGRAM_OPERATOR_TENANTS: '' });
+    expect(canOperatorManageUser('anyone@x.com', 'qp')).toBe(true);
+    expect(canOperatorManageUser(null, 'qp')).toBe(true);
+  });
+
+  it('binds an operator to its tenants and forbids others', async () => {
+    const { canOperatorManageUser } = await loadEnv({
+      ENGRAM_OPERATOR_TENANTS: 'op@x.com:qp;admin@x.com:*',
+    });
+    expect(canOperatorManageUser('op@x.com', 'qp')).toBe(true);
+    expect(canOperatorManageUser('op@x.com', 'other')).toBe(false);
+    // A '*' binding manages any tenant.
+    expect(canOperatorManageUser('admin@x.com', 'other')).toBe(true);
+    // An operator with bindings configured but none of their own manages nobody.
+    expect(canOperatorManageUser('stranger@x.com', 'qp')).toBe(false);
+  });
 });

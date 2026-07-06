@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { protectedProcedure, router } from '../trpc';
+import { assertCanManageUser, protectedProcedure, router } from '../trpc';
 
 const userId = z.string().min(1, 'A user is required.').max(256);
 const memoryId = z.string().min(1).max(256);
@@ -21,6 +21,17 @@ const listInput = z.object({
   cursor: z.string().nullish(),
 });
 
+const listStmInput = z
+  .object({
+    userId,
+    tags: z.array(z.string()).max(50).optional(),
+    scope: z.string().max(256).nullish(),
+    limit: z.number().int().min(1).max(100).default(25),
+    // Opaque Redis SCAN cursor from a previous page.
+    cursor: z.string().max(256).nullish(),
+  })
+  .strict();
+
 const searchInput = z.object({
   userId,
   query: z.string().min(1, 'Enter a search query.').max(512),
@@ -37,6 +48,10 @@ const updateInput = z.object({
   content: z.string().min(1).max(10_240).optional(),
   tags: z.array(z.string().max(100)).max(50).optional(),
   scope: z.string().max(256).nullish(),
+  // STM-only: reset the TTL window on save (mirrors update-memory.dto.ts).
+  ttl: z.number().int().min(60).max(604800).optional(),
+  // Optimistic-concurrency guard (WP2 T4).
+  expectedVersion: z.number().int().min(1).optional(),
 });
 
 const deleteInput = z.object({
@@ -46,8 +61,9 @@ const deleteInput = z.object({
 });
 
 export const memoryRouter = router({
-  list: protectedProcedure.input(listInput).query(({ ctx, input }) =>
-    ctx.backend.listMemories({
+  list: protectedProcedure.input(listInput).query(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.listMemories({
       userId: input.userId,
       type: input.type,
       tags: input.tags,
@@ -60,10 +76,23 @@ export const memoryRouter = router({
       sortOrder: input.sortOrder,
       limit: input.limit,
       cursor: input.cursor ?? undefined,
-    })
-  ),
+    });
+  }),
+
+  // Live short-term (Redis) tier — served through the MCP server, never the DB.
+  listStm: protectedProcedure.input(listStmInput).query(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.listStmMemories({
+      userId: input.userId,
+      tags: input.tags,
+      scope: input.scope ?? undefined,
+      limit: input.limit,
+      cursor: input.cursor ?? undefined,
+    });
+  }),
 
   get: protectedProcedure.input(z.object({ userId, memoryId })).query(async ({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
     const memory = await ctx.backend.getMemory(input.userId, input.memoryId);
     if (!memory) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Memory not found.' });
@@ -71,8 +100,9 @@ export const memoryRouter = router({
     return memory;
   }),
 
-  search: protectedProcedure.input(searchInput).query(({ ctx, input }) =>
-    ctx.backend.searchMemories({
+  search: protectedProcedure.input(searchInput).query(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.searchMemories({
       userId: input.userId,
       query: input.query,
       limit: input.limit,
@@ -80,24 +110,99 @@ export const memoryRouter = router({
       scope: input.scope ?? undefined,
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
-    })
-  ),
+    });
+  }),
 
-  update: protectedProcedure.input(updateInput).mutation(({ ctx, input }) =>
-    ctx.backend.updateMemory({
+  update: protectedProcedure.input(updateInput).mutation(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.updateMemory({
       userId: input.userId,
       memoryId: input.memoryId,
       content: input.content,
       tags: input.tags,
       scope: input.scope ?? undefined,
-    })
-  ),
+      ttl: input.ttl,
+      expectedVersion: input.expectedVersion,
+      // Audit label is the signed-in operator, injected server-side — never
+      // trusted from the browser (WP2 T5).
+      actorLabel: ctx.session?.user?.email ?? undefined,
+    });
+  }),
 
-  delete: protectedProcedure.input(deleteInput).mutation(({ ctx, input }) =>
-    ctx.backend.deleteMemory({
+  reembed: protectedProcedure
+    .input(z.object({ userId, memoryId, scope: z.string().max(256).nullish() }))
+    .mutation(({ ctx, input }) => {
+      assertCanManageUser(ctx.session, input.userId);
+      return ctx.backend.reembedMemory(
+        input.userId,
+        input.memoryId,
+        input.scope ?? undefined,
+        ctx.session?.user?.email ?? undefined
+      );
+    }),
+
+  // Promote a short-term memory to long-term storage (WP2 T3).
+  promote: protectedProcedure.input(z.object({ userId, memoryId })).mutation(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.promoteMemory(
+      input.userId,
+      input.memoryId,
+      ctx.session?.user?.email ?? undefined
+    );
+  }),
+
+  // Audit history for a memory (WP2 T5). Read-only; served from Postgres.
+  auditLog: protectedProcedure
+    .input(z.object({ userId, memoryId, limit: z.number().int().min(1).max(200).default(50) }))
+    .query(({ ctx, input }) => {
+      assertCanManageUser(ctx.session, input.userId);
+      return ctx.backend.listMemoryAudit(input.userId, input.memoryId, input.limit);
+    }),
+
+  // Restore a hard-deleted memory from its delete snapshot (WP2 T5/G5).
+  restore: protectedProcedure.input(z.object({ userId, memoryId })).mutation(({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    return ctx.backend.restoreMemory(
+      input.userId,
+      input.memoryId,
+      ctx.session?.user?.email ?? undefined
+    );
+  }),
+
+  delete: protectedProcedure.input(deleteInput).mutation(async ({ ctx, input }) => {
+    assertCanManageUser(ctx.session, input.userId);
+    const result = await ctx.backend.deleteMemory({
       userId: input.userId,
       memoryId: input.memoryId,
       scope: input.scope ?? undefined,
-    })
-  ),
+      actorLabel: ctx.session?.user?.email ?? undefined,
+    });
+    // A truthful {deleted:false} (WP2 T2/A10) means the row was already gone —
+    // surface it as NOT_FOUND rather than a false success.
+    if (!result.deleted) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Memory not found.' });
+    }
+    return result;
+  }),
+
+  // Bulk delete up to 100 memories in one MCP call (WP2 T6).
+  bulkDelete: protectedProcedure
+    .input(
+      z
+        .object({
+          userId,
+          memoryIds: z.array(memoryId).min(1).max(100),
+          scope: z.string().max(256).nullish(),
+        })
+        .strict()
+    )
+    .mutation(({ ctx, input }) => {
+      assertCanManageUser(ctx.session, input.userId);
+      return ctx.backend.bulkDeleteMemories({
+        userId: input.userId,
+        memoryIds: input.memoryIds,
+        scope: input.scope ?? undefined,
+        actorLabel: ctx.session?.user?.email ?? undefined,
+      });
+    }),
 });

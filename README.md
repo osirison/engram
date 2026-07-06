@@ -164,6 +164,7 @@ Release SLO and quality gates live in [docs/RELEASE_GATES.md](docs/RELEASE_GATES
 | Detailed local setup and MCP client setup | [docs/SETUP.md](docs/SETUP.md)                                                       |
 | Release SLOs and quality gates            | [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md)                                       |
 | Current roadmap                           | [docs/roadmap.md](docs/roadmap.md)                                                   |
+| Marketing site domain/TLS runbook         | [docs/MARKETING_SITE_DOMAIN.md](docs/MARKETING_SITE_DOMAIN.md)                       |
 | MCP server details                        | [apps/mcp-server/README.md](apps/mcp-server/README.md)                               |
 | Web app details                           | [apps/web/README.md](apps/web/README.md)                                             |
 | Docs app details                          | [apps/docs/README.md](apps/docs/README.md)                                           |

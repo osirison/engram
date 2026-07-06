@@ -22,11 +22,23 @@ export interface MemoryDTO {
   /** Derived `metadata.importance` when the engine has annotated it. */
   importance: number | null;
   hasEmbedding: boolean;
+  /**
+   * True when `metadata.embeddingStale` — a content edit could not be re-embedded,
+   * so the stored vector no longer matches the content (WP2 T7). Repairable via
+   * `reembedMemory`.
+   */
+  embeddingStale: boolean;
   /** True when `metadata.isInsight` — a synthesised insight memory. */
   isInsight: boolean;
+  /** Optimistic-concurrency counter (WP2 T4); sent back as `expectedVersion` on edit. */
+  version: number;
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;
+  /** Remaining TTL in seconds for short-term memories; null for long-term. */
+  ttlSeconds: number | null;
+  /** STM retrieval counter (bumped on direct lookups); null for long-term. */
+  accessCount: number | null;
   /** Relevance score in [0,1], present only on semantic-search results. */
   score?: number;
 }
@@ -59,6 +71,34 @@ export interface ListMemoriesResult {
   hasMore: boolean;
 }
 
+/**
+ * Short-term (Redis) listing. STM lives only in Redis, so this always goes
+ * through the MCP server (`list_memories` with `type: 'short-term'`) — never a
+ * direct DB read. The cursor is an opaque Redis SCAN cursor, not an offset.
+ */
+export interface ListStmMemoriesParams {
+  userId: string;
+  scope?: string | null;
+  tags?: string[];
+  limit: number;
+  /** Opaque Redis SCAN cursor from a previous page; null/absent for the first. */
+  cursor?: string | null;
+}
+
+export interface ListStmMemoriesResult {
+  items: MemoryDTO[];
+  /** Approximate — STM counts are a live snapshot, not a stable ledger. */
+  totalCount: number;
+  /** Next Redis SCAN cursor; null when the scan is complete. */
+  nextCursor: string | null;
+  hasMore: boolean;
+  /**
+   * Set when the STM view cannot be served (no MCP server configured). The UI
+   * degrades to an empty state with this reason instead of throwing.
+   */
+  unavailableReason?: string;
+}
+
 export interface SearchMemoriesParams {
   userId: string;
   query: string;
@@ -82,12 +122,53 @@ export interface UpdateMemoryParams {
   content?: string;
   tags?: string[];
   scope?: string | null;
+  /** STM-only: reset the TTL window to this many seconds on save (WP2 T3). */
+  ttl?: number;
+  /**
+   * Optimistic-concurrency guard (WP2 T4). When set, the edit fails with a
+   * `CONFLICT` BackendError if the memory has moved past this version.
+   */
+  expectedVersion?: number;
+  /**
+   * Untrusted display label for the audit trail (WP2 T5) — the operator email,
+   * injected server-side in tRPC (never trusted from the browser).
+   */
+  actorLabel?: string;
 }
 
 export interface DeleteMemoryParams {
   userId: string;
   memoryId: string;
   scope?: string | null;
+  /** Audit display label, injected server-side (WP2 T5). */
+  actorLabel?: string;
+}
+
+export interface BulkDeleteMemoriesParams {
+  userId: string;
+  memoryIds: string[];
+  scope?: string | null;
+  /** Audit display label, injected server-side (WP2 T5). */
+  actorLabel?: string;
+}
+
+export interface BulkDeleteResult {
+  /** Ids successfully deleted. */
+  deleted: string[];
+  /** Ids that could not be deleted, with a reason (e.g. `not-found`). */
+  failed: Array<{ id: string; reason: string }>;
+}
+
+/** One audit-trail entry shaped for the UI (WP2 T5). */
+export interface MemoryAuditEntryDTO {
+  id: string;
+  action: string;
+  actorType: string;
+  actorLabel: string | null;
+  delegated: boolean;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export interface ServiceHealth {
@@ -208,10 +289,26 @@ export interface EngramBackend {
   capabilities(): Promise<BackendCapabilities>;
 
   listMemories(params: ListMemoriesParams): Promise<ListMemoriesResult>;
+  listStmMemories(params: ListStmMemoriesParams): Promise<ListStmMemoriesResult>;
   getMemory(userId: string, memoryId: string): Promise<MemoryDTO | null>;
   searchMemories(params: SearchMemoriesParams): Promise<SearchMemoriesResult>;
   updateMemory(params: UpdateMemoryParams): Promise<MemoryDTO>;
+  /** Promote a short-term memory to long-term storage (WP2 T3). */
+  promoteMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO>;
+  /** Regenerate the vector for a memory's current content (WP2 T7). */
+  reembedMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string | null,
+    actorLabel?: string
+  ): Promise<MemoryDTO>;
   deleteMemory(params: DeleteMemoryParams): Promise<{ deleted: boolean }>;
+  /** Delete many memories in one MCP call with a per-item report (WP2 T6). */
+  bulkDeleteMemories(params: BulkDeleteMemoriesParams): Promise<BulkDeleteResult>;
+  /** Read a memory's audit history, newest first (WP2 T5). Reads Postgres directly. */
+  listMemoryAudit(userId: string, memoryId: string, limit: number): Promise<MemoryAuditEntryDTO[]>;
+  /** Recreate a hard-deleted memory from its delete snapshot (WP2 T5). */
+  restoreMemory(userId: string, memoryId: string, actorLabel?: string): Promise<MemoryDTO>;
 
   getHealth(): Promise<HealthReport>;
   getMetrics(): Promise<MetricSnapshot>;
@@ -230,6 +327,7 @@ export class BackendError extends Error {
       | 'UNAVAILABLE'
       | 'WRITES_DISABLED'
       | 'BAD_REQUEST'
+      | 'CONFLICT'
       | 'INTERNAL' = 'INTERNAL'
   ) {
     super(message);

@@ -4,9 +4,13 @@ import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Database, Loader2, Search, Sparkles, X } from 'lucide-react';
 
+import { toast } from 'sonner';
+
+import { BulkDeleteDialog } from '@/components/memories/bulk-delete-dialog';
 import { MemoryDetailSheet } from '@/components/memories/memory-detail-sheet';
 import { MemoryFiltersBar } from '@/components/memories/memory-filters';
 import { MemoryList } from '@/components/memories/memory-list';
+import { StmStrip } from '@/components/memories/stm-strip';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -79,6 +83,9 @@ export function MemoryNavigator() {
   const dateFrom = React.useMemo(() => rangeToDateFrom(filters.range), [filters.range]);
   const enabled = userId.length > 0;
   const isSearch = filters.q.trim().length > 0;
+  // The short-term tier is a separate live (Redis) source (WP2 T3/D3), paged by
+  // its SCAN cursor — never interleaved into the persisted Postgres list.
+  const isStmView = filters.type === 'short-term' && !isSearch;
 
   const list = trpc.memory.list.useInfiniteQuery(
     {
@@ -92,8 +99,22 @@ export function MemoryNavigator() {
       limit: 25,
     },
     {
-      enabled: enabled && !isSearch,
+      enabled: enabled && !isSearch && !isStmView,
       getNextPageParam: (last) => last.nextCursor,
+    }
+  );
+
+  const stmList = trpc.memory.listStm.useInfiniteQuery(
+    {
+      userId,
+      tags: filters.tags.length ? filters.tags : undefined,
+      scope: filters.scope || undefined,
+      limit: 25,
+    },
+    {
+      enabled: enabled && isStmView,
+      getNextPageParam: (last) => last.nextCursor,
+      refetchInterval: 30_000,
     }
   );
 
@@ -109,16 +130,78 @@ export function MemoryNavigator() {
     { enabled: enabled && isSearch }
   );
 
+  // Resolve the active source: semantic search, the STM live tier, or the
+  // persisted (Postgres) list.
+  const activeList = isStmView ? stmList : list;
   const items = isSearch
     ? (search.data?.items ?? [])
-    : (list.data?.pages.flatMap((p) => p.items) ?? []);
-  const total = isSearch ? search.data?.count : list.data?.pages[0]?.totalCount;
-  const isLoading = isSearch ? search.isLoading : list.isLoading;
-  const queryError = isSearch ? search.error : list.error;
+    : (activeList.data?.pages.flatMap((p) => p.items) ?? []);
+  const total = isSearch ? search.data?.count : activeList.data?.pages[0]?.totalCount;
+  const isLoading = isSearch ? search.isLoading : activeList.isLoading;
+  const queryError = isSearch ? search.error : activeList.error;
 
   const [selected, setSelected] = React.useState<{ id: string; score?: number | null } | null>(
     null
   );
+
+  // Multi-select + bulk delete (WP2 T6). Selection persists across loaded pages;
+  // it is cleared when the filter/search context changes so stale ids can't leak.
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
+  const selectionContext = `${filters.type}|${filters.scope}|${filters.tags.join(',')}|${filters.q}`;
+  React.useEffect(() => {
+    // Reset selection when the filter/search context changes (canonical
+    // reset-state-on-prop-change effect).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedIds(new Set());
+  }, [selectionContext, userId]);
+
+  const toggleId = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const togglePage = (ids: string[], select: boolean) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (select) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+
+  const utils = trpc.useUtils();
+  const bulkDelete = trpc.memory.bulkDelete.useMutation({
+    onSuccess: async (result) => {
+      const failedCount = result.failed.length;
+      toast.success(`Deleted ${result.deleted.length} of ${result.deleted.length + failedCount}`, {
+        description:
+          failedCount > 0
+            ? `${failedCount} could not be deleted (${result.failed[0]?.reason ?? 'error'}${
+                failedCount > 1 ? ', …' : ''
+              }).`
+            : undefined,
+      });
+      setSelectedIds(new Set());
+      setBulkDialogOpen(false);
+      await Promise.all([
+        utils.memory.list.invalidate(),
+        utils.memory.listStm.invalidate(),
+        utils.memory.search.invalidate(),
+        utils.analytics.invalidate(),
+      ]);
+    },
+    onError: (error) => toast.error('Bulk delete failed', { description: error.message }),
+  });
+
+  const selectionArray = [...selectedIds];
+  const previews = items
+    .filter((i) => selectedIds.has(i.id))
+    .slice(0, 5)
+    .map((i) => i.content);
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,10 +267,16 @@ export function MemoryNavigator() {
             </div>
           </div>
 
-          {queryError ? (
+          {isStmView && stmList.data?.pages[0]?.unavailableReason ? (
+            <EmptyState
+              icon={Database}
+              title="Short-term memories unavailable"
+              description={stmList.data.pages[0].unavailableReason}
+            />
+          ) : queryError ? (
             <ErrorState
               message={queryError.message}
-              onRetry={() => (isSearch ? void search.refetch() : void list.refetch())}
+              onRetry={() => (isSearch ? void search.refetch() : void activeList.refetch())}
             />
           ) : !isLoading && items.length === 0 ? (
             <EmptyState
@@ -201,21 +290,47 @@ export function MemoryNavigator() {
             />
           ) : (
             <>
+              {/* Live short-term strip is shown by default on the `all` view. */}
+              {filters.type === 'all' && !isSearch && (
+                <StmStrip
+                  userId={userId}
+                  onOpen={(id) => setSelected({ id })}
+                  onViewAll={() => writeFilters({ type: 'short-term' })}
+                />
+              )}
+              {selectedIds.size > 0 && (
+                <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  <span>{selectedIds.size} selected</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                      Clear
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => setBulkDialogOpen(true)}>
+                      Delete {selectedIds.size} selected
+                    </Button>
+                  </div>
+                </div>
+              )}
               <MemoryList
                 items={items}
                 showScore={isSearch}
                 isLoading={isLoading}
                 onSelect={(item) => setSelected({ id: item.id, score: item.score ?? null })}
+                selection={{
+                  selectedIds,
+                  onToggle: toggleId,
+                  onTogglePage: togglePage,
+                }}
               />
 
-              {!isSearch && list.hasNextPage && (
+              {!isSearch && activeList.hasNextPage && (
                 <div className="flex justify-center pt-1">
                   <Button
                     variant="outline"
-                    onClick={() => void list.fetchNextPage()}
-                    disabled={list.isFetchingNextPage}
+                    onClick={() => void activeList.fetchNextPage()}
+                    disabled={activeList.isFetchingNextPage}
                   >
-                    {list.isFetchingNextPage && <Loader2 className="size-4 animate-spin" />}
+                    {activeList.isFetchingNextPage && <Loader2 className="size-4 animate-spin" />}
                     Load more
                   </Button>
                 </div>
@@ -233,6 +348,15 @@ export function MemoryNavigator() {
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
+      />
+
+      <BulkDeleteDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        count={selectedIds.size}
+        previews={previews}
+        isPending={bulkDelete.isPending}
+        onConfirm={() => bulkDelete.mutate({ userId, memoryIds: selectionArray })}
       />
     </PageContainer>
   );

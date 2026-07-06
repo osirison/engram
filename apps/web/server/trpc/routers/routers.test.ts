@@ -88,6 +88,18 @@ describe('memory router', () => {
     ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
   });
 
+  it('maps a CONFLICT BackendError to tRPC CONFLICT (409) — WP2 T4', async () => {
+    const backend = makeBackend({
+      updateMemory: vi
+        .fn()
+        .mockRejectedValue(new BackendError('CONFLICT: modified (currentVersion=4)', 'CONFLICT')),
+    });
+    const api = caller(backend);
+    await expect(
+      api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x', expectedVersion: 3 })
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
   it('validates input (empty userId rejected)', async () => {
     const api = caller(makeBackend());
     await expect(api.memory.list({ userId: '' })).rejects.toBeTruthy();
@@ -100,6 +112,128 @@ describe('memory router', () => {
     expect(backend.searchMemories).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'qp', query: 'hello', limit: 20 })
     );
+  });
+
+  it('delegates bulkDelete with the operator email as actorLabel (WP2 T6)', async () => {
+    const bulkDeleteMemories = vi.fn().mockResolvedValue({ deleted: ['a', 'b'], failed: [] });
+    const backend = makeBackend({ bulkDeleteMemories });
+    const api = caller(backend);
+    await api.memory.bulkDelete({ userId: 'qp', memoryIds: ['a', 'b'] });
+    expect(bulkDeleteMemories).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'qp',
+        memoryIds: ['a', 'b'],
+        actorLabel: 'op@example.com',
+      })
+    );
+  });
+
+  it('rejects a bulkDelete over the 100-id cap (WP2 T6)', async () => {
+    const api = caller(makeBackend());
+    const tooMany = Array.from({ length: 101 }, (_, i) => `id-${i}`);
+    await expect(api.memory.bulkDelete({ userId: 'qp', memoryIds: tooMany })).rejects.toBeTruthy();
+  });
+
+  it('injects the operator email as actorLabel on update (WP2 T5)', async () => {
+    const updateMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ updateMemory });
+    const api = caller(backend);
+    await api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x' });
+    expect(updateMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ actorLabel: 'op@example.com' })
+    );
+  });
+
+  it('injects the operator email as actorLabel on delete (WP2 T5)', async () => {
+    const deleteMemory = vi.fn().mockResolvedValue({ deleted: true });
+    const backend = makeBackend({ deleteMemory });
+    const api = caller(backend);
+    await api.memory.delete({ userId: 'qp', memoryId: 'm1' });
+    expect(deleteMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ actorLabel: 'op@example.com' })
+    );
+  });
+
+  it('delegates auditLog reads (WP2 T5)', async () => {
+    const listMemoryAudit = vi.fn().mockResolvedValue([]);
+    const backend = makeBackend({ listMemoryAudit });
+    const api = caller(backend);
+    await api.memory.auditLog({ userId: 'qp', memoryId: 'm1' });
+    expect(listMemoryAudit).toHaveBeenCalledWith('qp', 'm1', 50);
+  });
+
+  it('delegates restore with the operator email as actorLabel (WP2 T5)', async () => {
+    const restoreMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ restoreMemory });
+    const api = caller(backend);
+    await api.memory.restore({ userId: 'qp', memoryId: 'm1' });
+    expect(restoreMemory).toHaveBeenCalledWith('qp', 'm1', 'op@example.com');
+  });
+
+  it('rejects unauthenticated auditLog/restore callers (WP2 T5)', async () => {
+    const api = caller(makeBackend(), false);
+    await expect(api.memory.auditLog({ userId: 'qp', memoryId: 'm1' })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+    await expect(api.memory.restore({ userId: 'qp', memoryId: 'm1' })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('delegates promote with the operator email as actorLabel (WP2 T3)', async () => {
+    const promoteMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ promoteMemory });
+    const api = caller(backend);
+    await api.memory.promote({ userId: 'qp', memoryId: 'm1' });
+    expect(promoteMemory).toHaveBeenCalledWith('qp', 'm1', 'op@example.com');
+  });
+
+  it('delegates reembed to the backend (WP2 T7)', async () => {
+    const reembedMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ reembedMemory });
+    const api = caller(backend);
+    await api.memory.reembed({ userId: 'qp', memoryId: 'm1' });
+    // Fourth arg is the operator email injected server-side as actorLabel (T5).
+    expect(reembedMemory).toHaveBeenCalledWith('qp', 'm1', undefined, 'op@example.com');
+  });
+
+  it('delegates listStm with parsed defaults', async () => {
+    const listStmMemories = vi
+      .fn()
+      .mockResolvedValue({ items: [], totalCount: 0, nextCursor: null, hasMore: false });
+    const backend = makeBackend({ listStmMemories });
+    const api = caller(backend);
+    await api.memory.listStm({ userId: 'qp' });
+    expect(listStmMemories).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'qp', limit: 25 })
+    );
+  });
+
+  it('rejects unauthenticated listStm callers', async () => {
+    const api = caller(makeBackend(), false);
+    await expect(api.memory.listStm({ userId: 'qp' })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('maps a truthful {deleted:false} to NOT_FOUND (A10)', async () => {
+    const backend = makeBackend({
+      deleteMemory: vi.fn().mockResolvedValue({ deleted: false }),
+    });
+    const api = caller(backend);
+    await expect(api.memory.delete({ userId: 'qp', memoryId: 'gone' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('returns {deleted:true} on a successful delete', async () => {
+    const backend = makeBackend({
+      deleteMemory: vi.fn().mockResolvedValue({ deleted: true }),
+    });
+    const api = caller(backend);
+    await expect(api.memory.delete({ userId: 'qp', memoryId: 'm1' })).resolves.toEqual({
+      deleted: true,
+    });
   });
 });
 

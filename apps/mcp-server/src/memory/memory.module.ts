@@ -9,6 +9,7 @@ import { MemoryStmModule } from '@engram/memory-stm';
 import { MemoryLtmModule } from '@engram/memory-ltm';
 import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
+import { MemoryAuditService } from './memory-audit.service';
 import { PrismaModule } from '@engram/database';
 import { RedisModule } from '@engram/redis';
 import { ReindexQueueService } from './reindex-queue.service';
@@ -46,17 +47,25 @@ export class MemoryModule {
       providers.push(ReindexQueueService);
     }
 
+    // Audit trail (WP2 T5) needs Postgres. Provided only when a DB is available;
+    // the controller injects it @Optional() so memory/lite profiles still boot.
+    const exports: Provider[] = [
+      MemoryService,
+      ConsolidationService,
+      DecayService,
+      InsightExtractionService,
+    ];
+    if (capabilities.requiresDatabase) {
+      providers.push(MemoryAuditService);
+      exports.push(MemoryAuditService);
+    }
+
     return {
       module: MemoryModule,
       imports,
       controllers: [MemoryController],
       providers,
-      exports: [
-        MemoryService,
-        ConsolidationService,
-        DecayService,
-        InsightExtractionService,
-      ],
+      exports,
     };
   }
 }

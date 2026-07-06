@@ -2,8 +2,10 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
 
+import type { Session } from 'next-auth';
+
 import { BackendError } from '@/server/backend';
-import { serverEnv } from '@/server/env';
+import { canOperatorManageUser, serverEnv } from '@/server/env';
 import type { TRPCContext } from './context';
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -33,9 +35,11 @@ export function toTRPCError(error: unknown): TRPCError {
           ? 'PRECONDITION_FAILED'
           : error.code === 'BAD_REQUEST'
             ? 'BAD_REQUEST'
-            : error.code === 'UNAVAILABLE'
-              ? 'SERVICE_UNAVAILABLE'
-              : 'INTERNAL_SERVER_ERROR';
+            : error.code === 'CONFLICT'
+              ? 'CONFLICT'
+              : error.code === 'UNAVAILABLE'
+                ? 'SERVICE_UNAVAILABLE'
+                : 'INTERNAL_SERVER_ERROR';
     return new TRPCError({ code, message: error.message, cause: error });
   }
   return new TRPCError({
@@ -74,3 +78,20 @@ export const protectedProcedure = publicProcedure.use(({ ctx, next }) => {
     },
   });
 });
+
+/**
+ * Enforce the optional per-operator tenant binding (WP2 T9/D11). With no binding
+ * configured this allows any userId (zero-config default); otherwise it throws
+ * FORBIDDEN unless the operator is bound to that data owner. The enforcement
+ * point is the SERVER — the UI switcher only filters for convenience. Call this
+ * at the top of every userId-taking procedure.
+ */
+export function assertCanManageUser(session: Session | null, userId: string): void {
+  const email = session?.user?.email ?? null;
+  if (!canOperatorManageUser(email, userId)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `You are not permitted to manage data for "${userId}".`,
+    });
+  }
+}

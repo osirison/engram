@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { decodeCursor, encodeCursor } from './cursor';
 import type { McpToolClient } from './mcp-client';
 import { parsePrometheus, PrismaEngramBackend } from './prisma-backend';
 
@@ -14,6 +15,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     metadata: null,
     tags: [],
     type: 'long-term',
+    version: 1,
     createdAt: new Date('2026-06-01T00:00:00.000Z'),
     updatedAt: new Date('2026-06-02T00:00:00.000Z'),
     expiresAt: null,
@@ -31,6 +33,9 @@ function makePrisma(overrides: Record<string, unknown> = {}): PrismaClient {
       aggregate: vi
         .fn()
         .mockResolvedValue({ _max: { createdAt: null }, _min: { createdAt: null } }),
+    },
+    memoryAudit: {
+      findMany: vi.fn().mockResolvedValue([]),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
     ...overrides,
@@ -204,11 +209,14 @@ describe('PrismaEngramBackend.capabilities', () => {
 });
 
 describe('PrismaEngramBackend.listMemories', () => {
-  it('maps rows to DTOs, derives importance/insight/embedding, and paginates', async () => {
+  it('maps rows to DTOs, derives importance/insight/embedding, and keyset-paginates', async () => {
     const prisma = makePrisma();
+    // Over-fetch: limit+1 rows come back, so hasMore is detected without a
+    // second query and the extra row is trimmed from the page (WP2 T1/D8).
     (prisma.memory.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
       makeRow({ id: 'm1', metadata: { importance: 0.8 }, tags: ['insight', 'x'] }),
-      makeRow({ id: 'm2' }),
+      makeRow({ id: 'm2', createdAt: new Date('2026-05-30T00:00:00.000Z') }),
+      makeRow({ id: 'm3' }),
     ]);
     (prisma.memory.count as ReturnType<typeof vi.fn>).mockResolvedValue(5);
     (prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'm1' }]);
@@ -227,7 +235,55 @@ describe('PrismaEngramBackend.listMemories', () => {
     expect(result.items[1]).toMatchObject({ id: 'm2', hasEmbedding: false, importance: null });
     expect(result.totalCount).toBe(5);
     expect(result.hasMore).toBe(true);
-    expect(result.nextCursor).toBe('2');
+
+    // Query shape: keyset ordering with an id tiebreak, over-fetch, no `skip`.
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(findArgs.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+    expect(findArgs.take).toBe(3);
+    expect(findArgs.skip).toBeUndefined();
+
+    // nextCursor points at the last row OF THE PAGE (m2), not the over-fetched m3.
+    expect(decodeCursor(result.nextCursor)).toEqual({
+      v: new Date('2026-05-30T00:00:00.000Z').getTime(),
+      id: 'm2',
+    });
+  });
+
+  it('applies the decoded cursor as an AND-ed keyset predicate; no next page when short', async () => {
+    const prisma = makePrisma();
+    // Fewer than limit+1 rows → this is the last page.
+    (prisma.memory.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([makeRow({ id: 'z' })]);
+    (prisma.memory.count as ReturnType<typeof vi.fn>).mockResolvedValue(3);
+
+    const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
+    const cursor = encodeCursor({ v: new Date('2026-06-01T00:00:00.000Z').getTime(), id: 'm5' });
+    const result = await backend.listMemories({ userId: 'qp', limit: 2, cursor });
+
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    // The base filter is preserved and the seek predicate is AND-ed on top.
+    expect(findArgs.where.AND).toBeDefined();
+    expect(findArgs.where.AND[1].OR).toEqual([
+      { createdAt: { lt: new Date('2026-06-01T00:00:00.000Z') } },
+      { createdAt: new Date('2026-06-01T00:00:00.000Z'), id: { lt: 'm5' } },
+    ]);
+    // totalCount counts the base filter, not the seek window.
+    const countArgs = (prisma.memory.count as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(countArgs.where.AND).toBeUndefined();
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it('treats a legacy numeric offset cursor as the first page (no keyset clause)', async () => {
+    const prisma = makePrisma();
+    (prisma.memory.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (prisma.memory.count as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+
+    const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
+    await backend.listMemories({ userId: 'qp', limit: 2, cursor: '25' });
+
+    const findArgs = (prisma.memory.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(findArgs.where.AND).toBeUndefined();
+    expect(findArgs.where).toMatchObject({ userId: 'qp' });
   });
 
   it('uses the insight tag (not metadata) as the source of truth for isInsight', async () => {
@@ -370,6 +426,321 @@ describe('PrismaEngramBackend writes', () => {
       'delete_memory',
       expect.objectContaining({ memoryId: 'm1' })
     );
+  });
+
+  it('promotes via MCP and returns the promoted memory from the structured result (WP2 T3)', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        promoted: true,
+        memory: {
+          id: 'ltm-new',
+          userId: 'qp',
+          content: 'promoted',
+          tags: [],
+          type: 'long-term',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
+        },
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const promoted = await backend.promoteMemory('qp', 'stm-old', 'op@example.com');
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'promote_memory',
+      expect.objectContaining({ userId: 'qp', memoryId: 'stm-old', actorLabel: 'op@example.com' })
+    );
+    // Reads the NEW long-term id from the structured result, not the old STM id.
+    expect(promoted.id).toBe('ltm-new');
+    expect(promoted.type).toBe('long-term');
+  });
+
+  it('bulk-deletes through one MCP call and parses the per-item report (WP2 T6)', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        deleted: ['a', 'b'],
+        failed: [{ id: 'c', reason: 'not-found' }],
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const result = await backend.bulkDeleteMemories({
+      userId: 'qp',
+      memoryIds: ['a', 'b', 'c'],
+      actorLabel: 'op@example.com',
+    });
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'bulk_delete_memories',
+      expect.objectContaining({ userId: 'qp', memoryIds: ['a', 'b', 'c'] })
+    );
+    expect(result.deleted).toEqual(['a', 'b']);
+    expect(result.failed).toEqual([{ id: 'c', reason: 'not-found' }]);
+  });
+
+  it('reads audit history from Postgres and maps rows (WP2 T5)', async () => {
+    const prisma = makePrisma();
+    (prisma.memoryAudit.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'a1',
+        action: 'delete',
+        actorType: 'api-key',
+        actorLabel: 'op@example.com',
+        delegated: true,
+        before: { content: 'gone' },
+        after: { deleted: true },
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    ]);
+    const backend = new PrismaEngramBackend({ prisma, mcpUrl: null, mcpApiKey: null });
+    const entries = await backend.listMemoryAudit('qp', 'm1', 50);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      action: 'delete',
+      actorLabel: 'op@example.com',
+      delegated: true,
+      before: { content: 'gone' },
+      createdAt: '2026-07-01T00:00:00.000Z',
+    });
+  });
+
+  it('restores via MCP then re-reads the memory (WP2 T5)', async () => {
+    const prisma = makePrisma();
+    (prisma.memory.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(makeRow({ id: 'm1' }));
+    const mcp = { call: vi.fn().mockResolvedValue({}) } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma,
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const restored = await backend.restoreMemory('qp', 'm1', 'op@example.com');
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'restore_memory',
+      expect.objectContaining({ userId: 'qp', memoryId: 'm1', actorLabel: 'op@example.com' })
+    );
+    expect(restored.id).toBe('m1');
+  });
+
+  it('pre-flight blocks a cross-tenant write under a tenant-limited key (WP2 T9)', async () => {
+    // /auth/me resolves a non-admin key bound to tenant "svc"; a write for "qp"
+    // must fail fast with the limitation text instead of a downstream not-found.
+    const fetchImpl = mockFetch({
+      '/auth/me': { ok: true, json: { user: { userId: 'svc', scopes: [] } } },
+    });
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'svc-key',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    await expect(backend.deleteMemory({ userId: 'qp', memoryId: 'm1' })).rejects.toMatchObject({
+      code: 'WRITES_DISABLED',
+    });
+    // The block is pre-flight: the delete tool is never called.
+    expect(mcp.call as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it('allows a same-tenant write under a tenant-limited key (WP2 T9)', async () => {
+    const fetchImpl = mockFetch({
+      '/auth/me': { ok: true, json: { user: { userId: 'svc', scopes: [] } } },
+    });
+    const mcp = {
+      call: vi.fn().mockResolvedValue({ deleted: true, memoryId: 'm1' }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: 'svc-key',
+      mcpClient: mcp,
+      fetchImpl,
+    });
+    await expect(backend.deleteMemory({ userId: 'svc', memoryId: 'm1' })).resolves.toEqual({
+      deleted: true,
+    });
+  });
+
+  it('reports the truthful {deleted:false} the tool returns (A10)', async () => {
+    // Previously deleteMemory returned {deleted:true} unconditionally; now it
+    // reflects the tool's structured result so an already-gone row is truthful.
+    const mcp = {
+      call: vi.fn().mockResolvedValue({ deleted: false, memoryId: 'm1' }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    await expect(backend.deleteMemory({ userId: 'qp', memoryId: 'm1' })).resolves.toEqual({
+      deleted: false,
+    });
+  });
+});
+
+describe('PrismaEngramBackend.listStmMemories', () => {
+  it('maps MCP short-term items (ttl/accessCount/expiresAt, hasEmbedding=false)', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        memories: [
+          {
+            id: 'stm1',
+            userId: 'qp',
+            scope: 'agent:a',
+            content: 'live note',
+            metadata: null,
+            tags: ['insight'],
+            type: 'short-term',
+            createdAt: '2026-07-01T00:00:00.000Z',
+            updatedAt: '2026-07-01T00:00:00.000Z',
+            expiresAt: '2026-07-02T00:00:00.000Z',
+            ttl: 3600,
+            accessCount: 5,
+          },
+        ],
+        pagination: { totalCount: 1, hasNextPage: true, endCursor: '42' },
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+
+    const result = await backend.listStmMemories({ userId: 'qp', limit: 25 });
+
+    expect(mcp.call as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+      'list_memories',
+      expect.objectContaining({ userId: 'qp', type: 'short-term', limit: 25 })
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: 'stm1',
+      type: 'short-term',
+      ttlSeconds: 3600,
+      accessCount: 5,
+      hasEmbedding: false,
+      isInsight: true,
+      expiresAt: '2026-07-02T00:00:00.000Z',
+    });
+    expect(result.nextCursor).toBe('42');
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("treats a completed SCAN cursor ('0') as no next page", async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        memories: [],
+        pagination: { totalCount: 0, hasNextPage: false, endCursor: '0' },
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const result = await backend.listStmMemories({ userId: 'qp', limit: 25 });
+    expect(result.nextCursor).toBeNull();
+    expect(result.items).toEqual([]);
+  });
+
+  it('degrades with unavailableReason when no MCP server is configured', async () => {
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: null,
+      mcpApiKey: null,
+    });
+    const result = await backend.listStmMemories({ userId: 'qp', limit: 25 });
+    expect(result.items).toEqual([]);
+    expect(result.unavailableReason).toBeTruthy();
+  });
+});
+
+describe('PrismaEngramBackend.getMemory (STM fallback)', () => {
+  it('returns the Postgres row without hitting MCP when present', async () => {
+    const prisma = makePrisma();
+    (prisma.memory.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(makeRow());
+    const mcp = { call: vi.fn() } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma,
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const memory = await backend.getMemory('qp', 'm1');
+    expect(memory?.id).toBe('m1');
+    expect(mcp.call as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it('falls back to MCP get_memory on a Postgres miss and maps the STM item', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({
+        id: 'stm1',
+        userId: 'qp',
+        content: 'live',
+        tags: [],
+        type: 'short-term',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        updatedAt: '2026-07-01T00:00:00.000Z',
+        expiresAt: '2026-07-02T00:00:00.000Z',
+        ttl: 1200,
+        accessCount: 2,
+      }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    const memory = await backend.getMemory('qp', 'stm1');
+    expect(memory).toMatchObject({ id: 'stm1', ttlSeconds: 1200, accessCount: 2 });
+  });
+
+  it('returns null for the structured {found:false} sentinel', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue({ found: false, memoryId: 'gone' }),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    expect(await backend.getMemory('qp', 'gone')).toBeNull();
+  });
+
+  it('returns null for legacy prose (unparseable → string) not-found', async () => {
+    const mcp = {
+      call: vi.fn().mockResolvedValue('Memory gone not found'),
+    } as unknown as McpToolClient;
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: 'http://localhost:3000',
+      mcpApiKey: null,
+      mcpClient: mcp,
+    });
+    expect(await backend.getMemory('qp', 'gone')).toBeNull();
+  });
+
+  it('stays Postgres-only (returns null, no throw) when MCP is unconfigured', async () => {
+    const backend = new PrismaEngramBackend({
+      prisma: makePrisma(),
+      mcpUrl: null,
+      mcpApiKey: null,
+    });
+    expect(await backend.getMemory('qp', 'missing')).toBeNull();
   });
 });
 

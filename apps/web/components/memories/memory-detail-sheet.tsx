@@ -3,7 +3,10 @@
 import * as React from 'react';
 import { Copy, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { getQueryKey } from '@trpc/react-query';
 
+import { ExpiryBadge } from '@/components/memories/expiry-badge';
 import { TagInput } from '@/components/memories/tag-input';
 import { ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -20,9 +23,44 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { absoluteTime, formatPercent, memoryTypeLabel, relativeTime } from '@/lib/format';
+import {
+  absoluteTime,
+  formatPercent,
+  formatUptime,
+  memoryTypeLabel,
+  relativeTime,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/react';
+
+/** Minimal shapes for the optimistic-delete cache surgery (WP2 T8). */
+type EvictItem = { id: string };
+type InfinitePages = { pages: Array<{ items: EvictItem[] }>; pageParams: unknown[] };
+
+/**
+ * Remove a memory id from a cached query's data (WP2 T8), handling both the
+ * infinite-list shape (`{ pages: [{ items }] }`) and the single-shot search shape
+ * (`{ items }`). Returns the input untouched for anything else. Pure, so the
+ * optimistic-delete eviction is unit-testable without a live query client.
+ */
+export function evictMemoryFromCacheData(data: unknown, memoryId: string): unknown {
+  if (!data || typeof data !== 'object') return data;
+  if ('pages' in data && Array.isArray((data as InfinitePages).pages)) {
+    const inf = data as InfinitePages;
+    return {
+      ...inf,
+      pages: inf.pages.map((p) => ({
+        ...p,
+        items: p.items.filter((it) => it.id !== memoryId),
+      })),
+    };
+  }
+  if ('items' in data && Array.isArray((data as { items: EvictItem[] }).items)) {
+    const s = data as { items: EvictItem[] };
+    return { ...s, items: s.items.filter((it) => it.id !== memoryId) };
+  }
+  return data;
+}
 
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -47,6 +85,7 @@ export function MemoryDetailSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const capabilities = trpc.meta.capabilities.useQuery(undefined, { staleTime: 5 * 60_000 });
   const canWrite = capabilities.data?.writes ?? false;
 
@@ -59,6 +98,11 @@ export function MemoryDetailSheet({
   const [draftContent, setDraftContent] = React.useState('');
   const [draftTags, setDraftTags] = React.useState<string[]>([]);
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  // Optimistic-concurrency conflict UI (WP2 T4/D5): set when a save is rejected
+  // because another writer moved the version. `preservedDraft` keeps the
+  // operator's rejected text so a reload never silently discards their work.
+  const [conflict, setConflict] = React.useState(false);
+  const [preservedDraft, setPreservedDraft] = React.useState<string | null>(null);
 
   // Reset transient edit/confirm UI whenever the target memory changes or the
   // sheet closes — the canonical "reset state on prop change" effect.
@@ -66,6 +110,9 @@ export function MemoryDetailSheet({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsEditing(false);
     setConfirmingDelete(false);
+    setConflict(false);
+    setPreservedDraft(null);
+    setHistoryOpen(false);
   }, [memoryId, open]);
 
   const beginEdit = () => {
@@ -78,6 +125,7 @@ export function MemoryDetailSheet({
   const invalidate = async () => {
     await Promise.all([
       utils.memory.list.invalidate(),
+      utils.memory.listStm.invalidate(),
       utils.memory.search.invalidate(),
       utils.analytics.invalidate(),
       memoryId ? utils.memory.get.invalidate({ userId, memoryId }) : Promise.resolve(),
@@ -88,28 +136,129 @@ export function MemoryDetailSheet({
     onSuccess: async () => {
       toast.success('Memory updated');
       setIsEditing(false);
+      setConflict(false);
+      setPreservedDraft(null);
       await invalidate();
     },
-    onError: (error) => toast.error('Update failed', { description: error.message }),
+    onError: (error) => {
+      // A version conflict is expected control-flow, not a failure toast: surface
+      // the reload-and-rediff panel instead (WP2 T4/D5).
+      if (error.data?.code === 'CONFLICT') {
+        setConflict(true);
+        return;
+      }
+      toast.error('Update failed', { description: error.message });
+    },
   });
 
+  // Pull the latest server copy into the editor after a conflict, stashing the
+  // operator's rejected text so it is never lost. The next save carries the
+  // fresh version, so it will succeed unless another write races again.
+  const reloadLatest = async () => {
+    setPreservedDraft(draftContent);
+    const fresh = await memory.refetch();
+    if (fresh.data) {
+      setDraftContent(fresh.data.content);
+      setDraftTags(fresh.data.tags);
+    }
+    setConflict(false);
+  };
+
+  // Optimistic single-delete (WP2 T8/D7): evict the row from every list/listStm
+  // infinite cache and close the sheet immediately; roll the exact snapshots back
+  // on error (incl. the truthful NOT_FOUND from T2). Edits stay server-confirmed.
   const remove = trpc.memory.delete.useMutation({
-    onSuccess: async () => {
+    onMutate: async (vars) => {
+      const listKey = getQueryKey(trpc.memory.list);
+      const stmKey = getQueryKey(trpc.memory.listStm);
+      const searchKey = getQueryKey(trpc.memory.search);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: listKey }),
+        queryClient.cancelQueries({ queryKey: stmKey }),
+        queryClient.cancelQueries({ queryKey: searchKey }),
+      ]);
+      // Snapshot every affected query so onError can restore exactly.
+      const snapshot = [
+        ...queryClient.getQueriesData({ queryKey: listKey }),
+        ...queryClient.getQueriesData({ queryKey: stmKey }),
+        ...queryClient.getQueriesData({ queryKey: searchKey }),
+      ];
+      for (const [key] of snapshot) {
+        queryClient.setQueryData(key, (d: unknown) => evictMemoryFromCacheData(d, vars.memoryId));
+      }
+      onOpenChange(false);
+      return { snapshot };
+    },
+    onError: (error, _vars, context) => {
+      // Restore the exact pre-delete caches, then surface the failure. A truthful
+      // NOT_FOUND (row already gone) also lands here and is rolled back cleanly.
+      for (const [key, data] of context?.snapshot ?? []) {
+        queryClient.setQueryData(key, data);
+      }
+      toast.error('Delete failed', { description: error.message });
+    },
+    onSuccess: () => {
       toast.success('Memory deleted');
+    },
+    onSettled: async () => {
+      await invalidate();
+    },
+  });
+
+  // Repair a stale vector by regenerating the embedding for current content (T7).
+  const reembed = trpc.memory.reembed.useMutation({
+    onSuccess: async () => {
+      toast.success('Memory re-embedded');
+      await invalidate();
+    },
+    onError: (error) => toast.error('Re-embed failed', { description: error.message }),
+  });
+
+  // STM affordances (WP2 T3/D4): promote to long-term, and extend the TTL window.
+  const promote = trpc.memory.promote.useMutation({
+    onSuccess: async () => {
+      toast.success('Promoted to long-term');
       onOpenChange(false);
       await invalidate();
     },
-    onError: (error) => toast.error('Delete failed', { description: error.message }),
+    onError: (error) => toast.error('Promote failed', { description: error.message }),
+  });
+
+  const extendTtl = trpc.memory.update.useMutation({
+    onSuccess: async () => {
+      toast.success('TTL extended by 1 hour');
+      await invalidate();
+    },
+    onError: (error) => toast.error('Extend TTL failed', { description: error.message }),
+  });
+
+  // Audit history (WP2 T5) — collapsed by default; fetched lazily on expand.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const auditLog = trpc.memory.auditLog.useQuery(
+    { userId, memoryId: memoryId ?? '', limit: 50 },
+    { enabled: open && historyOpen && Boolean(memoryId) }
+  );
+
+  const restore = trpc.memory.restore.useMutation({
+    onSuccess: async () => {
+      toast.success('Memory restored');
+      await Promise.all([invalidate(), auditLog.refetch()]);
+    },
+    onError: (error) => toast.error('Restore failed', { description: error.message }),
   });
 
   const saveEdit = () => {
     if (!memoryId) return;
+    setConflict(false);
     update.mutate({
       userId,
       memoryId,
       content: draftContent,
       tags: draftTags,
       scope: memory.data?.scope ?? undefined,
+      // Optimistic concurrency (WP2 T4): the save is rejected with CONFLICT if the
+      // memory has moved past the version we loaded/reloaded.
+      expectedVersion: memory.data?.version,
     });
   };
 
@@ -168,6 +317,37 @@ export function MemoryDetailSheet({
             </div>
           ) : (
             <div className="space-y-6 pb-6">
+              {isEditing && conflict && (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm"
+                >
+                  <p className="font-medium text-destructive">
+                    This memory changed since you opened it
+                  </p>
+                  <p className="mt-1 text-muted-foreground">
+                    Another writer updated it, so your save was rejected. Reload the latest version
+                    to continue — your unsaved text is preserved below.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={reloadLatest}
+                  >
+                    Reload latest
+                  </Button>
+                </div>
+              )}
+              {isEditing && preservedDraft !== null && (
+                <details className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Your previous unsaved edit
+                  </summary>
+                  <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{preservedDraft}</p>
+                </details>
+              )}
               <section className="space-y-2">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Content
@@ -223,7 +403,38 @@ export function MemoryDetailSheet({
                     {data.importance !== null ? data.importance.toFixed(2) : '—'}
                   </MetaRow>
                   <MetaRow label="Embedding">
-                    {data.hasEmbedding ? 'Indexed' : 'Not indexed'}
+                    <span className="flex flex-wrap items-center gap-2">
+                      {data.type === 'short-term' ? (
+                        <span className="text-muted-foreground">n/a (live tier)</span>
+                      ) : data.embeddingStale ? (
+                        <span className="text-destructive">
+                          Stale — content changed but the vector didn’t
+                        </span>
+                      ) : data.hasEmbedding ? (
+                        'Indexed'
+                      ) : (
+                        'Not indexed'
+                      )}
+                      {canWrite &&
+                        data.type === 'long-term' &&
+                        (data.embeddingStale || !data.hasEmbedding) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={reembed.isPending}
+                            onClick={() =>
+                              reembed.mutate({
+                                userId,
+                                memoryId: data.id,
+                                scope: data.scope ?? undefined,
+                              })
+                            }
+                          >
+                            {reembed.isPending && <Loader2 className="size-4 animate-spin" />}
+                            Re-embed
+                          </Button>
+                        )}
+                    </span>
                   </MetaRow>
                   <MetaRow label="Created">
                     <span title={absoluteTime(data.createdAt)}>{relativeTime(data.createdAt)}</span>
@@ -231,11 +442,18 @@ export function MemoryDetailSheet({
                   <MetaRow label="Updated">
                     <span title={absoluteTime(data.updatedAt)}>{relativeTime(data.updatedAt)}</span>
                   </MetaRow>
+                  {data.type === 'short-term' && data.ttlSeconds !== null && (
+                    <MetaRow label="TTL">{formatUptime(data.ttlSeconds)} remaining</MetaRow>
+                  )}
                   {data.expiresAt && (
                     <MetaRow label="Expires">
-                      <span title={absoluteTime(data.expiresAt)}>
-                        {relativeTime(data.expiresAt)}
-                      </span>
+                      {data.type === 'short-term' ? (
+                        <ExpiryBadge expiresAt={data.expiresAt} />
+                      ) : (
+                        <span title={absoluteTime(data.expiresAt)}>
+                          {relativeTime(data.expiresAt)}
+                        </span>
+                      )}
                     </MetaRow>
                   )}
                 </div>
@@ -251,6 +469,56 @@ export function MemoryDetailSheet({
                   </pre>
                 </section>
               )}
+
+              {/* History (WP2 T5): audit trail with a restore path for deletes. */}
+              <section className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+                >
+                  {historyOpen ? '▾' : '▸'} History
+                </button>
+                {historyOpen && (
+                  <div className="space-y-2">
+                    {auditLog.isLoading && (
+                      <p className="text-sm text-muted-foreground">Loading history…</p>
+                    )}
+                    {auditLog.data && auditLog.data.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No recorded changes.</p>
+                    )}
+                    {auditLog.data?.map((entry) => (
+                      <div key={entry.id} className="rounded-md border p-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{entry.action}</Badge>
+                          <span
+                            className="text-muted-foreground"
+                            title={absoluteTime(entry.createdAt)}
+                          >
+                            {relativeTime(entry.createdAt)}
+                          </span>
+                          {entry.actorLabel && (
+                            <span className="text-muted-foreground">by {entry.actorLabel}</span>
+                          )}
+                          {entry.delegated && <Badge variant="muted">delegated</Badge>}
+                          {entry.action === 'delete' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="ml-auto"
+                              disabled={restore.isPending}
+                              onClick={() => restore.mutate({ userId, memoryId: data.id })}
+                            >
+                              {restore.isPending && <Loader2 className="size-4 animate-spin" />}
+                              Restore
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </div>
           )}
         </div>
@@ -302,12 +570,47 @@ export function MemoryDetailSheet({
                   </Button>
                 </>
               ) : (
-                <WriteActions
-                  canWrite={canWrite}
-                  reason={writeBlockedReason}
-                  onEdit={beginEdit}
-                  onDelete={() => setConfirmingDelete(true)}
-                />
+                <>
+                  {/* STM-only affordances (WP2 T3): extend the TTL window, or
+                      promote the memory to durable long-term storage. */}
+                  {canWrite && data.type === 'short-term' && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mr-auto"
+                        disabled={extendTtl.isPending}
+                        onClick={() =>
+                          extendTtl.mutate({
+                            userId,
+                            memoryId: data.id,
+                            // Reset the window to the current remaining time + 1h.
+                            ttl: Math.max((data.ttlSeconds ?? 0) + 3600, 60),
+                            scope: data.scope ?? undefined,
+                          })
+                        }
+                      >
+                        {extendTtl.isPending && <Loader2 className="size-4 animate-spin" />}
+                        +1h TTL
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={promote.isPending}
+                        onClick={() => promote.mutate({ userId, memoryId: data.id })}
+                      >
+                        {promote.isPending && <Loader2 className="size-4 animate-spin" />}
+                        Promote to long-term
+                      </Button>
+                    </>
+                  )}
+                  <WriteActions
+                    canWrite={canWrite}
+                    reason={writeBlockedReason}
+                    onEdit={beginEdit}
+                    onDelete={() => setConfirmingDelete(true)}
+                  />
+                </>
               )}
             </SheetFooter>
           </>

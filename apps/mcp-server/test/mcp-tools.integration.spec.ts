@@ -39,6 +39,7 @@ const makeStmMemory = (overrides: Partial<StmMemory> = {}): StmMemory => ({
   expiresAt: new Date(Date.now() + 3600 * 1000),
   ttl: 3600,
   accessCount: 0,
+  version: 1,
   ...overrides,
 });
 
@@ -53,6 +54,7 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   expiresAt: null,
+  version: 1,
   ...overrides,
 });
 
@@ -98,6 +100,14 @@ const text = (response: ToolTextResponse): string => {
 const parseToolResponse = <T>(response: ToolTextResponse): T => {
   return JSON.parse(text(response)) as T;
 };
+
+/**
+ * Human-readable prose from a tool response. get_memory (not-found) and
+ * delete_memory now put machine-readable JSON first and keep the sentence as a
+ * second content item (WP2 T2/D2), so the prose is the last text item.
+ */
+const prose = (response: ToolTextResponse): string =>
+  response.content[response.content.length - 1]?.text ?? '';
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -169,9 +179,9 @@ describe('MCP Tools Integration', () => {
   // Tool registration
   // -------------------------------------------------------------------------
   describe('getMcpTools() registration', () => {
-    it('should register exactly 20 tools', () => {
+    it('should register exactly 24 tools', () => {
       const tools = controller.getMcpTools();
-      expect(tools).toHaveLength(20);
+      expect(tools).toHaveLength(24);
     });
 
     it('should register all expected tool names', () => {
@@ -364,7 +374,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toBe(`Memory ${MEMORY_ID} not found`);
+      expect(prose(response)).toBe(`Memory ${MEMORY_ID} not found`);
     });
 
     it('should throw wrapped error for invalid memoryId', async () => {
@@ -532,7 +542,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
+      expect(prose(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
     });
 
     it('should return success message when memory deleted from LTM', async () => {
@@ -546,7 +556,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
+      expect(prose(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
     });
 
     it('should return not-found message when memory does not exist in either store', async () => {
@@ -560,7 +570,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toBe(`Memory ${MEMORY_ID} not found`);
+      expect(prose(response)).toBe(`Memory ${MEMORY_ID} not found`);
     });
 
     it('should throw wrapped error for invalid userId', async () => {
@@ -599,7 +609,8 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toContain(
+      // Prose is the second content item now (WP2 T3/D2); the first is JSON.
+      expect(prose(response)).toContain(
         `Successfully promoted memory ${MEMORY_ID_2} to long-term storage`,
       );
     });
@@ -616,7 +627,13 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       });
 
-      expect(text(response)).toContain('Promoted content');
+      // The structured first item carries the promoted memory.
+      const parsed = parseToolResponse<{
+        promoted: boolean;
+        memory: { content: string };
+      }>(response);
+      expect(parsed.promoted).toBe(true);
+      expect(parsed.memory.content).toBe('Promoted content');
     });
 
     it('should throw wrapped error when STM memory not found', async () => {
@@ -676,7 +693,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(text(response)).toBe(`Memory ${MEMORY_ID} not found`);
+      expect(prose(response)).toBe(`Memory ${MEMORY_ID} not found`);
     });
 
     it('delete_memory handler should return success message', async () => {
@@ -691,7 +708,7 @@ describe('MCP Tools Integration', () => {
         memoryId: MEMORY_ID,
       })) as { content: Array<{ type: string; text: string }> };
 
-      expect(text(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
+      expect(prose(response)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
     });
 
     it('list_memories handler should return paginated response', async () => {
@@ -884,7 +901,9 @@ describe('MCP Tools Integration', () => {
 
       expect(text(createResp)).toContain('Created short-term memory');
       expect(text(getResp)).toContain(MEMORY_ID);
-      expect(text(deleteResp)).toBe(`Successfully deleted memory ${MEMORY_ID}`);
+      expect(prose(deleteResp)).toBe(
+        `Successfully deleted memory ${MEMORY_ID}`,
+      );
     });
   });
 

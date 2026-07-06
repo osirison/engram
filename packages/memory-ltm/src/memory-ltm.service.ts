@@ -27,6 +27,8 @@ import {
   LtmMemoryQuotaExceededError,
   LtmPromotionError,
   LtmDatabaseError,
+  LtmVersionConflictError,
+  LtmEmbeddingUnavailableError,
   SemanticSearchOptions,
   SemanticSearchResult,
   ReindexOptions,
@@ -60,6 +62,7 @@ type PrismaMemory = {
   metadata: unknown; // Using unknown for type safety; must be type-checked before use
   tags: string[];
   type: string;
+  version: number;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
@@ -67,10 +70,10 @@ type PrismaMemory = {
 };
 
 // Input shape for an LTM row insert: mirrors PrismaMemory but with the
-// server-defaulted columns (id/createdAt/updatedAt) optional. Keeps the single
-// insert choke point (createRowWithQuota) strongly typed against its callers.
-type LtmMemoryCreateData = Omit<PrismaMemory, 'id' | 'createdAt' | 'updatedAt'> &
-  Partial<Pick<PrismaMemory, 'id' | 'createdAt' | 'updatedAt'>>;
+// server-defaulted columns (id/createdAt/updatedAt/version) optional. Keeps the
+// single insert choke point (createRowWithQuota) strongly typed against callers.
+type LtmMemoryCreateData = Omit<PrismaMemory, 'id' | 'createdAt' | 'updatedAt' | 'version'> &
+  Partial<Pick<PrismaMemory, 'id' | 'createdAt' | 'updatedAt' | 'version'>>;
 
 @Injectable()
 export class MemoryLtmService {
@@ -353,12 +356,28 @@ export class MemoryLtmService {
       }
 
       // Resolve final metadata: full-replace wins over patch; patch merges into existing.
-      const nextMetadata: Record<string, unknown> | null =
+      let nextMetadata: Record<string, unknown> | null =
         validatedInput.metadata !== undefined
           ? (validatedInput.metadata ?? null)
           : validatedInput.metadataMerge !== undefined
             ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
             : (existing.metadata ?? null);
+
+      // Embedding staleness (WP2 T7/A9/D10): a content edit that could NOT be
+      // re-embedded (provider down or absent) leaves the OLD vector pointing at
+      // the previous text — flag it so recall drift is visible and repairable;
+      // clear the flag whenever a fresh embedding is written. Scoped strictly to
+      // "embedding column vs content": an indexVector throw below leaves a correct
+      // embedding in Postgres (reindex-recoverable) and does NOT set this flag.
+      if (validatedInput.content !== undefined) {
+        const meta = { ...(nextMetadata ?? {}) };
+        if (newEmbedding === undefined) {
+          meta.embeddingStale = true;
+        } else {
+          delete meta.embeddingStale;
+        }
+        nextMetadata = meta;
+      }
 
       const nextContent = validatedInput.content ?? existing.content;
       const nextTags = validatedInput.tags ?? existing.tags;
@@ -372,6 +391,11 @@ export class MemoryLtmService {
         lastAccessedAt: this.readLastAccessedAt(nextMetadata),
       });
 
+      // Optimistic concurrency (WP2 T4/G4): always bump version; when the caller
+      // supplied expectedVersion, fold it into the compare-and-swap `where` so a
+      // stale writer's update matches no row (Prisma P2025) instead of clobbering.
+      updateData.version = { increment: 1 };
+
       // Build the where clause; Prisma requires a unique filter for update.
       // We enforce org scope via the prior get() call and pass it here too so
       // a concurrent row move cannot be exploited between the two queries.
@@ -383,13 +407,31 @@ export class MemoryLtmService {
       if (organizationId !== undefined) {
         updateWhere.organizationId = organizationId;
       }
+      if (validatedInput.expectedVersion !== undefined) {
+        updateWhere.version = validatedInput.expectedVersion;
+      }
 
       // Update memory in database
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const memory = await (this.prisma as any).memory.update({
-        where: updateWhere,
-        data: updateData,
-      });
+      let memory: PrismaMemory;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        memory = await (this.prisma as any).memory.update({
+          where: updateWhere,
+          data: updateData,
+        });
+      } catch (updateError) {
+        // P2025 = no row matched the where. Either the version moved (conflict)
+        // or the row is gone (not-found). Re-fetch without the version filter to
+        // tell them apart.
+        if ((updateError as { code?: string }).code === 'P2025') {
+          const current = await this.findRawMemory(userId, memoryId, organizationId, scope);
+          if (current) {
+            throw new LtmVersionConflictError(memoryId, current.version);
+          }
+          throw new LtmMemoryNotFoundError(memoryId);
+        }
+        throw updateError;
+      }
 
       this.logger.debug(`LTM memory updated: ${memoryId}`);
       const ltmMemory = this.mapToLtmMemory(memory);
@@ -406,11 +448,123 @@ export class MemoryLtmService {
 
       return ltmMemory;
     } catch (error) {
-      if (error instanceof LtmMemoryNotFoundError) {
+      // Not-found and version conflicts are expected control-flow, not DB faults —
+      // surface them unchanged so callers can map them (T4 conflict → 409).
+      if (error instanceof LtmMemoryNotFoundError || error instanceof LtmVersionConflictError) {
         throw error;
       }
       this.logger.error(`Failed to update LTM memory ${memoryId}: ${error}`);
       throw new LtmDatabaseError('update', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Regenerate the embedding for a memory's CURRENT content and re-index it,
+   * clearing `metadata.embeddingStale` (WP2 T7/D10). Repairs a memory whose
+   * content was edited during an embeddings outage.
+   *
+   * Deliberately does NOT bump `version`: re-sending identical content through
+   * `update()` would trip the T4 compare-and-swap for other writers. `updatedAt`
+   * is allowed to move. Throws `LtmEmbeddingUnavailableError` when no embedding
+   * can be produced, leaving the staleness flag in place for a later retry.
+   */
+  async reembed(
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string
+  ): Promise<LtmMemory> {
+    const existingRow = await this.findRawMemory(userId, memoryId, organizationId, scope);
+    if (!existingRow) {
+      throw new LtmMemoryNotFoundError(memoryId);
+    }
+    const existing = this.mapToLtmMemory(existingRow);
+
+    if (!this.embeddingsService) {
+      throw new LtmEmbeddingUnavailableError(memoryId);
+    }
+    const result = await this.embeddingsService
+      .generate({ text: existing.content })
+      .catch(() => null);
+    if (!result?.embedding) {
+      throw new LtmEmbeddingUnavailableError(memoryId);
+    }
+
+    const metadata = { ...(existing.metadata ?? {}) };
+    delete metadata.embeddingStale;
+
+    const updateWhere: Record<string, unknown> = {
+      id: memoryId,
+      userId,
+      type: MemoryType.LONG_TERM,
+    };
+    if (organizationId !== undefined) {
+      updateWhere.organizationId = organizationId;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updated = (await (this.prisma as any).memory.update({
+      where: updateWhere,
+      data: { embedding: result.embedding, metadata },
+    })) as PrismaMemory;
+
+    const ltmMemory = this.mapToLtmMemory(updated);
+    await this.indexVector(ltmMemory, result.embedding);
+    return ltmMemory;
+  }
+
+  /**
+   * Recreate a long-term memory from a delete snapshot, preserving its ORIGINAL
+   * id so id-keyed vector upserts and inbound links stay valid (WP2 T5/G5). Runs
+   * through the same quota-guarded insert path as `create`, re-embeds the content,
+   * and re-indexes the vector. Fails with `LtmMemoryQuotaExceededError` if the
+   * user is at quota, and is a no-op-safe recreate: if the id already exists the
+   * Prisma insert throws and surfaces as a database error.
+   */
+  async restore(input: {
+    id: string;
+    userId: string;
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown> | null;
+    scope?: string | null;
+    organizationId?: string | null;
+  }): Promise<LtmMemory> {
+    this.logger.debug(`Restoring LTM memory ${input.id} for user: ${input.userId}`);
+
+    try {
+      let embedding: number[] = [];
+      if (this.embeddingsService) {
+        const result = await this.embeddingsService
+          .generate({ text: input.content })
+          .catch(() => null);
+        embedding = result?.embedding ?? [];
+      }
+
+      const memory = await this.createRowWithQuota(input.userId, {
+        id: input.id,
+        userId: input.userId,
+        organizationId: input.organizationId ?? null,
+        scope: input.scope ?? null,
+        content: input.content,
+        metadata: (input.metadata ?? null) as PrismaMemory['metadata'],
+        tags: input.tags ?? [],
+        type: MemoryType.LONG_TERM,
+        expiresAt: null,
+        embedding,
+      });
+
+      const ltmMemory = this.mapToLtmMemory(memory);
+      if (embedding.length > 0) {
+        await this.indexVector(ltmMemory, embedding);
+      }
+      return ltmMemory;
+    } catch (error) {
+      if (error instanceof LtmMemoryQuotaExceededError) {
+        throw error;
+      }
+      this.logger.error(`Failed to restore LTM memory ${input.id}: ${error}`);
+      throw new LtmDatabaseError('restore', error instanceof Error ? error.message : String(error));
     }
   }
 

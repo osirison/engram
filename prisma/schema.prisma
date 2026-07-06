@@ -90,6 +90,7 @@ model Memory {
   metadata       Json?
   tags           String[]
   type           String   // 'short-term' | 'long-term'
+  version        Int      @default(1) // optimistic-concurrency counter; bumped on every update
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   expiresAt      DateTime? // For short-term memories only
@@ -114,6 +115,32 @@ model Memory {
   @@index([organizationId, type])
   @@index([expiresAt])
   @@map("memories")
+}
+
+/// Append-only audit trail for destructive/mutating memory operations.
+///
+/// Deliberately has NO foreign key to `Memory`: rows must survive hard deletes so
+/// that a `delete`'s `before` snapshot can power the restore path (WP2 D6/G5). The
+/// mcp-server dispatch layer is the only place that knows the verified principal +
+/// delegation decision, so audit rows are written there, never from `apps/web`.
+model MemoryAudit {
+  id             String   @id @default(cuid(2))
+  memoryId       String
+  userId         String // data owner (tenant)
+  organizationId String?
+  scope          String?
+  action         String // 'update' | 'delete' | 'bulk-delete' | 'promote' | 'reembed' | 'restore'
+  actorType      String // 'api-key' | 'anonymous' | 'system'
+  actorId        String? // ApiKey.id when actorType = 'api-key'
+  actorLabel     String?  @db.VarChar(256) // untrusted display label (e.g. operator email)
+  delegated      Boolean  @default(false) // admin key acting on another tenant
+  before         Json? // pre-image: { content, tags, metadata, type, scope, expiresAt, version }
+  after          Json? // post-image (null for delete; { deleted: bool } for delete outcomes)
+  createdAt      DateTime @default(now())
+
+  @@index([memoryId])
+  @@index([userId, createdAt])
+  @@map("memory_audits")
 }
 
 /// Migration checkpoint persisted in Postgres for profile-enterprise.

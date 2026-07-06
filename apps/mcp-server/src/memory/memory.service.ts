@@ -1,10 +1,15 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
+import {
+  MemoryStmService,
+  StmMemoryExpiredError,
+  StmMemoryNotFoundError,
+} from '@engram/memory-stm';
 import {
   MemoryLtmService,
   LtmMemoryNotFoundError,
@@ -50,6 +55,7 @@ type StmServiceContract = {
       metadata?: Record<string, unknown>;
       tags?: string[];
       ttl?: number;
+      expectedVersion?: number;
     },
     organizationId?: string,
     scope?: string,
@@ -62,7 +68,12 @@ type StmServiceContract = {
   ) => Promise<void>;
   list: (
     userId: string,
-    options: { limit: number; scope?: string },
+    options: {
+      limit: number;
+      cursor?: string;
+      scope?: string;
+      tags?: string[];
+    },
   ) => Promise<MemoryListResult>;
 };
 
@@ -88,6 +99,7 @@ type LtmServiceContract = {
       content?: string;
       metadata?: Record<string, unknown>;
       tags?: string[];
+      expectedVersion?: number;
     },
     organizationId?: string,
     scope?: string,
@@ -116,6 +128,21 @@ type LtmServiceContract = {
     organizationId?: string,
     scope?: string,
   ) => Promise<Memory>;
+  reembed: (
+    userId: string,
+    memoryId: string,
+    organizationId?: string,
+    scope?: string,
+  ) => Promise<Memory>;
+  restore: (input: {
+    id: string;
+    userId: string;
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown> | null;
+    scope?: string | null;
+    organizationId?: string | null;
+  }) => Promise<Memory>;
   semanticSearch: (
     userId: string,
     query: string,
@@ -174,6 +201,8 @@ export interface UpdateMemoryDto {
   metadata?: Record<string, unknown>;
   tags?: string[];
   ttl?: number;
+  /** Optimistic-concurrency guard (WP2 T4); when set, a version mismatch fails. */
+  expectedVersion?: number;
 }
 
 export interface ListMemoryOptions {
@@ -182,6 +211,13 @@ export interface ListMemoryOptions {
   scope?: string;
   tags?: string[];
   search?: string;
+  /**
+   * Restrict the listing to a single tier. `'short-term'` queries Redis (STM)
+   * only, paging via its SCAN cursor; `'long-term'` queries Postgres (LTM) only.
+   * When omitted, both tiers are merged (legacy behaviour — do not build stable
+   * pagination on the merge; see `listMemories`).
+   */
+  type?: 'short-term' | 'long-term';
 }
 
 export interface RecallOptions {
@@ -412,6 +448,45 @@ export class MemoryService {
 
     const limit = options.limit || 20;
 
+    // Single-tier listings (WP2 T2/D3): the STM+LTM merge below double-counts STM
+    // on every page (its cursor only advances LTM), so any caller that needs
+    // stable pagination asks for exactly one tier.
+    if (options.type === 'short-term') {
+      // STM only — page through Redis via its SCAN cursor.
+      const stm = await this.stm.list(userId, {
+        limit,
+        cursor: options.cursor,
+        scope: options.scope,
+        tags: options.tags,
+      });
+      return {
+        items: stm.items,
+        totalCount: stm.totalCount,
+        hasNextPage: stm.hasNextPage,
+        hasPreviousPage: stm.hasPreviousPage,
+        startCursor: stm.startCursor,
+        endCursor: stm.endCursor,
+      };
+    }
+    if (options.type === 'long-term') {
+      // LTM only — Postgres keyset pagination is stable under concurrent writes.
+      const ltm = await this.ltm.list(userId, {
+        limit,
+        cursor: options.cursor,
+        scope: options.scope,
+        tags: options.tags,
+        search: options.search,
+      });
+      return {
+        items: ltm.items,
+        totalCount: ltm.totalCount,
+        hasNextPage: ltm.hasNextPage,
+        hasPreviousPage: ltm.hasPreviousPage,
+        startCursor: ltm.startCursor,
+        endCursor: ltm.endCursor,
+      };
+    }
+
     // Get memories from both services
     // Note: STM list is not fully implemented yet, but we'll call it anyway
     const [stmResult, ltmResult] = await Promise.all([
@@ -484,6 +559,7 @@ export class MemoryService {
           metadata: updates.metadata,
           tags: updates.tags ?? ([] as string[]),
           ttl: updates.ttl,
+          expectedVersion: updates.expectedVersion,
         },
         undefined,
         scope,
@@ -511,6 +587,7 @@ export class MemoryService {
             content: updates.content,
             metadata: updates.metadata,
             tags: updates.tags,
+            expectedVersion: updates.expectedVersion,
           },
           undefined,
           scope,
@@ -567,6 +644,53 @@ export class MemoryService {
   }
 
   /**
+   * Delete many memories in one call (WP2 T6/D9) with bounded concurrency,
+   * returning a per-item report. Each id routes through {@link deleteMemory}, so
+   * STM/LTM tier routing, scope isolation, and non-fatal vector cleanup are all
+   * inherited. A not-found id lands in `failed` (reason `not-found`); a per-item
+   * error never aborts the batch. An id whose Postgres row deleted but whose
+   * vector removal failed still counts as `deleted` — Postgres is the truth.
+   */
+  async bulkDeleteMemories(
+    userId: string,
+    ids: string[],
+    scope?: string,
+  ): Promise<{
+    deleted: string[];
+    failed: Array<{ id: string; reason: string }>;
+  }> {
+    this.logger.debug(
+      `Bulk-deleting ${ids.length} memories for user: ${userId}`,
+    );
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+
+    // De-duplicate ids to avoid double-processing the same memory.
+    const uniqueIds = [...new Set(ids)];
+
+    await MemoryService.runConcurrent(
+      uniqueIds.map((id) => async () => {
+        try {
+          const ok = await this.deleteMemory(userId, id, scope);
+          if (ok) {
+            deleted.push(id);
+          } else {
+            failed.push({ id, reason: 'not-found' });
+          }
+        } catch (error) {
+          failed.push({
+            id,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+      5, // bounded concurrency — matches the vector-store friendly default
+    );
+
+    return { deleted, failed };
+  }
+
+  /**
    * Promote a memory from STM to LTM
    */
   async promoteMemory(
@@ -581,6 +705,86 @@ export class MemoryService {
     // Use LTM service's promote method which handles the transfer. Scope is
     // forwarded so a namespaced caller cannot promote a foreign-scope memory.
     return await this.ltm.promote(userId, memoryId, undefined, scope);
+  }
+
+  /**
+   * Regenerate the vector for a long-term memory's current content and clear its
+   * staleness flag (WP2 T7). Short-term memories are never vector-indexed, so a
+   * reembed of an STM id is a clear error rather than a silent no-op.
+   */
+  async reembedMemory(
+    userId: string,
+    memoryId: string,
+    scope?: string,
+  ): Promise<Memory> {
+    this.logger.debug(`Re-embedding memory ${memoryId} for user: ${userId}`);
+
+    // Guard: if this id lives in STM, there is no vector index to repair.
+    let inStm = false;
+    try {
+      await this.stm.findById(userId, memoryId, undefined, scope);
+      inStm = true;
+    } catch (error) {
+      // Not-found / expired both mean "not a live STM memory" — fall through to
+      // LTM (which will 404 if the id is unknown there too). Anything else is a
+      // real fault and propagates.
+      if (
+        !(error instanceof StmMemoryNotFoundError) &&
+        !(error instanceof StmMemoryExpiredError)
+      ) {
+        throw error;
+      }
+    }
+    if (inStm) {
+      throw new BadRequestException(
+        `Memory ${memoryId} is short-term and is not vector-indexed; re-embedding applies to long-term memories only`,
+      );
+    }
+
+    return await this.ltm.reembed(userId, memoryId, undefined, scope);
+  }
+
+  /**
+   * Recreate a memory from a delete snapshot (WP2 T5/G5). A `short-term` snapshot
+   * is recreated in STM with a fresh default TTL (its original expiry is long
+   * gone); everything else restores to LTM under its original id with a rebuilt
+   * vector. The audit trail + snapshot lookup are owned by the controller.
+   */
+  async restoreMemory(snapshot: {
+    id: string;
+    userId: string;
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown> | null;
+    scope?: string | null;
+    organizationId?: string | null;
+    type?: string;
+  }): Promise<Memory> {
+    this.logger.debug(
+      `Restoring memory ${snapshot.id} for user: ${snapshot.userId}`,
+    );
+
+    if (snapshot.type === 'short-term') {
+      // STM has no durable id and its expiry is unrecoverable — recreate as a new
+      // short-term memory with a fresh default TTL.
+      return await this.stm.create({
+        userId: snapshot.userId,
+        content: snapshot.content,
+        scope: snapshot.scope ?? undefined,
+        metadata: snapshot.metadata ?? undefined,
+        tags: snapshot.tags,
+      });
+    }
+
+    return await this.ltm.restore({
+      id: snapshot.id,
+      userId: snapshot.userId,
+      content: snapshot.content,
+      tags: snapshot.tags,
+      metadata: snapshot.metadata,
+      scope: snapshot.scope,
+      organizationId: snapshot.organizationId,
+    });
   }
 
   /**

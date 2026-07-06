@@ -41,6 +41,7 @@ describe('MemoryController', () => {
     updateMemory: jest.fn(),
     deleteMemory: jest.fn(),
     promoteMemory: jest.fn(),
+    reembedMemory: jest.fn(),
     recall: jest.fn(),
     reindex: jest.fn(),
   };
@@ -582,12 +583,17 @@ describe('MemoryController', () => {
       );
     });
 
-    it('returns a not-found message when memory is absent', async () => {
+    it('returns a structured not-found sentinel (plus prose) when memory is absent', async () => {
       mockMemoryService.getMemory.mockResolvedValue(null);
 
       const response = await controller.getMemory({ userId, memoryId });
 
-      expect(response.content[0]?.text).toContain('not found');
+      // First item is machine-readable JSON (WP2 T2/D2), prose stays second.
+      expect(JSON.parse(response.content[0]?.text ?? '{}')).toEqual({
+        found: false,
+        memoryId,
+      });
+      expect(response.content[1]?.text).toContain('not found');
     });
 
     it('rejects invalid userId', async () => {
@@ -678,10 +684,36 @@ describe('MemoryController', () => {
           metadata: undefined,
           tags: undefined,
           ttl: undefined,
+          expectedVersion: undefined,
         },
         undefined,
       );
       expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('threads expectedVersion to the service and surfaces conflicts as CONFLICT: (WP2 T4)', async () => {
+      const conflict = new Error(
+        'Long-term memory clm1 was modified (currentVersion=7)',
+      );
+      conflict.name = 'LtmVersionConflictError';
+      mockMemoryService.updateMemory.mockRejectedValue(conflict);
+
+      await expect(
+        controller.updateMemory({
+          userId,
+          memoryId,
+          content: 'x',
+          expectedVersion: 3,
+        }),
+      ).rejects.toThrow(/CONFLICT:/);
+
+      // expectedVersion reaches the service DTO.
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+        expect.objectContaining({ expectedVersion: 3 }),
+        undefined,
+      );
     });
 
     it('rejects invalid memoryId', async () => {
@@ -707,12 +739,17 @@ describe('MemoryController', () => {
     const userId = 'clm0000000000000000000000';
     const memoryId = 'clm1111111111111111111111';
 
-    it('returns a success message when memory is deleted', async () => {
+    it('returns a structured deleted result (plus prose) when memory is deleted', async () => {
       mockMemoryService.deleteMemory.mockResolvedValue(true);
 
       const response = await controller.deleteMemory({ userId, memoryId });
 
-      expect(response.content[0]?.text).toContain('Successfully deleted');
+      // First item is machine-readable JSON (WP2 T2/D2/A10), prose stays second.
+      expect(JSON.parse(response.content[0]?.text ?? '{}')).toEqual({
+        deleted: true,
+        memoryId,
+      });
+      expect(response.content[1]?.text).toContain('Successfully deleted');
       expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith(
         userId,
         memoryId,
@@ -720,12 +757,16 @@ describe('MemoryController', () => {
       );
     });
 
-    it('returns a not-found message when nothing was deleted', async () => {
+    it('returns deleted:false (plus prose) when nothing was deleted', async () => {
       mockMemoryService.deleteMemory.mockResolvedValue(false);
 
       const response = await controller.deleteMemory({ userId, memoryId });
 
-      expect(response.content[0]?.text).toContain('not found');
+      expect(JSON.parse(response.content[0]?.text ?? '{}')).toEqual({
+        deleted: false,
+        memoryId,
+      });
+      expect(response.content[1]?.text).toContain('not found');
     });
 
     it('rejects invalid userId', async () => {
@@ -755,8 +796,15 @@ describe('MemoryController', () => {
         memoryId,
         undefined,
       );
-      expect(response.content[0]?.text).toContain('Successfully promoted');
-      expect(response.content[0]?.text).toContain(memoryId);
+      // Structured first item (WP2 T3/D2): the promoted memory (new LTM id) is
+      // machine-readable; prose stays second.
+      const parsed = JSON.parse(response.content[0]?.text ?? '{}') as {
+        promoted: boolean;
+        memory: { id: string };
+      };
+      expect(parsed.promoted).toBe(true);
+      expect(parsed.memory.id).toBe(memoryId);
+      expect(response.content[1]?.text).toContain('Successfully promoted');
     });
 
     it('rejects invalid input', async () => {
@@ -775,6 +823,43 @@ describe('MemoryController', () => {
         'Failed to promote memory',
         'quota exceeded',
       );
+    });
+  });
+
+  describe('reembedMemory (WP2 T7)', () => {
+    const userId = 'clm0000000000000000000000';
+    const memoryId = 'clm1111111111111111111111';
+
+    it('registers reembed_memory as a delegable memories:write tool', () => {
+      const tool = controller
+        .getMcpTools()
+        .find((t) => t.name === 'reembed_memory');
+      expect(tool).toBeDefined();
+      expect(tool?.delegable).toBe(true);
+      expect(tool?.requiredScope).toBe('memories:write');
+    });
+
+    it('re-embeds and returns the memory', async () => {
+      mockMemoryService.reembedMemory.mockResolvedValue({
+        id: memoryId,
+        userId,
+      });
+      const response = await controller.reembedMemory({ userId, memoryId });
+      expect(mockMemoryService.reembedMemory).toHaveBeenCalledWith(
+        userId,
+        memoryId,
+        undefined,
+      );
+      expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('surfaces a provider-unavailable error with a client-safe message', async () => {
+      const err = new Error('Cannot re-embed: provider down');
+      err.name = 'LtmEmbeddingUnavailableError';
+      mockMemoryService.reembedMemory.mockRejectedValue(err);
+      await expect(
+        controller.reembedMemory({ userId, memoryId }),
+      ).rejects.toThrow(/embeddings provider is unavailable/);
     });
   });
 
@@ -928,5 +1013,281 @@ describe('MemoryController', () => {
         process.env.MCP_ADMIN_TOKEN = original;
       }
     });
+  });
+});
+
+// ── WP2 T5: audit trail + restore wiring ───────────────────────────────────────
+import { MemoryAuditService } from './memory-audit.service';
+import type { ToolCallContext } from '@engram/core';
+
+describe('MemoryController audit wiring (WP2 T5)', () => {
+  let controller: MemoryController;
+
+  const userId = 'clm0000000000000000000000';
+  const memoryId = 'clm1111111111111111111111';
+  const ctx: ToolCallContext = {
+    actorUserId: userId,
+    apiKeyId: 'key_op',
+    scopes: ['admin'],
+    delegated: true,
+  };
+
+  const svc = {
+    getMemory: jest.fn(),
+    updateMemory: jest.fn(),
+    deleteMemory: jest.fn(),
+    bulkDeleteMemories: jest.fn(),
+    promoteMemory: jest.fn(),
+    reembedMemory: jest.fn(),
+    restoreMemory: jest.fn(),
+  };
+  const audit = {
+    record: jest.fn().mockResolvedValue(undefined),
+    list: jest.fn().mockResolvedValue([]),
+    findLatestDeleteSnapshot: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [MemoryController],
+      providers: [
+        { provide: MemoryService, useValue: svc },
+        { provide: ReindexQueueService, useValue: {} },
+        { provide: ConsolidationService, useValue: {} },
+        { provide: MemoryAuditService, useValue: audit },
+      ],
+    }).compile();
+    controller = module.get<MemoryController>(MemoryController);
+  });
+
+  it('records an update audit row carrying the dispatch delegation facts + before/after', async () => {
+    svc.getMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'old',
+      tags: ['a'],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 3,
+    });
+    svc.updateMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'new',
+      tags: ['a'],
+      metadata: null,
+      version: 4,
+      scope: null,
+    });
+
+    await controller.updateMemory(
+      { userId, memoryId, content: 'new', actorLabel: 'op@example.com' },
+      ctx,
+    );
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memoryId,
+        userId,
+        action: 'update',
+        context: ctx,
+        actorLabel: 'op@example.com',
+        before: expect.objectContaining({ content: 'old', version: 3 }),
+        after: expect.objectContaining({ content: 'new', version: 4 }),
+      }),
+    );
+  });
+
+  it("captures a delete's before-snapshot (the restore source) and records the attempt", async () => {
+    svc.getMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'delete me',
+      tags: ['x'],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 1,
+    });
+    svc.deleteMemory.mockResolvedValue(true);
+
+    await controller.deleteMemory({ userId, memoryId }, ctx);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'delete',
+        before: expect.objectContaining({ content: 'delete me' }),
+        after: { deleted: true },
+        // Delegation facts travel in `context`, which the audit service maps to
+        // the row's `delegated`/`actorType` columns.
+        context: ctx,
+      }),
+    );
+  });
+
+  it('records the attempt even when the delete found nothing (deleted:false)', async () => {
+    svc.getMemory.mockResolvedValue(null);
+    svc.deleteMemory.mockResolvedValue(false);
+
+    await controller.deleteMemory({ userId, memoryId }, ctx);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'delete',
+        before: null,
+        after: { deleted: false },
+      }),
+    );
+  });
+
+  it('restore_memory rebuilds from the newest delete snapshot and records a restore row', async () => {
+    audit.findLatestDeleteSnapshot.mockResolvedValue({
+      before: {
+        content: 'recover me',
+        tags: ['x'],
+        type: 'long-term',
+        scope: null,
+      },
+      scope: null,
+      organizationId: null,
+    });
+    svc.restoreMemory.mockResolvedValue({
+      id: memoryId,
+      userId,
+      content: 'recover me',
+      scope: null,
+      organizationId: null,
+    });
+
+    const response = await controller.restoreMemory({ userId, memoryId }, ctx);
+
+    expect(svc.restoreMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: memoryId,
+        content: 'recover me',
+        type: 'long-term',
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'restore', memoryId }),
+    );
+    expect(response.content[0]?.text).toContain(memoryId);
+  });
+
+  it('restore_memory fails clearly when there is no recoverable snapshot', async () => {
+    audit.findLatestDeleteSnapshot.mockResolvedValue(null);
+    await expect(
+      controller.restoreMemory({ userId, memoryId }, ctx),
+    ).rejects.toThrow(/No recoverable delete snapshot/);
+  });
+
+  it('get_memory_audit returns the history from the audit service', async () => {
+    audit.list.mockResolvedValue([
+      {
+        id: 'a1',
+        action: 'delete',
+        actorType: 'api-key',
+        actorLabel: null,
+        delegated: false,
+      },
+    ]);
+    const response = await controller.getMemoryAudit({
+      userId,
+      memoryId,
+      limit: 10,
+    });
+    const parsed = JSON.parse(response.content[0]!.text) as {
+      entries: unknown[];
+    };
+    expect(parsed.entries).toHaveLength(1);
+    expect(audit.list).toHaveBeenCalledWith(userId, memoryId, 10);
+  });
+
+  it('registers restore_memory + get_memory_audit as delegable tools with correct scopes', () => {
+    const tools = controller.getMcpTools();
+    const restore = tools.find((t) => t.name === 'restore_memory');
+    const history = tools.find((t) => t.name === 'get_memory_audit');
+    expect(restore?.delegable).toBe(true);
+    expect(restore?.requiredScope).toBe('memories:write');
+    expect(history?.delegable).toBe(true);
+    expect(history?.requiredScope).toBe('memories:read');
+  });
+
+  it('registers bulk_delete_memories as a delegable memories:delete tool (WP2 T6)', () => {
+    const tool = controller
+      .getMcpTools()
+      .find((t) => t.name === 'bulk_delete_memories');
+    expect(tool?.delegable).toBe(true);
+    expect(tool?.requiredScope).toBe('memories:delete');
+  });
+
+  it('bulk delete returns a per-item report and audits each deleted id (WP2 T6)', async () => {
+    svc.getMemory.mockResolvedValue({
+      id: 'x',
+      userId,
+      content: 'c',
+      tags: [],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 1,
+    });
+    svc.bulkDeleteMemories.mockResolvedValue({
+      deleted: ['a', 'b'],
+      failed: [{ id: 'c', reason: 'not-found' }],
+    });
+
+    const response = await controller.bulkDeleteMemories(
+      { userId, memoryIds: ['a', 'b', 'c'], actorLabel: 'op@example.com' },
+      ctx,
+    );
+
+    const parsed = JSON.parse(response.content[0]!.text) as {
+      deletedCount: number;
+      failedCount: number;
+    };
+    expect(parsed.deletedCount).toBe(2);
+    expect(parsed.failedCount).toBe(1);
+    // One bulk-delete audit row per successfully deleted id.
+    const bulkRows = audit.record.mock.calls.filter(
+      (c) => (c[0] as { action: string }).action === 'bulk-delete',
+    );
+    expect(bulkRows).toHaveLength(2);
+  });
+
+  it('de-duplicates ids before snapshotting so each unique target is read once (PR #222)', async () => {
+    svc.getMemory.mockResolvedValue({
+      id: 'x',
+      userId,
+      content: 'c',
+      tags: [],
+      metadata: null,
+      type: 'long-term',
+      scope: null,
+      organizationId: null,
+      expiresAt: null,
+      version: 1,
+    });
+    svc.bulkDeleteMemories.mockResolvedValue({
+      deleted: ['a', 'b'],
+      failed: [],
+    });
+
+    await controller.bulkDeleteMemories(
+      { userId, memoryIds: ['a', 'a', 'b', 'b', 'a'] },
+      ctx,
+    );
+
+    // snapshotOf → memoryService.getMemory: one read per UNIQUE id (a, b), not
+    // once per (duplicated) input id.
+    expect(svc.getMemory).toHaveBeenCalledTimes(2);
   });
 });
