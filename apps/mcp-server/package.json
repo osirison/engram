@@ -14,6 +14,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
     "reindex": "nest build && node dist/reindex.cli.js",
+    "export": "nest build && node dist/export.cli.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "test": "jest",
@@ -115,6 +116,7 @@
       "!src/main.ts",
       "!**/*.module.ts",
       "!src/reindex.cli.ts",
+      "!src/export.cli.ts",
       "!**/*.d.ts",
       "!test/**"
     ],
