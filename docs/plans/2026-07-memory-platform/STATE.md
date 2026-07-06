@@ -36,7 +36,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan author
 | ------- | ---------------------------------------------- | ---- | -------------------------------------------------------- | ------------------------------------ |
 | WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                          | report in this worktree              |
 | **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (8/10 tasks clean, T3+T6 partial) | **merged `main` @109e0d8 (PR #222)** |
-| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ⬜ not started                                           | plan only                            |
+| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)        | branch `feat/markdown-export-wp3`    |
 | WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ⬜ not started                                           | plan only                            |
 | WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                           | plan only                            |
 | WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | ⬜ not started                                           | plan only                            |
