@@ -47,3 +47,9 @@ export {
 } from './serialize.js';
 
 export { parseDocument, type ParsedDocument } from './parse.js';
+
+export {
+  durableProjection,
+  durableProjectionOfDocument,
+  type DurableProjection,
+} from './roundtrip.js';

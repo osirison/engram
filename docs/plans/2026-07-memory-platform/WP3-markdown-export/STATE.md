@@ -25,7 +25,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started.
 | T6       | CLI `export` (first surface)                         | ✅     | service + wiring ✓ | parseArgs/buildOptions + DirectorySink + runExport→disk wiring; 10 specs          |
 | T7       | MCP tool `export_memories`                           | ⬜     |                    |                                                                                   |
 | T8       | Web UI download-as-zip (last surface)                | ⬜     |                    |                                                                                   |
-| T9       | round-trip contract test harness                     | ⬜     |                    |                                                                                   |
+| T9       | round-trip contract test harness                     | ✅     | service + e2e stub | durableProjection helper + 6 parse-side specs; e2e stub (todo, WP4 completes)     |
 | SHARED-1 | `MemoryLink` schema + migration (additive)           | ⬜     |                    | deferred; T4 reads it capability-guarded. Needs docker + serial migration         |
 
 ## Decisions locked (deviations from PLAN noted)
