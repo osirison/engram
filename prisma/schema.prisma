@@ -53,6 +53,7 @@ model User {
   memberships Membership[]
   memories    Memory[]
   apiKeys     ApiKey[]
+  memoryLinks MemoryLink[] @relation("MemoryLinkUser")
 
   @@map("users")
 }
@@ -107,6 +108,12 @@ model Memory {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
+  // First-class typed links (SHARED-1). Outbound links cascade on delete;
+  // inbound links revert to unresolved (targetMemoryId SET NULL) so a later
+  // re-import can re-resolve them via the retained targetLocator.
+  outgoingLinks MemoryLink[] @relation("MemoryLinkSource")
+  incomingLinks MemoryLink[] @relation("MemoryLinkTarget")
+
   // Indexes for performance
   @@index([userId])
   @@index([userId, type])
@@ -141,6 +148,65 @@ model MemoryAudit {
   @@index([memoryId])
   @@index([userId, createdAt])
   @@map("memory_audits")
+}
+
+/// First-class typed memory→memory edge (SHARED-1 canonical model — see
+/// docs/plans/2026-07-memory-platform/SHARED-1-memory-link.md, which supersedes
+/// the divergent WP3/WP4 drafts). Consumed by WP3 export (reads rows) and WP4
+/// import (writes rows for preserved wikilinks / relative links).
+///
+/// `targetMemoryId` is NULL while a link is unresolved (deferred or dangling):
+/// import persists the edge with only a `targetLocator`, then fills the id when
+/// the target memory is imported in a later run. FKs enforce cleanup at the DB
+/// level: deleting the source cascades its outbound links; deleting the target
+/// SET NULLs inbound links (reverting them to unresolved, retaining the locator)
+/// — so no application-level cleanup hook is required (the datasource uses the
+/// default `foreignKeys` relation mode; even `deleteMany` fires these actions).
+model MemoryLink {
+  id             String   @id @default(cuid(2))
+  userId         String
+  organizationId String?
+  sourceMemoryId String // the memory that contains the link
+  targetMemoryId String? // NULL while unresolved (deferred/dangling)
+  targetLocator  String // normalized: 'id:<cuid>' | 'slug:<slug>' | 'path:<rel>#<anchor>'
+  relType        String // closed set enforced in Zod: EDGE_TYPES (memory-interchange)
+  origin         String   @default("authored") // 'authored' | 'derived'
+  score          Float?
+  note           String?
+  metadata       Json? // { rawTarget, kind, sourceTool, importBatchId }
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user   User    @relation("MemoryLinkUser", fields: [userId], references: [id], onDelete: Cascade)
+  source Memory  @relation("MemoryLinkSource", fields: [sourceMemoryId], references: [id], onDelete: Cascade)
+  target Memory? @relation("MemoryLinkTarget", fields: [targetMemoryId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceMemoryId, targetLocator, relType]) // idempotent link upsert
+  @@index([userId, targetLocator]) // deferred-resolution scan
+  @@index([targetMemoryId])
+  @@index([sourceMemoryId])
+  @@map("memory_links")
+}
+
+/// Import idempotency ledger (WP4 §6 / D3). An indexed point-lookup answering
+/// "have I imported this source before, and at what content hash?" — unlike a
+/// scan of the unindexed `Memory.metadata` JSON. Unique on `(userId, sourceKey)`.
+model MemoryImportSource {
+  id            String   @id @default(cuid(2))
+  userId        String
+  memoryId      String // resolved target memory
+  sourceTool    String // 'claude-code'|'copilot'|'cursor'|'codex'|'gemini'|'markdown'
+  sourcePath    String
+  sourceKey     String // e.g. 'claude-code:memory/feedback-worktree.md'
+  contentHash   String // sha256(trim().toLowerCase()) — reuse computeHash()
+  importBatchId String
+  importedAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, sourceKey]) // indexed idempotency point-lookup
+  @@index([userId, contentHash])
+  @@index([memoryId])
+  @@map("memory_import_sources")
 }
 
 /// Migration checkpoint persisted in Postgres for profile-enterprise.
