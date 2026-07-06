@@ -78,12 +78,20 @@ import {
   ingestConversationToolSchema,
   IngestConversationToolInput,
 } from './dto/ingest-conversation.dto';
+import { exportToolSchema, ExportToolInput } from './dto/export.dto';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import {
   MemoryAuditService,
   type MemorySnapshot,
 } from './memory-audit.service';
+import { MemoryExportService } from './export/memory-export.service';
+import { CollectingSink } from './export/collecting-sink';
+import { DirectorySink } from './export/directory-sink';
+import type { MemoryExportOptions } from './export/export.types';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { constantTimeStringEqual } from '../security/admin-token.util';
 import {
   ClientFacingError,
@@ -105,6 +113,7 @@ import {
  * 6b. restore_memory         - Recreate a deleted memory from its audit snapshot
  * 6c. get_memory_audit       - Read a memory's audit history (WP2 T5)
  * 7.  recall                 - Semantic (vector) recall over long-term memories
+ * 7a. export_memories        - Export memories as an Obsidian markdown vault (WP3 T7)
  * 8.  reindex_memories       - Backfill/rebuild the vector store from Postgres
  * 9.  queue_reindex_memories - Queue resumable reindex processing as a job
  * 10. get_reindex_status     - Poll queued reindex progress by job id
@@ -136,6 +145,11 @@ export class MemoryController {
     @Optional()
     @Inject(MemoryAuditService)
     private readonly audit: MemoryAuditService | null = null,
+    // Markdown export (WP3 T7): Postgres-only, so optional — absent under the
+    // memory/lite profiles, where the tool is simply not registered.
+    @Optional()
+    @Inject(MemoryExportService)
+    private readonly memoryExport: MemoryExportService | null = null,
   ) {
     this.activeProfile = coerceDeploymentProfile(
       process.env['DEPLOYMENT_PROFILE'],
@@ -1484,6 +1498,72 @@ export class MemoryController {
   }
 
   /**
+   * `export_memories` (WP3 T7): export a user's memories as an Obsidian vault
+   * (frontmatter + `[[wikilinks]]`). Bounded exports (≤ `maxInline` memory
+   * files) return the documents + manifest inline as JSON; larger exports are
+   * written to a server directory and return a path reference + manifest
+   * summary — never a base64 zip, which would flood the MCP text channel
+   * (PLAN §4.11). Identity-mode + `delegable`: an admin key exports another
+   * tenant by passing an explicit `userId`.
+   */
+  async exportMemories(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    const validated: ExportToolInput = exportToolSchema.parse(input);
+    if (!this.memoryExport) {
+      throw new ClientFacingError(
+        'export_memories is unavailable under this deployment profile (requires Postgres)',
+      );
+    }
+
+    const options: MemoryExportOptions = {
+      userId: validated.userId,
+      includeStm: validated.includeStm,
+      ...(validated.tags ? { tags: validated.tags } : {}),
+      ...(validated.scope ? { scope: validated.scope } : {}),
+      ...(validated.type ? { type: validated.type } : {}),
+      ...(validated.mode ? { mode: validated.mode } : {}),
+      ...(validated.dateFrom ? { dateFrom: new Date(validated.dateFrom) } : {}),
+      ...(validated.dateTo ? { dateTo: new Date(validated.dateTo) } : {}),
+    };
+
+    const sink = new CollectingSink();
+    const result = await this.memoryExport.export(options, sink);
+
+    if (result.fileCount <= validated.maxInline) {
+      return this.jsonContent({
+        mode: 'inline',
+        manifest: result.manifest,
+        files: sink.toObject(),
+      });
+    }
+
+    // Oversize: flush the collected files to a server directory and return a
+    // reference. The path is server-local (operator-accessible), not sent as
+    // content.
+    const dir = await mkdtemp(join(tmpdir(), 'engram-export-'));
+    const dirSink = new DirectorySink(dir);
+    for (const [relativePath, content] of sink.files) {
+      await dirSink.writeFile(relativePath, content);
+    }
+    return this.jsonContent({
+      mode: 'path',
+      path: dir,
+      manifest: result.manifest,
+      note: `Export exceeded maxInline (${validated.maxInline}); ${result.fileCount} memory files written to the server path above.`,
+    });
+  }
+
+  /** Wrap a JSON-serializable value as an MCP text-content response. */
+  private jsonContent(value: unknown): {
+    content: Array<{ type: string; text: string }>;
+  } {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    };
+  }
+
+  /**
    * Get MCP tools in the format required by the MCP handler.
    *
    * This method creates Tool objects that bind controller methods as
@@ -1616,6 +1696,18 @@ export class MemoryController {
         // search on behalf of any data owner by passing an explicit userId (#200).
         delegable: true,
         handler: this.recall.bind(this) as (input: unknown) => Promise<unknown>,
+      },
+      {
+        name: 'export_memories',
+        description:
+          "Export a user's memories as an Obsidian-compatible markdown vault (YAML frontmatter + [[wikilinks]] preserving inter-memory relationships). Bounded exports return documents + manifest inline; larger exports return a server path reference.",
+        inputSchema: exportToolSchema,
+        // Delegable: an admin-scoped key (the operator console) may export any
+        // data owner's memories by passing an explicit userId (mirrors recall).
+        delegable: true,
+        handler: this.exportMemories.bind(this) as (
+          input: unknown,
+        ) => Promise<unknown>,
       },
       {
         name: 'reindex_memories',
@@ -1764,6 +1856,7 @@ export class MemoryController {
       get_memory: 'memories:read',
       list_memories: 'memories:read',
       recall: 'memories:read',
+      export_memories: 'memories:read',
       reflect: 'memories:read',
       compress_context: 'memories:read',
       load_context: 'memories:read',
@@ -1774,7 +1867,13 @@ export class MemoryController {
       return requiredScope ? { ...tool, requiredScope } : tool;
     });
 
-    return this.filterToolsByProfile(scoped);
+    // Don't advertise export_memories when its (Postgres-only) service is absent
+    // under the memory/lite profiles — the handler would only ever fail.
+    const available = this.memoryExport
+      ? scoped
+      : scoped.filter((tool) => tool.name !== 'export_memories');
+
+    return this.filterToolsByProfile(available);
   }
 
   /**

@@ -10,6 +10,8 @@ import {
   type BulkDeleteResult,
   type DeleteMemoryParams,
   type EngramBackend,
+  type ExportMemoriesParams,
+  type ExportMemoriesResult,
   type HealthReport,
   type ListMemoriesParams,
   type ListMemoriesResult,
@@ -27,6 +29,16 @@ import {
   type ServiceHealth,
   type UpdateMemoryParams,
 } from './types';
+
+/**
+ * Inline cap requested from `export_memories` for a browser download (WP3 T8):
+ * high enough that a normal vault comes back as files, not a server path ref.
+ * Beyond this the tool returns a path ref and the backend steers users to the CLI.
+ *
+ * MUST stay ≤ the tool's `maxInline` cap (`export.dto.ts`, currently 5000) or the
+ * tool rejects the request and every web export fails.
+ */
+const WEB_EXPORT_MAX_INLINE = 2000;
 
 const memorySelect = {
   id: true,
@@ -735,6 +747,41 @@ export class PrismaEngramBackend implements EngramBackend {
     } catch {
       return null;
     }
+  }
+
+  async exportMemories(params: ExportMemoriesParams): Promise<ExportMemoriesResult> {
+    if (!this.mcp) {
+      throw new BackendError(
+        'Exporting memories requires a configured ENGRAM server (ENGRAM_MCP_URL).',
+        'UNAVAILABLE'
+      );
+    }
+    // Request a high inline bound so the browser download always gets the files
+    // back (not a server-side path ref). Truly huge vaults should use the CLI.
+    const result = await this.mcp.call<{
+      mode: string;
+      files?: Record<string, string>;
+      manifest: unknown;
+      note?: string;
+    }>('export_memories', {
+      userId: params.userId,
+      ...(params.includeStm !== undefined ? { includeStm: params.includeStm } : {}),
+      ...(params.tags && params.tags.length > 0 ? { tags: params.tags } : {}),
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.type ? { type: params.type } : {}),
+      ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
+      ...(params.dateTo ? { dateTo: params.dateTo } : {}),
+      ...(params.mode ? { mode: params.mode } : {}),
+      maxInline: WEB_EXPORT_MAX_INLINE,
+    });
+    if (result.mode !== 'inline' || !result.files) {
+      throw new BackendError(
+        `This export is too large to download from the browser (${result.note ?? 'exceeds the inline limit'}). ` +
+          'Use the CLI instead: pnpm --filter mcp-server export -- --user <id> --out ./vault.',
+        'BAD_REQUEST'
+      );
+    }
+    return { files: result.files, manifest: result.manifest };
   }
 
   async getHealth(): Promise<HealthReport> {

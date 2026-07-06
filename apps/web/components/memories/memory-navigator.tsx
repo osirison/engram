@@ -2,11 +2,12 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Database, Loader2, Search, Sparkles, X } from 'lucide-react';
+import { Database, Download, Loader2, Search, Sparkles, X } from 'lucide-react';
 
 import { toast } from 'sonner';
 
 import { BulkDeleteDialog } from '@/components/memories/bulk-delete-dialog';
+import { ExportDialog, type ExportOptions } from '@/components/memories/export-dialog';
 import { MemoryDetailSheet } from '@/components/memories/memory-detail-sheet';
 import { MemoryFiltersBar } from '@/components/memories/memory-filters';
 import { MemoryList } from '@/components/memories/memory-list';
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUserScope } from '@/components/user-scope';
+import { downloadBase64Zip } from '@/lib/download-zip';
 import { formatNumber } from '@/lib/format';
 import {
   rangeToDateFrom,
@@ -197,6 +199,29 @@ export function MemoryNavigator() {
     onError: (error) => toast.error('Bulk delete failed', { description: error.message }),
   });
 
+  const [exportOpen, setExportOpen] = React.useState(false);
+  const exportMemories = trpc.memory.export.useMutation({
+    onSuccess: (result) => {
+      downloadBase64Zip(result.zipBase64, result.fileName);
+      toast.success(`Exported ${result.fileCount} files`);
+      setExportOpen(false);
+    },
+    onError: (error) => toast.error('Export failed', { description: error.message }),
+  });
+
+  const runExport = (options: ExportOptions) => {
+    const type = filters.type === 'all' ? undefined : filters.type;
+    exportMemories.mutate({
+      userId,
+      // A short-term view must include STM or it would export nothing.
+      includeStm: options.includeStm || filters.type === 'short-term',
+      mode: options.singleFile ? 'single' : 'multi',
+      ...(type ? { type } : {}),
+      ...(filters.scope ? { scope: filters.scope } : {}),
+      ...(filters.tags.length ? { tags: filters.tags } : {}),
+    });
+  };
+
   const selectionArray = [...selectedIds];
   const previews = items
     .filter((i) => selectedIds.has(i.id))
@@ -263,6 +288,21 @@ export function MemoryNavigator() {
                 <span>
                   {formatNumber(total)} result{total === 1 ? '' : 's'}
                 </span>
+              )}
+              {enabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setExportOpen(true)}
+                  disabled={exportMemories.isPending}
+                >
+                  {exportMemories.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Download className="size-4" />
+                  )}
+                  Export
+                </Button>
               )}
             </div>
           </div>
@@ -357,6 +397,13 @@ export function MemoryNavigator() {
         previews={previews}
         isPending={bulkDelete.isPending}
         onConfirm={() => bulkDelete.mutate({ userId, memoryIds: selectionArray })}
+      />
+
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        isPending={exportMemories.isPending}
+        onConfirm={runExport}
       />
     </PageContainer>
   );

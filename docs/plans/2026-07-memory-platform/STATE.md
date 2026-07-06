@@ -36,7 +36,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan author
 | ------- | ---------------------------------------------- | ---- | -------------------------------------------------------- | ------------------------------------ |
 | WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                          | report in this worktree              |
 | **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (8/10 tasks clean, T3+T6 partial) | **merged `main` @109e0d8 (PR #222)** |
-| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ⬜ not started                                           | plan only                            |
+| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)        | branch `feat/markdown-export-wp3`    |
 | WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ⬜ not started                                           | plan only                            |
 | WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                           | plan only                            |
 | WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | ⬜ not started                                           | plan only                            |
@@ -47,13 +47,23 @@ but is not tracked as WP1 remediation here; WP1's R1–R13 are otherwise unstart
 
 ### Shared prerequisites (cross-WP schema — apply migrations serially)
 
-| Task     | Model                                                              | Status                                                                             |
-| -------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| SHARED-1 | `MemoryLink` (typed memory→memory edges) — consumed by WP3/WP4/WP2 | ⬜ not started (canonical: [`SHARED-1-memory-link.md`](./SHARED-1-memory-link.md)) |
-| SHARED-2 | `Memory.version` + `MemoryAudit` — consumed by WP2/WP4             | ✅ **done** — migration `20260705190357_memory_version_and_audit` on main          |
+| Task     | Model                                                              | Status                                                                                                                           |
+| -------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| SHARED-1 | `MemoryLink` (typed memory→memory edges) — consumed by WP3/WP4/WP2 | ⬜ not started — **deferred by WP3, owned by WP4** (see note; canonical: [`SHARED-1-memory-link.md`](./SHARED-1-memory-link.md)) |
+| SHARED-2 | `Memory.version` + `MemoryAudit` — consumed by WP2/WP4             | ✅ **done** — migration `20260705190357_memory_version_and_audit` on main                                                        |
 
 > When WP3/WP4 execute, SHARED-2 is already applied to the shared dev Postgres. Serialize
 > SHARED-1's migration with any other pending schema work per the README dependency graph.
+
+> **SHARED-1 handoff (do not drop):** WP3 (export) executed **without** landing SHARED-1 — its
+> edge collector reads `MemoryLink` rows _additively_ through the `loadMemoryLinks` seam in
+> `MemoryExportService`, a no-op until the table exists (WP3 is fully functional on
+> metadata-derived edges today). **WP4 is the owner that must land SHARED-1**: WP4 _writes_
+> `MemoryLink` rows for imported links, and its plan already carries the migration as a task
+> (`WP4-agent-memory-import/PLAN.md` §6 "SHARED-1 — `MemoryLink` schema + migration", depends:
+> none). When WP4 executes, land SHARED-1's migration first (serially, per the README), then
+> WP3's export automatically starts emitting first-class `MemoryLink` edges with no code change
+> — verify by flipping this row to ✅ and re-running WP3's `collectEdges` against seeded rows.
 
 ## WP2 — execution + verification detail
 
