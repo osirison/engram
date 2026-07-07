@@ -314,7 +314,7 @@ function render(rows, notes, runtimeExtra, testExtra) {
   lines.push('| Variable | Description |');
   lines.push('| -------- | ----------- |');
   for (const name of runtimeExtra) {
-    lines.push(`| \`${name}\` | ${UNVALIDATED_DOCS[name] ?? '—'} |`);
+    lines.push(`| \`${name}\` | ${escapeCell(UNVALIDATED_DOCS[name] ?? '—')} |`);
   }
   lines.push('');
   if (testExtra.length > 0) {
@@ -326,7 +326,7 @@ function render(rows, notes, runtimeExtra, testExtra) {
     lines.push('| -------- | ----------- |');
     for (const name of testExtra) {
       lines.push(
-        `| \`${name}\` | ${UNVALIDATED_DOCS[name] ?? 'Enables an integration test suite.'} |`
+        `| \`${name}\` | ${escapeCell(UNVALIDATED_DOCS[name] ?? 'Enables an integration test suite.')} |`
       );
     }
     lines.push('');

@@ -12,16 +12,30 @@
 
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 const manifestPath = join(repoRoot, 'apps/mcp-server/dist/memory/tools-manifest.js');
 const corePath = join(repoRoot, 'packages/core/dist/index.js');
-const outDir =
-  process.env.GEN_MCP_TOOLS_OUT ?? join(repoRoot, 'apps/docs/src/content/docs/reference/mcp-tools');
+
+// This generator rm -rf's the output directory before rewriting it, and the
+// path is overridable via env — so refuse anything that isn't safely inside the
+// repo (the default) or the OS temp dir (tests), and never the repo root itself.
+const outDir = resolve(
+  process.env.GEN_MCP_TOOLS_OUT ?? join(repoRoot, 'apps/docs/src/content/docs/reference/mcp-tools')
+);
+const underRepo = outDir.startsWith(repoRoot + sep);
+const underTmp = outDir.startsWith(resolve(tmpdir()) + sep);
+if (outDir === repoRoot || (!underRepo && !underTmp)) {
+  process.stderr.write(
+    `gen-mcp-tools: refusing to write/delete ${outDir} — it must be inside the repo or a temp dir.\n`
+  );
+  process.exit(1);
+}
 
 if (!existsSync(manifestPath) || !existsSync(corePath)) {
   process.stderr.write(

@@ -45,7 +45,12 @@ import { importAgentMemoryToolSchema } from './dto/import-agent-memory.dto';
 export interface ToolManifestEntry {
   name: string;
   description: string;
-  inputSchema: z.ZodType;
+  /**
+   * Always a `ZodObject` (all tool schemas are `z.object(...).strict()`). The
+   * docs generator emits a parameter table from its shape and the wiring spec
+   * asserts it, so the type is narrowed here to keep that contract explicit.
+   */
+  inputSchema: z.ZodObject;
   /** Defaults to `identity` when omitted. */
   auth?: ToolAuthMode;
   /** Scope an authenticated principal must hold (the `admin` scope satisfies any). */

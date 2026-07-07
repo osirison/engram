@@ -76,7 +76,7 @@ appears here automatically (add a description in the generator).
 | `ENGRAM_DEFAULT_USER_ID` | Fallback `userId` used when `AUTH_REQUIRED=false`. |
 | `ENGRAM_MCP_URL` | Base URL of the MCP endpoint used by clients and the dashboard. |
 | `ENGRAM_OPERATOR_TENANTS` | Comma-separated tenant allowlist an operator (admin) key may act on. |
-| `LOG_LEVEL` | Pino log level: `debug` | `info` | `warn` | `error`. |
+| `LOG_LEVEL` | Pino log level: `debug` \| `info` \| `warn` \| `error`. |
 | `MCP_ADMIN_TOKEN` | Bearer token gating every admin MCP tool. Security-critical. |
 | `MEMORY_CONTRADICTION_THRESHOLD` | Lower similarity bound for contradiction detection. |
 | `MEMORY_CONTRADICTION_THRESHOLD_MAX` | Upper similarity bound for contradiction detection. |

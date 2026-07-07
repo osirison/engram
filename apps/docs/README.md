@@ -16,12 +16,16 @@ that links here).
 
 ## Start
 
-Run from the repository root:
+Engram pins `pnpm@11.5.0` via `packageManager`, so contributors don't need a
+global pnpm. Run from the repository root:
 
 ```bash
-pnpm install
-pnpm --filter docs dev
+npm exec --yes pnpm@11.5.0 -- install
+npm exec --yes pnpm@11.5.0 -- --filter docs dev
 ```
+
+Command tables below use the shorter `pnpm` form, which works once pnpm is on
+your PATH.
 
 Open `http://localhost:3001/docs/`. The `/docs` base path mirrors production so
 that sidebar links and Pagefind search resolve the same way locally.
