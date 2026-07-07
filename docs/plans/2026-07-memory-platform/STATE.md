@@ -39,7 +39,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan author
 | WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)        | branch `feat/markdown-export-wp3`           |
 | WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)               | worktree `worktree-wp4-agent-memory-import` |
 | WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                           | plan only                                   |
-| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | ⬜ not started                                           | plan only                                   |
+| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | 🟨 **foundation done** (T1,T3,T4,T5,T2,T6)               | branch `feat/developer-docs-wp6`            |
 
 ¹ WP1 is a findings report (R1–R13 remediation tasks), not shipped code. One adjacent
 marketing-site commit exists on main (`3241bae` — Pages custom-domain guard + TLS runbook)
@@ -132,6 +132,48 @@ model "SHARED-2" and references a nonexistent `../SHARED-2-memory-link.md`. The
 [`README.md`](./README.md) registry is authoritative: **SHARED-1 = `MemoryLink`**
 (`SHARED-1-memory-link.md`), **SHARED-2 = version/audit** (what WP2 actually built). The
 task card itself is labelled correctly; only the parenthetical is stale.
+
+## WP6 — execution detail (foundation)
+
+Branch `feat/developer-docs-wp6`. The **foundation** is built and locally verified
+(`pnpm build`/`lint`/`typecheck` green; `@engram/config` 56 tests, `mcp-server` 754
+tests; `pnpm docs:check` + docs build + drift gate clean). Commits: T1 `628f3eb`,
+T3 `05583e4`, T4 `9886edb`, T5 `1c656f2`, T2+T6 `c458042`, check-docs fix `ac2a3d2`.
+
+**Done**
+
+- **T1** — `apps/docs` replaced with Astro Starlight (Astro 7 / Starlight 0.41.3),
+  `base: '/docs'`, `starlight-links-validator`. Base-path verified: sidebar links +
+  Pagefind results resolve under `/docs` with no #1407 patch. Strategy A confirmed
+  viable — no Vercel fallback needed.
+- **T3** — `scripts/gen-env-table.mjs` (ts-morph, no compiled import) →
+  `reference/configuration.md`; exported `baseSchema`; added JSDoc to 4 fields;
+  wiring spec asserts per-field coverage + determinism.
+- **T4** — extracted `apps/mcp-server/src/memory/tools-manifest.ts` as the **single
+  source of truth**; refactored `getMcpTools()` to consume it (handlers bound by
+  name); `scripts/gen-mcp-tools.mjs` (imports compiled manifest + `zodToJsonSchema`)
+  → per-tool pages + index. Spec asserts the controller registers exactly the
+  manifest. Generated `.md` prettier-ignored so the drift gate stays byte-stable.
+- **T5** — `starlight-typedoc` generates the 12-package API reference at build time
+  into `reference/api` (**git-ignored**; regenerated every build, so no drift gate).
+- **T2** — `node.js.yml` builds the docs site and merges it into the marketing-site
+  Pages artifact under `/docs`; triggers on `apps/docs/**` too.
+- **T6** — `ci.yml` drift gate after Build: `pnpm docs:generate` + `git diff
+--exit-code` on `configuration.md` + `mcp-tools/` (api excluded — git-ignored).
+
+**Deviations from PLAN (intentional)**
+
+- API reference is **generated at build time and git-ignored**, not committed. It
+  cannot drift (always rebuilt from source), so it needs no drift gate. `docs:generate`
+  therefore covers only env + tools (build-independent via ts-morph for env; the
+  tools step needs a prior `pnpm build`, which CI already runs before the gate).
+- `.prettierignore` excludes the generated reference so committed output equals raw
+  generator output (drift-gate premise). `check-docs.mjs` skips the generated api dir.
+
+**Remaining (content — follow-up)**: T7a/T7b (migrate `docs/*.md` + stubs), T8
+(getting-started tutorials), T9 (architecture), T10 (how-to), T11 (tool prose),
+T12 (config prose), T13 (contributing), T14 (final acceptance gate). The sidebar
+currently lists Getting started + Reference; extend it as each content section lands.
 
 ## Resume protocol
 
