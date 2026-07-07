@@ -37,10 +37,12 @@ const NOISE_VARS = new Set(['HOME', 'HOST', 'PWD', 'PATH', 'CI', 'npm_lifecycle_
 // hidden; fill it in when you add the read.
 const UNVALIDATED_DOCS = {
   MCP_ADMIN_TOKEN: 'Bearer token gating every admin MCP tool. Security-critical.',
-  OTEL_EXPORTER_OTLP_ENDPOINT: 'OTLP endpoint for traces. Omit to disable OpenTelemetry (no overhead).',
+  OTEL_EXPORTER_OTLP_ENDPOINT:
+    'OTLP endpoint for traces. Omit to disable OpenTelemetry (no overhead).',
   OTEL_SERVICE_NAME: 'Service name reported to OpenTelemetry.',
   LOG_LEVEL: 'Pino log level: `debug` | `info` | `warn` | `error`.',
-  ALLOW_UNAUTHENTICATED_HTTP: 'Dev-only override that allows unauthenticated streamable-http calls. Never set in production.',
+  ALLOW_UNAUTHENTICATED_HTTP:
+    'Dev-only override that allows unauthenticated streamable-http calls. Never set in production.',
   CORS_ALLOWED_ORIGINS: 'Comma-separated list of allowed CORS origins for the HTTP transport.',
   ENGRAM_DEFAULT_USER_ID: 'Fallback `userId` used when `AUTH_REQUIRED=false`.',
   ENGRAM_API_KEY: 'Pre-shared API key accepted as an alternative to a session JWT.',
@@ -55,18 +57,19 @@ const UNVALIDATED_DOCS = {
   AUTH_GITHUB_SECRET: 'GitHub OAuth client secret for the dashboard (Auth.js).',
   AUTH_GOOGLE_ID: 'Google OAuth client id for the dashboard (Auth.js).',
   AUTH_GOOGLE_SECRET: 'Google OAuth client secret for the dashboard (Auth.js).',
-  MEMORY_DUPLICATE_THRESHOLD: 'Cosine-similarity threshold above which a new memory is treated as a duplicate.',
+  MEMORY_DUPLICATE_THRESHOLD:
+    'Cosine-similarity threshold above which a new memory is treated as a duplicate.',
   MEMORY_CONTRADICTION_THRESHOLD: 'Lower similarity bound for contradiction detection.',
   MEMORY_CONTRADICTION_THRESHOLD_MAX: 'Upper similarity bound for contradiction detection.',
   MEMORY_DECAY_INTERVAL_MS: 'Interval between importance-decay ticks, in milliseconds.',
   MEMORY_IMPORTANCE_HALF_LIFE_DAYS: 'Half-life (days) for the memory importance decay curve.',
-  STM_CONSOLIDATION_IMPORTANCE_THRESHOLD: 'Minimum importance an STM memory needs to qualify for promotion.',
+  STM_CONSOLIDATION_IMPORTANCE_THRESHOLD:
+    'Minimum importance an STM memory needs to qualify for promotion.',
 };
 
 // Test-only variables that gate integration suites. Grouped separately so the
 // runtime reference stays uncluttered.
-const isTestOnlyVar = (name) =>
-  name.endsWith('_TEST_URL') || name === 'E2E_ENABLED';
+const isTestOnlyVar = (name) => name.endsWith('_TEST_URL') || name === 'E2E_ENABLED';
 
 /** Resolve `DeploymentProfile.X` member references to their string values. */
 function readProfileEnum(project) {
@@ -115,9 +118,8 @@ function describeField(initializer, profileEnum) {
   calls.push(...initializer.getDescendantsOfKind(SyntaxKind.CallExpression));
   for (const call of calls) {
     const expr = call.getExpression();
-    const name = expr.getKind() === SyntaxKind.PropertyAccessExpression
-      ? expr.getName()
-      : undefined;
+    const name =
+      expr.getKind() === SyntaxKind.PropertyAccessExpression ? expr.getName() : undefined;
     if (name === 'optional') optional = true;
     if (name === 'default') {
       const arg = call.getArguments()[0];
@@ -126,9 +128,7 @@ function describeField(initializer, profileEnum) {
     if (name === 'enum') {
       const arr = call.getArguments()[0];
       if (arr && arr.getKind() === SyntaxKind.ArrayLiteralExpression) {
-        const values = arr
-          .getElements()
-          .map((e) => e.getText().replace(/^['"`]|['"`]$/g, ''));
+        const values = arr.getElements().map((e) => e.getText().replace(/^['"`]|['"`]$/g, ''));
         type = values.map((v) => `\`${v}\``).join(' \\| ');
       }
     }
@@ -222,9 +222,7 @@ function main() {
   // Section 2: scan for unvalidated process.env reads.
   const baseNames = new Set(rows.map((r) => r.name));
   const found = scanProcessEnv([join(repoRoot, 'apps'), join(repoRoot, 'packages')]);
-  const extra = [...found]
-    .filter((n) => !baseNames.has(n) && !NOISE_VARS.has(n))
-    .sort();
+  const extra = [...found].filter((n) => !baseNames.has(n) && !NOISE_VARS.has(n)).sort();
   const runtimeExtra = extra.filter((n) => !isTestOnlyVar(n));
   const testExtra = extra.filter((n) => isTestOnlyVar(n));
 
@@ -280,15 +278,9 @@ function render(rows, notes, runtimeExtra, testExtra) {
   lines.push('');
   lines.push('<!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->');
   lines.push('');
-  lines.push(
-    'Engram is configured entirely through environment variables. Section 1 lists'
-  );
-  lines.push(
-    'the schema-validated variables (parsed by `@engram/config`); Section 2 lists'
-  );
-  lines.push(
-    'the remaining variables read directly from `process.env` elsewhere in the'
-  );
+  lines.push('Engram is configured entirely through environment variables. Section 1 lists');
+  lines.push('the schema-validated variables (parsed by `@engram/config`); Section 2 lists');
+  lines.push('the remaining variables read directly from `process.env` elsewhere in the');
   lines.push('codebase.');
   lines.push('');
   lines.push('## Schema-validated variables');
@@ -304,9 +296,7 @@ function render(rows, notes, runtimeExtra, testExtra) {
   if (notes.length > 0) {
     lines.push('### Profile requirements');
     lines.push('');
-    lines.push(
-      'Some variables are optional in the base schema but enforced at load time'
-    );
+    lines.push('Some variables are optional in the base schema but enforced at load time');
     lines.push('depending on the active `DEPLOYMENT_PROFILE`:');
     lines.push('');
     for (const n of notes) lines.push(`- ${escapeCell(n)}`);
@@ -314,12 +304,8 @@ function render(rows, notes, runtimeExtra, testExtra) {
   }
   lines.push('## Additional variables (not schema-validated)');
   lines.push('');
-  lines.push(
-    'These are read directly from `process.env` and are **not** validated by'
-  );
-  lines.push(
-    '`@engram/config`. They are discovered by scanning the source, so a new read'
-  );
+  lines.push('These are read directly from `process.env` and are **not** validated by');
+  lines.push('`@engram/config`. They are discovered by scanning the source, so a new read');
   lines.push('appears here automatically (add a description in the generator).');
   lines.push('');
   lines.push('| Variable | Description |');
@@ -331,14 +317,14 @@ function render(rows, notes, runtimeExtra, testExtra) {
   if (testExtra.length > 0) {
     lines.push('### Test-only variables');
     lines.push('');
-    lines.push(
-      'Set only to enable integration test suites; never required at runtime.'
-    );
+    lines.push('Set only to enable integration test suites; never required at runtime.');
     lines.push('');
     lines.push('| Variable | Description |');
     lines.push('| -------- | ----------- |');
     for (const name of testExtra) {
-      lines.push(`| \`${name}\` | ${UNVALIDATED_DOCS[name] ?? 'Enables an integration test suite.'} |`);
+      lines.push(
+        `| \`${name}\` | ${UNVALIDATED_DOCS[name] ?? 'Enables an integration test suite.'} |`
+      );
     }
     lines.push('');
   }

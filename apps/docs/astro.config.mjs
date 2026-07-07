@@ -33,6 +33,11 @@ export default defineConfig({
       // because the plugin emits deep cross-links the validator over-reports.
       plugins: [
         starlightLinksValidator({
+          // Generated reference pages cross-link with relative paths (e.g.
+          // `./recall`) so they also resolve under `pnpm docs:check`, which
+          // resolves links against the filesystem. Validate them as routes
+          // rather than rejecting relative links outright.
+          errorOnRelativeLinks: false,
           exclude: ['/docs/reference/api/**'],
         }),
       ],
@@ -45,6 +50,10 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'Overview', slug: 'reference' },
+            {
+              label: 'MCP Tools',
+              items: [{ autogenerate: { directory: 'reference/mcp-tools' } }],
+            },
             { label: 'Configuration', slug: 'reference/configuration' },
           ],
         },
