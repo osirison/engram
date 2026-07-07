@@ -26,10 +26,13 @@ function generate(outPath: string): string {
 describe('gen-env-table', () => {
   let markdown: string;
 
+  // The generator is a Node subprocess that loads ts-morph and scans the repo,
+  // so each run costs a few seconds; raise the timeout well above vitest's 5s
+  // default so it stays green under the parallel `turbo run test` load.
   beforeAll(() => {
     const dir = mkdtempSync(join(tmpdir(), 'engram-envtable-'));
     markdown = generate(join(dir, 'configuration.md'));
-  });
+  }, 60_000);
 
   it('emits one schema-validated row per baseSchema field', () => {
     for (const name of fieldNames) {
@@ -66,9 +69,10 @@ describe('gen-env-table', () => {
   });
 
   it('is deterministic across runs (drift-gate premise)', () => {
+    // Compare a fresh run against the independent beforeAll run — two separate
+    // generator invocations must be byte-identical.
     const dir = mkdtempSync(join(tmpdir(), 'engram-envtable-det-'));
-    const a = generate(join(dir, 'a.md'));
-    const b = generate(join(dir, 'b.md'));
-    expect(a).toEqual(b);
-  });
+    const fresh = generate(join(dir, 'fresh.md'));
+    expect(fresh).toEqual(markdown);
+  }, 60_000);
 });
