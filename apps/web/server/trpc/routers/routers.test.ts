@@ -174,6 +174,21 @@ describe('memory router', () => {
     );
   });
 
+  it('threads a TTL through update for STM preserve-by-default (WP2 T3/D4)', async () => {
+    const updateMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ updateMemory });
+    const api = caller(backend);
+    await api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x', ttl: 1800 });
+    expect(updateMemory).toHaveBeenCalledWith(expect.objectContaining({ ttl: 1800 }));
+  });
+
+  it('rejects an out-of-range TTL on update (WP2 T3)', async () => {
+    const api = caller(makeBackend());
+    await expect(
+      api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x', ttl: 5 })
+    ).rejects.toBeTruthy();
+  });
+
   it('injects the operator email as actorLabel on delete (WP2 T5)', async () => {
     const deleteMemory = vi.fn().mockResolvedValue({ deleted: true });
     const backend = makeBackend({ deleteMemory });
@@ -315,5 +330,11 @@ describe('health + analytics + meta routers', () => {
     await expect(api.meta.session()).resolves.toMatchObject({
       user: { email: 'op@example.com' },
     });
+  });
+
+  it('exposes the operator tenant binding as "*" when unbound (WP2 T9)', async () => {
+    // No ENGRAM_OPERATOR_TENANTS in the test env ⇒ every operator is unbound.
+    const api = caller(makeBackend());
+    await expect(api.meta.allowedTenants()).resolves.toBe('*');
   });
 });
