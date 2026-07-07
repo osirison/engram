@@ -4,27 +4,35 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack --port 3001",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "check-types": "tsc --noEmit"
+    "dev": "astro dev --port 3001",
+    "build": "astro build",
+    "preview": "astro preview --port 3001",
+    "check-types": "astro check",
+    "astro": "astro"
   },
   "dependencies": {
-    "@repo/ui": "workspace:*",
-    "next": "^16.2.6",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "@astrojs/starlight": "^0.41.3",
+    "astro": "^7.0.2",
+    "sharp": "^0.34.5",
+    "starlight-links-validator": "^0.25.2",
+    "starlight-typedoc": "^0.23.0",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.12.0"
   },
   "devDependencies": {
-    "@repo/eslint-config": "workspace:*",
-    "@repo/typescript-config": "workspace:*",
-    "@types/node": "^25.9.1",
-    "@types/react": "19.2.15",
-    "@types/react-dom": "19.2.3",
-    "eslint": "^9.39.4",
-    "pino": "^10.3.1",
-    "pino-http": "^11.0.0",
-    "typescript": "6.0.3"
+    "@astrojs/check": "^0.9.4",
+    "typescript": "6.0.3",
+    "@engram/config": "workspace:*",
+    "@engram/core": "workspace:*",
+    "@engram/memory-stm": "workspace:*",
+    "@engram/memory-ltm": "workspace:*",
+    "@engram/memory-lite": "workspace:*",
+    "@engram/embeddings": "workspace:*",
+    "@engram/vector-store": "workspace:*",
+    "@engram/database": "workspace:*",
+    "@engram/redis": "workspace:*",
+    "@engram/auth": "workspace:*",
+    "@engram/eval": "workspace:*",
+    "@engram/client": "workspace:*"
   }
 }

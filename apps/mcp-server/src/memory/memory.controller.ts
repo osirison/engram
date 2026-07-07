@@ -84,6 +84,7 @@ import {
   importAgentMemoryToolSchema,
   ImportAgentMemoryToolInput,
 } from './dto/import-agent-memory.dto';
+import { TOOL_MANIFEST } from './tools-manifest';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import {
@@ -1644,315 +1645,62 @@ export class MemoryController {
    * on a BullMQ worker.
    */
   getMcpTools(): Tool[] {
-    const all: Tool[] = [
-      {
-        name: 'create_memory',
-        description: 'Create a new memory in short-term or long-term storage',
-        inputSchema: createMemoryToolSchema,
-        handler: this.createMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'get_memory',
-        description: 'Retrieve memory by ID',
-        inputSchema: getMemoryToolSchema,
-        // Delegable: an admin-scoped key (the operator console) may read any data
-        // owner's memory — incl. its live STM tier — by passing an explicit
-        // userId (#200). Without this, console STM reads silently target the
-        // key's own tenant (WP2 T2/A28).
-        delegable: true,
-        handler: this.getMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'list_memories',
-        description: 'List memories with pagination and filtering',
-        inputSchema: listMemoriesToolSchema,
-        // Delegable: an admin-scoped key may enumerate any data owner's memories,
-        // incl. the short-term tier via type:'short-term' (#200, WP2 T2/A28).
-        delegable: true,
-        handler: this.listMemories.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'update_memory',
-        description: 'Update existing memory',
-        inputSchema: updateMemoryToolSchema,
-        // Delegable: an admin-scoped key (the operator console) may edit any
-        // data owner's memory by passing an explicit userId (#200).
-        delegable: true,
-        handler: this.updateMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'delete_memory',
-        description: 'Delete memory by ID',
-        // get_memory locator + optional actorLabel (WP2 T5 audit).
-        inputSchema: mutateByIdToolSchema,
-        // Delegable: an admin-scoped key (the operator console) may delete any
-        // data owner's memory by passing an explicit userId (#200).
-        delegable: true,
-        handler: this.deleteMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'bulk_delete_memories',
-        description:
-          'Delete up to 100 memories in a single call, returning a per-item report of deleted ids and failures. STM/LTM routing and scope isolation are inherited per id.',
-        inputSchema: bulkDeleteToolSchema,
-        // Delegable: an admin-scoped key may bulk-delete any data owner's memories.
-        delegable: true,
-        handler: this.bulkDeleteMemories.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'promote_memory',
-        description: 'Promote short-term memory to long-term storage',
-        // get_memory locator + optional actorLabel (WP2 T5 audit).
-        inputSchema: mutateByIdToolSchema,
-        // Delegable: an admin-scoped key (the operator console) may promote any
-        // data owner's short-term memory by passing an explicit userId
-        // (#200, WP2 T2/A28).
-        delegable: true,
-        handler: this.promoteMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'reembed_memory',
-        description:
-          "Regenerate the vector for a long-term memory's current content and clear its embeddingStale flag. Repairs recall drift left by a content edit made while the embeddings provider was unavailable.",
-        inputSchema: reembedMemoryToolSchema,
-        // Delegable: the operator console repairs any data owner's memory (#200).
-        delegable: true,
-        handler: this.reembedMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'restore_memory',
-        description:
-          'Recreate a hard-deleted memory from its most recent delete audit snapshot, preserving its original id. Requires the audit trail.',
-        inputSchema: restoreMemoryToolSchema,
-        // Delegable: the operator console restores any data owner's memory (#200).
-        delegable: true,
-        handler: this.restoreMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'get_memory_audit',
-        description:
-          'Read the append-only audit history (update/delete/promote/reembed/restore) for a memory, newest first.',
-        inputSchema: getMemoryAuditToolSchema,
-        // Delegable: the operator console reads any data owner's history (#200).
-        delegable: true,
-        handler: this.getMemoryAudit.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'recall',
-        description:
-          'Semantically recall the most relevant long-term memories for a natural-language query',
-        inputSchema: recallToolSchema,
-        // Delegable: an admin-scoped key (the operator console) may run semantic
-        // search on behalf of any data owner by passing an explicit userId (#200).
-        delegable: true,
-        handler: this.recall.bind(this) as (input: unknown) => Promise<unknown>,
-      },
-      {
-        name: 'export_memories',
-        description:
-          "Export a user's memories as an Obsidian-compatible markdown vault (YAML frontmatter + [[wikilinks]] preserving inter-memory relationships). Bounded exports return documents + manifest inline; larger exports return a server path reference.",
-        inputSchema: exportToolSchema,
-        // Delegable: an admin-scoped key (the operator console) may export any
-        // data owner's memories by passing an explicit userId (mirrors recall).
-        delegable: true,
-        handler: this.exportMemories.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'import_agent_memory',
-        description:
-          'Import agent memory files (Claude/Copilot/Cursor/Codex/Gemini/markdown) from a server-side path into long-term memory, preserving inter-memory links. Admin-gated; idempotent; supports dryRun and a secrets policy.',
-        inputSchema: importAgentMemoryToolSchema,
-        auth: 'admin',
-        handler: this.importAgentMemory.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'reindex_memories',
-        description:
-          'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable',
-        inputSchema: reindexToolSchema,
-        auth: 'admin',
-        handler: this.reindexMemories.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'queue_reindex_memories',
-        description:
-          'Queue asynchronous vector reindexing with persisted progress and resumability cursor',
-        inputSchema: reindexQueueToolSchema,
-        auth: 'admin',
-        handler: this.queueReindexMemories.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'get_reindex_status',
-        description:
-          'Get status and progress for a queued reindex job (queued/running/completed/failed)',
-        inputSchema: reindexStatusToolSchema,
-        auth: 'admin',
-        handler: this.getReindexStatus.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'cancel_reindex_job',
-        description:
-          'Cancel a queued/running reindex job and preserve progress cursor',
-        inputSchema: reindexCancelToolSchema,
-        auth: 'admin',
-        handler: this.cancelReindexJob.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'retry_reindex_job',
-        description:
-          'Retry a failed/cancelled reindex job from its last persisted cursor',
-        inputSchema: reindexRetryToolSchema,
-        auth: 'admin',
-        handler: this.retryReindexJob.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'consolidate_memories',
-        description:
-          'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage.',
-        inputSchema: consolidateToolSchema,
-        auth: 'admin',
-        handler: this.consolidateMemories.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      // ── C1: High-Level Agent UX Tools ────────────────────────────────────────
-      {
-        name: 'remember',
-        description:
-          'Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata.',
-        inputSchema: rememberToolSchema,
-        handler: this.remember.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'forget',
-        description:
-          'Smart delete: find memories by natural-language concept and optionally delete them. Dry-run by default — pass confirm=true to execute deletion.',
-        inputSchema: forgetToolSchema,
-        handler: this.forget.bind(this) as (input: unknown) => Promise<unknown>,
-      },
-      {
-        name: 'reflect',
-        description:
-          'Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range.',
-        inputSchema: reflectToolSchema,
-        handler: this.reflect.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'compress_context',
-        description:
-          'Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget.',
-        inputSchema: compressContextToolSchema,
-        handler: this.compressContext.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      {
-        name: 'load_context',
-        description:
-          'Load a session-priming context block by blending the most recent memories with the highest-importance memories. Ideal for injecting into a session-opening prompt.',
-        inputSchema: loadContextToolSchema,
-        handler: this.loadContext.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      // ── C2: Bulk / Streaming Ingestion ───────────────────────────────────────
-      {
-        name: 'ingest_conversation',
-        description:
-          'Bulk-ingest a conversation as per-turn long-term memories. Handles chunking for large turns, controls embedding back-pressure via concurrency, and is idempotent: re-submitting the same conversation returns the existing memory IDs.',
-        inputSchema: ingestConversationToolSchema,
-        handler: this.ingestConversation.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-      // ── C3: Token-Budgeted Prompt Assembly ───────────────────────────────────
-      {
-        name: 'prompt_context',
-        description:
-          'Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars). Returns the formatted block plus token accounting metadata.',
-        inputSchema: promptContextToolSchema,
-        handler: this.promptContext.bind(this) as (
-          input: unknown,
-        ) => Promise<unknown>,
-      },
-    ];
-
-    // Make API-key/JWT scopes load-bearing: each memory tool requires the
-    // matching scope (the `admin` scope satisfies any). Read tools need
-    // `memories:read`, mutations `memories:write`, deletions `memories:delete`.
-    // Admin maintenance tools (reindex/consolidate) gate on MCP_ADMIN_TOKEN and
-    // intentionally carry no scope here. Enforced in the core dispatch only when
-    // a request is authenticated.
-    const scopeByTool: Record<string, string> = {
-      create_memory: 'memories:write',
-      update_memory: 'memories:write',
-      promote_memory: 'memories:write',
-      reembed_memory: 'memories:write',
-      restore_memory: 'memories:write',
-      get_memory_audit: 'memories:read',
-      remember: 'memories:write',
-      ingest_conversation: 'memories:write',
-      delete_memory: 'memories:delete',
-      bulk_delete_memories: 'memories:delete',
-      forget: 'memories:delete',
-      get_memory: 'memories:read',
-      list_memories: 'memories:read',
-      recall: 'memories:read',
-      export_memories: 'memories:read',
-      reflect: 'memories:read',
-      compress_context: 'memories:read',
-      load_context: 'memories:read',
-      prompt_context: 'memories:read',
+    // Handlers, bound to this controller instance, keyed by tool name. The tool
+    // metadata (name/description/inputSchema/auth/requiredScope/delegable) lives
+    // in TOOL_MANIFEST — the single source of truth shared with the docs
+    // generator (scripts/gen-mcp-tools.mjs) so the reference cannot drift.
+    // `Function.prototype.bind` widens to `any` without strictBindCallApply, so
+    // each bound method is coerced to the shared handler signature (as the
+    // previous inline definitions did).
+    type BoundHandler = (
+      input: unknown,
+      context?: ToolCallContext,
+    ) => Promise<unknown>;
+    const handlers: Record<string, BoundHandler> = {
+      create_memory: this.createMemory.bind(this) as BoundHandler,
+      get_memory: this.getMemory.bind(this) as BoundHandler,
+      list_memories: this.listMemories.bind(this) as BoundHandler,
+      update_memory: this.updateMemory.bind(this) as BoundHandler,
+      delete_memory: this.deleteMemory.bind(this) as BoundHandler,
+      bulk_delete_memories: this.bulkDeleteMemories.bind(this) as BoundHandler,
+      promote_memory: this.promoteMemory.bind(this) as BoundHandler,
+      reembed_memory: this.reembedMemory.bind(this) as BoundHandler,
+      restore_memory: this.restoreMemory.bind(this) as BoundHandler,
+      get_memory_audit: this.getMemoryAudit.bind(this) as BoundHandler,
+      recall: this.recall.bind(this) as BoundHandler,
+      export_memories: this.exportMemories.bind(this) as BoundHandler,
+      import_agent_memory: this.importAgentMemory.bind(this) as BoundHandler,
+      reindex_memories: this.reindexMemories.bind(this) as BoundHandler,
+      queue_reindex_memories: this.queueReindexMemories.bind(
+        this,
+      ) as BoundHandler,
+      get_reindex_status: this.getReindexStatus.bind(this) as BoundHandler,
+      cancel_reindex_job: this.cancelReindexJob.bind(this) as BoundHandler,
+      retry_reindex_job: this.retryReindexJob.bind(this) as BoundHandler,
+      consolidate_memories: this.consolidateMemories.bind(this) as BoundHandler,
+      remember: this.remember.bind(this) as BoundHandler,
+      forget: this.forget.bind(this) as BoundHandler,
+      reflect: this.reflect.bind(this) as BoundHandler,
+      compress_context: this.compressContext.bind(this) as BoundHandler,
+      load_context: this.loadContext.bind(this) as BoundHandler,
+      ingest_conversation: this.ingestConversation.bind(this) as BoundHandler,
+      prompt_context: this.promptContext.bind(this) as BoundHandler,
     };
-    const scoped = all.map((tool) => {
-      const requiredScope = scopeByTool[tool.name];
-      return requiredScope ? { ...tool, requiredScope } : tool;
+
+    const all: Tool[] = TOOL_MANIFEST.map((entry) => {
+      const handler = handlers[entry.name];
+      if (!handler) {
+        throw new Error(`No handler bound for MCP tool '${entry.name}'`);
+      }
+      return { ...entry, handler };
     });
 
     // Don't advertise export_memories / import_agent_memory when their
     // (Postgres-only) services are absent under the memory/lite profiles — the
     // handlers would only ever fail.
     let available = this.memoryExport
-      ? scoped
-      : scoped.filter((tool) => tool.name !== 'export_memories');
+      ? all
+      : all.filter((tool) => tool.name !== 'export_memories');
     if (!this.memoryImport) {
       available = available.filter(
         (tool) => tool.name !== 'import_agent_memory',

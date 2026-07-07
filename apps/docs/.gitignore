@@ -6,15 +6,13 @@
 .pnp.js
 .yarn/install-state.gz
 
-# testing
-/coverage
+# build output
+dist/
+.astro/
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# TypeDoc API reference is generated at astro build time (starlight-typedoc);
+# it is always regenerated from source so it is never committed and cannot drift.
+src/content/docs/reference/api/
 
 # misc
 .DS_Store
@@ -33,4 +31,3 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts

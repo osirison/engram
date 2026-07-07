@@ -13,9 +13,23 @@ const ignoredDirectories = new Set([
   // frontmatter to exercise parser tolerance); they are not project docs.
   '__fixtures__',
 ]);
+// Generated, git-ignored directories that hold machine-produced Markdown which
+// this linter must not police (frontmatter/links are the generator's concern).
+// The TypeDoc API reference (WP6 T5) is regenerated into the docs site on every
+// build and validated by TypeDoc + starlight-links-validator, not here.
+const ignoredRelativePaths = [
+  path.join('apps', 'docs', 'src', 'content', 'docs', 'reference', 'api'),
+];
 const markdownLinkPattern = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
 const markdownHeadingPattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/gm;
 const failures = [];
+
+function isIgnoredPath(fullPath) {
+  const relative = path.relative(repoRoot, fullPath);
+  return ignoredRelativePaths.some(
+    (ignored) => relative === ignored || relative.startsWith(ignored + path.sep),
+  );
+}
 
 function collectMarkdownFiles(directory) {
   const entries = readdirSync(directory, { withFileTypes: true });
@@ -23,8 +37,9 @@ function collectMarkdownFiles(directory) {
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (!ignoredDirectories.has(entry.name)) {
-        files.push(...collectMarkdownFiles(path.join(directory, entry.name)));
+      const child = path.join(directory, entry.name);
+      if (!ignoredDirectories.has(entry.name) && !isIgnoredPath(child)) {
+        files.push(...collectMarkdownFiles(child));
       }
       continue;
     }

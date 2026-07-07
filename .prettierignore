@@ -7,6 +7,13 @@ out/
 # Machine-generated
 pnpm-lock.yaml
 
+# Auto-generated docs reference (owned by scripts/gen-*.mjs and starlight-typedoc).
+# Prettier must not reformat these or the docs drift gate (regenerate + git diff)
+# would fail spuriously — the committed file must equal raw generator output.
+apps/docs/src/content/docs/reference/configuration.md
+apps/docs/src/content/docs/reference/mcp-tools/
+apps/docs/src/content/docs/reference/api/
+
 # Env files (no parser)
 .env
 .env.*

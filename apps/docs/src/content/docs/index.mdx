@@ -1,0 +1,35 @@
+---
+title: Engram Developer Docs
+description: Developer documentation for Engram — an MCP memory server that gives AI agents durable, searchable memory.
+template: splash
+hero:
+  tagline: Durable, searchable memory for AI agents — over the Model Context Protocol.
+  actions:
+    - text: Get started
+      link: /docs/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/qp/engram
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Engram is a TypeScript monorepo (pnpm workspaces + Turborepo) that runs an
+[MCP](https://modelcontextprotocol.io) memory server. It stores short-term and
+long-term memories, embeds them for semantic recall, and exposes a suite of MCP
+tools that any compatible agent (Claude Desktop, Claude Code, and others) can
+call.
+
+<CardGrid stagger>
+  <Card title="Get started" icon="rocket">
+    Pick a deployment profile and store your first memory in a few commands.
+    [Getting started →](/docs/getting-started/)
+  </Card>
+  <Card title="Reference" icon="open-book">
+    Auto-generated reference for every MCP tool, environment variable, and
+    `@engram/*` package. [Reference →](/docs/reference/)
+  </Card>
+</CardGrid>

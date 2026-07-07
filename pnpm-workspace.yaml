@@ -24,6 +24,11 @@ overrides:
   # ("invalid onRequestStart method"). 6.27.0 is the patched 6.x release.
   undici: '>=6.27.0 <7'
   hono: '>=4.12.25'
+  # Patched 8.0 line for GHSA-fx2h-pf6j-xcff (vite dev-server `server.fs.deny`
+  # bypass on Windows). Pulled transitively by Astro/Starlight (apps/docs). Kept
+  # on 8.0.x — the range Astro resolves today — and off the 8.1.x releases that
+  # are too new for the minimum-release-age gate.
+  vite: '>=8.0.16 <8.1.0'
 
 # Allow openai to use zod v4 (openai declares a peer dep on zod ^3 but only uses
 # it for its optional structured-output helpers, which we don't use).
