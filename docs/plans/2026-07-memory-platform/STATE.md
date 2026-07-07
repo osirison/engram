@@ -10,8 +10,8 @@ built + verified?).** The [`README.md`](./README.md) "Status" table tracks a dif
 axis — whether each _plan document_ was authored. A WP can be "plan: done" there and
 "execution: not started" here.
 
-- **Last updated:** 2026-07-06 (qp session — verified WP2, started this tracker, merged the suite to `main`).
-- **Last run:** WP2 (Memory Management UI) — executed + merged.
+- **Last updated:** 2026-07-08 (WP2 T3/T6 residual follow-ups remediated; earlier: 2026-07-06 verified WP2 + merged the suite to `main`).
+- **Last run:** WP2 residual follow-ups (T3 TTL-preserve input, T6 client cap + failure list, plan-mandated tests, T9 client polish, D3) — on a follow-up branch.
 
 ## Branch / worktree topology (resolved)
 
@@ -32,14 +32,14 @@ the superset — the executor's record plus the independent-verification section
 
 Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan authored only.
 
-| WP      | Deliverable                                    | Plan | Execution                                                | Where                                       |
-| ------- | ---------------------------------------------- | ---- | -------------------------------------------------------- | ------------------------------------------- |
-| WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                          | report in this worktree                     |
-| **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (8/10 tasks clean, T3+T6 partial) | **merged `main` @109e0d8 (PR #222)**        |
-| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)        | branch `feat/markdown-export-wp3`           |
-| WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)               | worktree `worktree-wp4-agent-memory-import` |
-| WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                           | plan only                                   |
-| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | 🟨 **foundation done** (T1,T3,T4,T5,T2,T6)               | branch `feat/developer-docs-wp6`            |
+| WP      | Deliverable                                    | Plan | Execution                                                                         | Where                                                   |
+| ------- | ---------------------------------------------- | ---- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                                                   | report in this worktree                                 |
+| **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (T1–T9 + SHARED-2; T3/T6 follow-ups remediated 2026-07-08) | **merged `main` @109e0d8 (PR #222)** + follow-up branch |
+| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)                                 | branch `feat/markdown-export-wp3`                       |
+| WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)                                        | worktree `worktree-wp4-agent-memory-import`             |
+| WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ⬜ not started                                                                    | plan only                                               |
+| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | 🟨 **foundation done** (T1,T3,T4,T5,T2,T6)                                        | branch `feat/developer-docs-wp6`                        |
 
 ¹ WP1 is a findings report (R1–R13 remediation tasks), not shipped code. One adjacent
 marketing-site commit exists on main (`3241bae` — Pages custom-domain guard + TLS runbook)
@@ -84,51 +84,58 @@ the executor reports them green on the execution branch.
 
 **Independent per-task verification (static code + test audit, 10 agents):**
 
-| Task                   | Verdict        | Both-levels tests | Note                                                                  |
-| ---------------------- | -------------- | ----------------- | --------------------------------------------------------------------- |
-| SHARED-2               | ✅ implemented | ✓                 | schema/migration exact; DB-gated round-trip spec                      |
-| T1 keyset pagination   | ✅ implemented | ✓                 | cursor.ts + 60-row real-PG walk                                       |
-| T2 STM read path       | ✅ implemented | ✓                 | delegable + structured JSON; fixed a real STM SCAN drop-items bug     |
-| T3 STM UI              | 🟨 **partial** | ✓                 | **D4 TTL-preserve edit input missing** + 2 plan-required tests absent |
-| T4 version CAS         | ✅ implemented | ✓                 | LTM CAS + STM read-compare-set; minor test gaps                       |
-| T5 audit + restore     | ✅ implemented | ✓                 | ToolCallContext + restore-by-original-id verified live                |
-| T6 bulk delete         | 🟨 **partial** | ✓                 | **>100 client cap missing**; DTO-bounds + concurrency tests absent    |
-| T7 re-embed integrity  | ✅ implemented | ✓                 | clean — no gaps found                                                 |
-| T8 optimistic delete   | ✅ implemented | ✓                 | cache surgery correct; round-trip test uses pure helper               |
-| T9 proportionate authz | ✅ implemented | ✓                 | server enforcement solid; client polish deferred (as executor noted)  |
+| Task                   | Verdict        | Both-levels tests | Note                                                                                                  |
+| ---------------------- | -------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| SHARED-2               | ✅ implemented | ✓                 | schema/migration exact; DB-gated round-trip spec                                                      |
+| T1 keyset pagination   | ✅ implemented | ✓                 | cursor.ts + 60-row real-PG walk                                                                       |
+| T2 STM read path       | ✅ implemented | ✓                 | delegable + structured JSON; fixed a real STM SCAN drop-items bug                                     |
+| T3 STM UI              | ✅ implemented | ✓                 | D4 TTL-preserve edit input + navigator source-switch/ttl tests added (2026-07-08 follow-up)           |
+| T4 version CAS         | ✅ implemented | ✓                 | LTM CAS + STM read-compare-set; minor test gaps                                                       |
+| T5 audit + restore     | ✅ implemented | ✓                 | ToolCallContext + restore-by-original-id verified live                                                |
+| T6 bulk delete         | ✅ implemented | ✓                 | client >100 cap + expandable failure list + DTO-bounds/concurrency tests added (2026-07-08 follow-up) |
+| T7 re-embed integrity  | ✅ implemented | ✓                 | clean — no gaps found                                                                                 |
+| T8 optimistic delete   | ✅ implemented | ✓                 | cache surgery correct; round-trip test uses pure helper                                               |
+| T9 proportionate authz | ✅ implemented | ✓                 | server enforcement solid; client polish deferred (as executor noted)                                  |
 
-All 10 tasks satisfy the suite's tests-at-both-levels rule. The two 🟨 tasks have genuine
-unmet acceptance criteria beyond what the executor's STATE.md admitted.
+All 10 tasks satisfy the suite's tests-at-both-levels rule. The two 🟨 tasks had genuine
+unmet acceptance criteria beyond what the executor's STATE.md admitted; those were
+**remediated on 2026-07-08** (see below).
 
-### WP2 residual follow-ups (not blocking; tracked here)
+### WP2 residual follow-ups — remediated 2026-07-08
 
-Ranked. None is a security or data-correctness hole; the gate is green.
+Items 1–5 are **done** on the follow-up branch; item 6 (CI-only e2e) is unchanged. The gate
+(`build`/`lint`/`typecheck`/`test`/`docs:check`) is green.
 
-1. **T3 — D4 "TTL preserve-by-default" is unimplemented (behavioral).** There is no
-   edit-mode "TTL (seconds)" input; `saveEdit` threads no `ttl`. Because the STM store
-   computes `newTtl = input.ttl ?? existing.ttl` (full stored window, not remaining), a
-   plain console edit of an STM item **resets its expiry to a full window** — the exact
-   regression D4 set out to prevent. Only the standalone "+1h TTL" button threads a ttl.
-   _Fix:_ add the remaining-TTL-prefilled input per T3 step 3 + its detail-sheet test.
-2. **T6 — ">100 selection blocked client-side with a hint" is unmet.** The 100 cap is
-   server-side Zod only; a >100 attempt shows a generic "Bulk delete failed" toast, not a
-   proactive client hint. _Fix:_ client-side cap + disabled state + hint.
-3. **Missing plan-mandated tests** (both-levels rule technically met elsewhere, but these
-   specific required specs are absent): T3 navigator "source-switch on `type=short-term`"
-   test (no `memory-navigator.test.tsx` exists), T3 `routers.test.ts` ttl-threading case,
-   T6 DTO-bounds spec, T6 concurrency-cap assertion.
-4. **T6 expandable failure list** not built — the toast shows only the first failure + "…".
-5. **T9 client polish** (executor-admitted): `meta.allowedTenants` is exposed but not
-   consumed; free-text scope-switcher entry has no client gate; settings page shows the
-   delegation limitation but no explicit per-operator binding readout. Server enforcement
-   (`assertCanManageUser`) is complete and tested — this is UX only.
-6. **`test:e2e:docker`** (CI-only) not run locally; no e2e spec asserts prose on the changed
-   `get_memory`/`delete_memory`/`promote_memory` tool results.
+1. ✅ **T3 — D4 "TTL preserve-by-default" implemented.** `memory-detail-sheet.tsx` now
+   shows an STM edit-mode "TTL (seconds)" input pre-filled with the **remaining** window —
+   derived from `secondsUntil(expiresAt)`, NOT `ttlSeconds` (which is the stored full
+   window), clamped to `[60, 604800]` — and `saveEdit` threads it. A plain STM save now
+   keeps roughly the current expiry instead of resetting to a full window. Behavioral
+   detail-sheet tests assert remaining-window (≈1800s), operator override, and
+   LTM-omits-ttl.
+2. ✅ **T6 — client >100 cap with a hint.** The navigator disables the "Delete N selected"
+   action and shows "Select at most 100 to delete at once" when the selection exceeds
+   `MAX_BULK_DELETE` (server Zod remains the backstop).
+3. ✅ **Missing plan-mandated tests added:** `memory-navigator.test.tsx` (tier source-switch
+   on `type=short-term` / `all` / `long-term` / search), `routers.test.ts` ttl-threading +
+   out-of-range cases, `bulk-delete.dto.spec.ts` (min/max/strict bounds),
+   `memory.service.spec.ts` concurrency-cap assertion (≤5 in-flight).
+4. ✅ **T6 expandable failure list built.** On partial failure the dialog stays open in an
+   outcome view ("Deleted X of N") with an expandable per-item `{id, reason}` list; the
+   successfully-deleted ids drop out of the selection so a retry targets only the failures.
+5. ✅ **T9 client polish.** The scope-switcher consumes `meta.allowedTenants`, gating
+   free-text entry (blocked with a hint for forbidden tenants; a "Limited to …" footer when
+   bound); the settings page shows a "Data-owner access" readout. Also D3: the STM view now
+   disables the sort + date-range controls with explanatory tooltips. Server enforcement
+   (`assertCanManageUser`) was already complete and tested.
+6. **`test:e2e:docker`** (CI-only) still not run locally; no e2e spec asserts prose on the
+   changed `get_memory`/`delete_memory`/`promote_memory` tool results. Unchanged.
 
-### Doc nit found during verification
+### Doc nit found during verification — ✅ fixed 2026-07-08
 
-`WP2-memory-ui/PLAN.md` (~line 343) has a garbled parenthetical: it calls the `MemoryLink`
-model "SHARED-2" and references a nonexistent `../SHARED-2-memory-link.md`. The
+`WP2-memory-ui/PLAN.md` (~line 347) had a garbled parenthetical: it called the `MemoryLink`
+model "SHARED-2" and referenced a nonexistent `../SHARED-2-memory-link.md` (now corrected to
+`SHARED-1` / `../SHARED-1-memory-link.md`). The
 [`README.md`](./README.md) registry is authoritative: **SHARED-1 = `MemoryLink`**
 (`SHARED-1-memory-link.md`), **SHARED-2 = version/audit** (what WP2 actually built). The
 task card itself is labelled correctly; only the parenthetical is stale.

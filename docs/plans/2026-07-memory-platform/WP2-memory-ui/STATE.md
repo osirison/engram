@@ -142,3 +142,34 @@ plan-required case (see the follow-ups in [`../STATE.md`](../STATE.md)).
 cap are unmet, and several plan-mandated tests are missing. None is a security or
 data-correctness hole and the gate is green, so WP2 ships — the residual items are logged
 as follow-ups in [`../STATE.md`](../STATE.md).
+
+---
+
+## Residual follow-up remediation (2026-07-08)
+
+The two 🟨 tasks and the non-blocking polish were completed on a follow-up branch. The
+closing gate (`build` / `lint` / `typecheck` / `test` / `docs:check`) is green.
+
+- **T3 → ✅** D4 TTL-preserve-by-default implemented. The STM edit form now renders a
+  "TTL (seconds)" input pre-filled with the **remaining** window
+  (`secondsUntil(expiresAt)`, clamped `[60, 604800]`) — deliberately NOT `ttlSeconds`,
+  which is the stored **full** window (`StmMemory.ttl`, serialized verbatim by
+  `list_memories`). `saveEdit` threads the value for STM only, so a plain console save keeps
+  roughly the current expiry. Tests: remaining-window (≈1800s vs a 3600s stored window),
+  operator override, LTM-omits-ttl.
+- **T6 → ✅** Client-side `MAX_BULK_DELETE = 100` cap (disabled action + hint), and an
+  expandable per-item failure list — on partial failure the dialog stays open in an outcome
+  view ("Deleted X of N") listing each `{id, reason}`; deleted ids leave the selection so a
+  retry targets only failures.
+- **Plan-mandated tests added:** `memory-navigator.test.tsx` (tier source-switch),
+  `routers.test.ts` ttl-threading + out-of-range, `bulk-delete.dto.spec.ts` (min/max/strict),
+  `memory.service.spec.ts` concurrency-cap (≤5 in-flight).
+- **T9 client polish → ✅** Scope-switcher consumes `meta.allowedTenants` to gate free-text
+  entry (hint for forbidden tenants, "Limited to …" footer when bound); settings page shows
+  a "Data-owner access" readout; scope-switcher tests + a `meta.allowedTenants` router test.
+  Server enforcement (`assertCanManageUser`) was already complete.
+- **D3 → ✅** The short-term view disables the sort + date-range controls (SCAN order is
+  undefined; STM is ordered by expiry) with explanatory tooltips.
+- **Doc nit → ✅** `PLAN.md` SHARED-1/SHARED-2 parenthetical corrected.
+
+Not addressed (unchanged): `test:e2e:docker` (CI-only) and prose-assertion e2e specs.
