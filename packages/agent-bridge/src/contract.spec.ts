@@ -33,6 +33,9 @@ const root = findRepoRoot();
 const contract = readFileSync(join(root, 'docs', 'agent-memory-contract.md'), 'utf8');
 const serverSource =
   readFileSync(join(root, 'apps', 'mcp-server', 'src', 'memory', 'memory.controller.ts'), 'utf8') +
+  // Memory tool names live in the shared manifest the controller consumes (WP6
+  // T4); scan it too so the drift guard still sees every registered tool.
+  readFileSync(join(root, 'apps', 'mcp-server', 'src', 'memory', 'tools-manifest.ts'), 'utf8') +
   readFileSync(
     join(root, 'apps', 'mcp-server', 'src', 'api-keys', 'api-keys.controller.ts'),
     'utf8'
