@@ -15,9 +15,10 @@
 //      the drift gate catches them), with curated descriptions where known.
 
 import { Project, SyntaxKind } from 'ts-morph';
-import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, relative } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -232,37 +233,39 @@ function main() {
   );
 }
 
-/** Recursively collect distinct `process.env.NAME` identifiers under roots. */
+/**
+ * Collect distinct `process.env.NAME` identifiers from git-tracked source files
+ * under the given roots. Enumerating via `git ls-files` (not a live filesystem
+ * walk) keeps the scan deterministic: it ignores build artifacts and transient
+ * files a parallel test run may create/delete mid-scan, so the output — and the
+ * drift gate — depend only on committed source.
+ */
 function scanProcessEnv(roots) {
   const names = new Set();
   const re = /process\.env\.([A-Z][A-Z0-9_]+)/g;
-  const skip = new Set(['node_modules', 'dist', '.next', '.astro', 'coverage', '.turbo']);
-  const walk = (dir) => {
-    let entries;
+  const relRoots = roots.map((r) => relative(repoRoot, r));
+  let tracked;
+  try {
+    tracked = execFileSync('git', ['ls-files', '-z', '--', ...relRoots], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    })
+      .split('\0')
+      .filter(Boolean);
+  } catch {
+    tracked = [];
+  }
+  for (const rel of tracked) {
+    if (!/\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(rel)) continue;
+    let content;
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      content = readFileSync(join(repoRoot, rel), 'utf8');
     } catch {
-      return;
+      continue;
     }
-    for (const e of entries) {
-      if (e.name.startsWith('.') && e.name !== '.') continue;
-      if (skip.has(e.name)) continue;
-      const full = join(dir, e.name);
-      if (e.isDirectory()) {
-        walk(full);
-      } else if (/\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(e.name)) {
-        const content = readFileSync(full, 'utf8');
-        let m;
-        while ((m = re.exec(content)) !== null) names.add(m[1]);
-      }
-    }
-  };
-  for (const root of roots) {
-    try {
-      if (statSync(root).isDirectory()) walk(root);
-    } catch {
-      /* root absent */
-    }
+    let m;
+    while ((m = re.exec(content)) !== null) names.add(m[1]);
   }
   return names;
 }
