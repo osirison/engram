@@ -21,6 +21,18 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@engram/config": "workspace:*",
+    "@engram/core": "workspace:*",
+    "@engram/memory-stm": "workspace:*",
+    "@engram/memory-ltm": "workspace:*",
+    "@engram/memory-lite": "workspace:*",
+    "@engram/embeddings": "workspace:*",
+    "@engram/vector-store": "workspace:*",
+    "@engram/database": "workspace:*",
+    "@engram/redis": "workspace:*",
+    "@engram/auth": "workspace:*",
+    "@engram/eval": "workspace:*",
+    "@engram/client": "workspace:*"
   }
 }

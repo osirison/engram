@@ -101,6 +101,42 @@ importers:
       '@astrojs/check':
         specifier: ^0.9.4
         version: 0.9.9(prettier@3.8.3)(typescript@6.0.3)
+      '@engram/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@engram/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@engram/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@engram/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@engram/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@engram/embeddings':
+        specifier: workspace:*
+        version: link:../../packages/embeddings
+      '@engram/eval':
+        specifier: workspace:*
+        version: link:../../packages/eval
+      '@engram/memory-lite':
+        specifier: workspace:*
+        version: link:../../packages/memory-lite
+      '@engram/memory-ltm':
+        specifier: workspace:*
+        version: link:../../packages/memory-ltm
+      '@engram/memory-stm':
+        specifier: workspace:*
+        version: link:../../packages/memory-stm
+      '@engram/redis':
+        specifier: workspace:*
+        version: link:../../packages/redis
+      '@engram/vector-store':
+        specifier: workspace:*
+        version: link:../../packages/vector-store
       typescript:
         specifier: 6.0.3
         version: 6.0.3
