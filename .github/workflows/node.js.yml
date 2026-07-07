@@ -11,10 +11,14 @@ on:
     branches: ['main']
     paths:
       - 'apps/marketing-site/**'
+      # The developer docs (WP6) build into the same Pages artifact under
+      # `/docs`, so docs changes must also trigger the combined deploy.
+      - 'apps/docs/**'
   pull_request:
     branches: ['main']
     paths:
       - 'apps/marketing-site/**'
+      - 'apps/docs/**'
   workflow_dispatch:
 
 permissions:
@@ -47,9 +51,36 @@ jobs:
         working-directory: apps/marketing-site
         run: npm run build
 
+      # ── Developer docs (WP6): build the Astro Starlight site and merge it into
+      # the marketing-site output under `/docs` so both ship in one Pages
+      # artifact (Strategy A). The docs app is part of the pnpm workspace, so it
+      # needs its own install; marketing-site above uses npm + its own lockfile.
+      - name: Setup pnpm (for docs)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - name: Setup Node.js (pnpm cache, for docs)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install workspace dependencies (for docs)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build docs site (base /docs)
+        run: pnpm --filter docs build
+
+      - name: Merge docs into marketing-site output under /docs
+        run: |
+          mkdir -p apps/marketing-site/dist/docs
+          cp -r apps/docs/dist/. apps/marketing-site/dist/docs/
+
       - name: Upload artifact
         # Upload from the gated build so the deploy job ships exactly what
-        # passed lint/build (deploys only happen on push/dispatch below).
+        # passed lint/build (deploys only happen on push/dispatch below). The
+        # copied dist/docs subtree rides along in the same artifact.
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
