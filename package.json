@@ -21,6 +21,7 @@
     "bench:baseline:fetch": "node scripts/fetch-benchmark-baseline.mjs --out artifacts/bench-baseline.json",
     "bench:trend:check": "node scripts/compare-benchmark-trend.mjs --current artifacts/bench-results.json --baseline artifacts/bench-baseline.json --out artifacts/bench-trend-summary.json --max-p95-delta 20",
     "docs:check": "node .github/check-docs.mjs",
+    "docs:generate": "node scripts/gen-env-table.mjs && node scripts/gen-mcp-tools.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "inspector": "MCP_AUTO_OPEN_ENABLED=false npx --yes @modelcontextprotocol/inspector",
@@ -55,6 +56,7 @@
     "lint-staged": "^17.0.7",
     "prettier": "^3.8.3",
     "prisma": "^7.8.0",
+    "ts-morph": "^28.0.0",
     "turbo": "^2.9.16",
     "typescript": "^6.0.3"
   },
