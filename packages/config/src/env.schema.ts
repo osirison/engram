@@ -26,8 +26,16 @@ const booleanFlag = (defaultValue: boolean): z.ZodType<boolean> =>
  * {@link coerceDeploymentProfile} and the conditional rules are applied
  * inside a single transform pass instead of duplicating per-profile schemas.
  */
-const baseSchema = z.object({
+/**
+ * Unwrapped, introspectable env object schema. `envSchema` below wraps this in
+ * a profile-aware `.transform()` (producing a `ZodEffects`, not a `ZodObject`),
+ * so tooling that needs to enumerate the fields — e.g. the configuration
+ * reference generator (`scripts/gen-env-table.mjs`) — must read `baseSchema`.
+ */
+export const baseSchema = z.object({
+  /** Runtime environment. Controls dev-only behaviours and log verbosity. */
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  /** TCP port the MCP/HTTP server listens on. */
   PORT: z.coerce.number().default(3000),
   /**
    * Conditional Postgres URL. Required for `lite` and `enterprise` profiles,
@@ -103,9 +111,11 @@ const baseSchema = z.object({
   OAUTH_REDIRECT_BASE_URL: z.string().url().optional(),
   /** GitHub OAuth app credentials. Both must be set to enable GitHub login. */
   GITHUB_CLIENT_ID: z.string().optional(),
+  /** GitHub OAuth client secret (pairs with `GITHUB_CLIENT_ID`). Never logged. */
   GITHUB_CLIENT_SECRET: z.string().optional(),
   /** Google OAuth app credentials. Both must be set to enable Google login. */
   GOOGLE_CLIENT_ID: z.string().optional(),
+  /** Google OAuth client secret (pairs with `GOOGLE_CLIENT_ID`). Never logged. */
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 
   // ──────────────────────────────────────────────────────────────────────────

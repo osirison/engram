@@ -43,7 +43,10 @@ export default defineConfig({
         },
         {
           label: 'Reference',
-          items: [{ label: 'Overview', slug: 'reference' }],
+          items: [
+            { label: 'Overview', slug: 'reference' },
+            { label: 'Configuration', slug: 'reference/configuration' },
+          ],
         },
       ],
     }),
