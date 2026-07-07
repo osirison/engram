@@ -69,8 +69,15 @@ jobs:
       - name: Install workspace dependencies (for docs)
         run: pnpm install --frozen-lockfile
 
-      - name: Build docs site (base /docs)
-        run: pnpm --filter docs build
+      - name: Build workspace (for docs TypeDoc)
+        # starlight-typedoc resolves cross-package types from each package's
+        # built `dist/*.d.ts`, so a docs build in a clean checkout fails without
+        # the workspace built first. `db:generate` produces the Prisma client
+        # that `@engram/database` compiles against (no live DB needed); the
+        # Turbo `build` also emits apps/docs/dist for the merge below.
+        run: |
+          pnpm db:generate
+          pnpm build
 
       - name: Merge docs into marketing-site output under /docs
         run: |
