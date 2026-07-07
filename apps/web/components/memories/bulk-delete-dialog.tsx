@@ -19,10 +19,18 @@ import { truncate } from '@/lib/format';
 const TYPE_TO_CONFIRM_THRESHOLD = 10;
 const CONFIRM_WORD = 'delete';
 
+/** Per-item outcome of a bulk delete (WP2 T6/D9). */
+export type BulkDeleteOutcome = {
+  deleted: string[];
+  failed: Array<{ id: string; reason: string }>;
+};
+
 /**
  * Hardened bulk-delete confirmation (WP2 T6/D7). Shows the count and a preview of
  * the first few contents; for large selections (>10) it gates the destructive
- * action behind typing the word "delete".
+ * action behind typing the word "delete". When a completed `result` carries
+ * per-item failures, the dialog switches to an outcome view with an expandable
+ * failure list instead of closing silently.
  */
 export function BulkDeleteDialog({
   open,
@@ -31,6 +39,7 @@ export function BulkDeleteDialog({
   previews,
   isPending,
   onConfirm,
+  result,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -39,6 +48,8 @@ export function BulkDeleteDialog({
   previews: string[];
   isPending: boolean;
   onConfirm: () => void;
+  /** Set after a partial-failure run so the operator can see what failed. */
+  result?: BulkDeleteOutcome | null;
 }) {
   const [typed, setTyped] = React.useState('');
 
@@ -49,6 +60,47 @@ export function BulkDeleteDialog({
 
   const needsTyped = count > TYPE_TO_CONFIRM_THRESHOLD;
   const confirmDisabled = isPending || (needsTyped && typed.trim().toLowerCase() !== CONFIRM_WORD);
+
+  // Outcome view: a completed run left some items undeleted. Show what failed and
+  // why; the successful ids are already gone from the list.
+  if (result && result.failed.length > 0) {
+    const total = result.deleted.length + result.failed.length;
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Deleted {result.deleted.length} of {total}
+            </DialogTitle>
+            <DialogDescription>
+              {result.failed.length} memor{result.failed.length === 1 ? 'y' : 'ies'} could not be
+              deleted. Successful deletions have already been removed from the list.
+            </DialogDescription>
+          </DialogHeader>
+
+          <details className="rounded-md border bg-muted/30 p-2 text-sm" open>
+            <summary className="cursor-pointer font-medium">
+              Show {result.failed.length} failure{result.failed.length === 1 ? '' : 's'}
+            </summary>
+            <ul className="mt-2 max-h-48 space-y-1 overflow-auto">
+              {result.failed.map((f) => (
+                <li key={f.id} className="flex items-start justify-between gap-3">
+                  <span className="truncate font-mono text-xs text-muted-foreground">{f.id}</span>
+                  <span className="shrink-0 text-xs text-destructive">{f.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

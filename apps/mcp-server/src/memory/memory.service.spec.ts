@@ -710,6 +710,44 @@ describe('MemoryService', () => {
       expect(result.deleted).toEqual(['a']);
       expect(ltmService.delete).toHaveBeenCalledTimes(1);
     });
+
+    it('caps in-flight deletions at the bounded concurrency of 5', async () => {
+      // Block every per-item delete on a manual resolver so we can observe how
+      // many run at once. With 12 ids and a cap of 5, at most 5 are ever
+      // in-flight (runConcurrent worker pool — WP2 T6/D9).
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const resolvers: Array<() => void> = [];
+      const deleteSpy = jest.spyOn(service, 'deleteMemory').mockImplementation(
+        () =>
+          new Promise<boolean>((resolve) => {
+            inFlight++;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            resolvers.push(() => {
+              inFlight--;
+              resolve(true);
+            });
+          }),
+      );
+
+      const ids = Array.from({ length: 12 }, (_, i) => `id-${i}`);
+      const pending = service.bulkDeleteMemories('user-1', ids);
+
+      // Let the first wave of workers register.
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(maxInFlight).toBe(5);
+
+      // Drain in rounds until the batch completes.
+      while (resolvers.length > 0) {
+        resolvers.splice(0).forEach((release) => release());
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      }
+
+      const result = await pending;
+      expect(result.deleted).toHaveLength(12);
+      expect(maxInFlight).toBe(5);
+      deleteSpy.mockRestore();
+    });
   });
 
   describe('promoteMemory', () => {

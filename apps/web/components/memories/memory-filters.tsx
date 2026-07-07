@@ -32,11 +32,15 @@ export function MemoryFiltersBar({
   filters,
   onChange,
   searching = false,
+  stmView = false,
 }: {
   filters: MemoryFilters;
   onChange: (patch: Partial<MemoryFilters>) => void;
   /** In semantic-search mode, type and sort don't apply, so they're disabled. */
   searching?: boolean;
+  /** On the live short-term tier, SCAN order is undefined and rows are sorted
+   *  client-side by expiry — so sort + date-range don't apply (WP2 T3/D3). */
+  stmView?: boolean;
 }) {
   const active = activeFilterCount(filters);
 
@@ -76,9 +80,14 @@ export function MemoryFiltersBar({
 
       <Select
         value={filters.range}
+        disabled={stmView}
         onValueChange={(value) => onChange({ range: value as RangeKey })}
       >
-        <SelectTrigger size="sm" className="w-[150px]">
+        <SelectTrigger
+          size="sm"
+          className="w-[150px]"
+          title={stmView ? 'Date range does not apply to the live short-term tier' : undefined}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -92,7 +101,7 @@ export function MemoryFiltersBar({
 
       <Select
         value={`${filters.sort}:${filters.order}`}
-        disabled={searching}
+        disabled={searching || stmView}
         onValueChange={(value) => {
           const [sort, order] = value.split(':') as [SortKey, OrderKey];
           onChange({ sort, order });
@@ -102,7 +111,11 @@ export function MemoryFiltersBar({
           size="sm"
           className="w-[160px]"
           title={
-            searching ? 'Sort does not apply to semantic search (ranked by relevance)' : undefined
+            searching
+              ? 'Sort does not apply to semantic search (ranked by relevance)'
+              : stmView
+                ? 'Short-term items are ordered by time to expiry'
+                : undefined
           }
         >
           <SelectValue />
