@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -29,6 +30,7 @@ import {
   formatUptime,
   memoryTypeLabel,
   relativeTime,
+  secondsUntil,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/react';
@@ -36,6 +38,11 @@ import { trpc } from '@/trpc/react';
 /** Minimal shapes for the optimistic-delete cache surgery (WP2 T8). */
 type EvictItem = { id: string };
 type InfinitePages = { pages: Array<{ items: EvictItem[] }>; pageParams: unknown[] };
+
+/** STM TTL bounds — mirror `update-memory.dto.ts` (min 60s, max 7 days). */
+const MIN_TTL = 60;
+const MAX_TTL = 604_800;
+const clampTtl = (seconds: number) => Math.min(Math.max(Math.round(seconds), MIN_TTL), MAX_TTL);
 
 /**
  * Remove a memory id from a cached query's data (WP2 T8), handling both the
@@ -97,6 +104,9 @@ export function MemoryDetailSheet({
   const [isEditing, setIsEditing] = React.useState(false);
   const [draftContent, setDraftContent] = React.useState('');
   const [draftTags, setDraftTags] = React.useState<string[]>([]);
+  // STM-only TTL draft (WP2 T3/D4): pre-filled with the REMAINING window on edit
+  // so a plain save keeps roughly the current expiry instead of resetting it.
+  const [draftTtl, setDraftTtl] = React.useState('');
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   // Optimistic-concurrency conflict UI (WP2 T4/D5): set when a save is rejected
   // because another writer moved the version. `preservedDraft` keeps the
@@ -119,6 +129,14 @@ export function MemoryDetailSheet({
     if (!memory.data) return;
     setDraftContent(memory.data.content);
     setDraftTags(memory.data.tags);
+    if (memory.data.type === 'short-term') {
+      // Prefill with the REMAINING window (expiresAt − now), NOT the stored
+      // ttlSeconds (which is the full window) — the store recomputes
+      // expiresAt = now + ttl on save, so sending the remaining seconds keeps
+      // roughly the current expiry rather than resetting it (WP2 T3/D4).
+      const remaining = secondsUntil(memory.data.expiresAt) ?? memory.data.ttlSeconds ?? 3600;
+      setDraftTtl(String(clampTtl(remaining)));
+    }
     setIsEditing(true);
   };
 
@@ -250,12 +268,22 @@ export function MemoryDetailSheet({
   const saveEdit = () => {
     if (!memoryId) return;
     setConflict(false);
+    // STM saves carry a TTL so the store keeps the (remaining) expiry window
+    // rather than defaulting to the full stored window (WP2 T3/D4). The user may
+    // override the prefilled value; fall back to the remaining window if cleared.
+    let ttl: number | undefined;
+    if (memory.data?.type === 'short-term') {
+      const parsed = Number.parseInt(draftTtl, 10);
+      const remaining = secondsUntil(memory.data.expiresAt) ?? memory.data.ttlSeconds ?? 3600;
+      ttl = clampTtl(Number.isFinite(parsed) && parsed > 0 ? parsed : remaining);
+    }
     update.mutate({
       userId,
       memoryId,
       content: draftContent,
       tags: draftTags,
       scope: memory.data?.scope ?? undefined,
+      ttl,
       // Optimistic concurrency (WP2 T4): the save is rejected with CONFLICT if the
       // memory has moved past the version we loaded/reloaded.
       expectedVersion: memory.data?.version,
@@ -384,6 +412,29 @@ export function MemoryDetailSheet({
                   <p className="text-sm text-muted-foreground">No tags</p>
                 )}
               </section>
+
+              {/* STM TTL (WP2 T3/D4): prefilled with the remaining window so a
+                  save preserves the current expiry by default. */}
+              {isEditing && data.type === 'short-term' && (
+                <section className="space-y-2">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    TTL (seconds)
+                  </h3>
+                  <Input
+                    type="number"
+                    min={MIN_TTL}
+                    max={MAX_TTL}
+                    value={draftTtl}
+                    onChange={(e) => setDraftTtl(e.target.value)}
+                    aria-label="TTL in seconds"
+                    className="w-40"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Saving sets a new expiry window from now. Prefilled with the time remaining, so
+                    a save keeps the current expiry.
+                  </p>
+                </section>
+              )}
 
               <section>
                 <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">

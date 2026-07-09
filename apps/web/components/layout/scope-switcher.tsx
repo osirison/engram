@@ -22,6 +22,22 @@ export function ScopeSwitcher() {
   const [open, setOpen] = React.useState(false);
   const [filter, setFilter] = React.useState('');
   const owners = trpc.meta.owners.useQuery(undefined, { staleTime: 60_000 });
+  // The data owners this operator may manage (WP2 T9). `'*'` when unbound; the
+  // server (`assertCanManageUser`) is the real boundary, so this only keeps the
+  // free-text entry honest rather than letting it target a forbidden tenant.
+  const allowedTenants = trpc.meta.allowedTenants.useQuery(undefined, { staleTime: 60_000 });
+  const bound = Array.isArray(allowedTenants.data);
+
+  // Permissive while the binding is still loading or unset — a bound operator
+  // only ever gets forbidden values blocked here, never their own tenants.
+  const isAllowed = React.useCallback(
+    (value: string) => {
+      const allowed = allowedTenants.data;
+      if (allowed === undefined || allowed === '*') return true;
+      return allowed.includes(value);
+    },
+    [allowedTenants.data]
+  );
 
   const filtered = React.useMemo(() => {
     const list = owners.data ?? [];
@@ -32,7 +48,7 @@ export function ScopeSwitcher() {
 
   const select = (next: string) => {
     const value = next.trim();
-    if (!value) return;
+    if (!value || !isAllowed(value)) return;
     setUserId(value);
     setOpen(false);
     setFilter('');
@@ -77,7 +93,9 @@ export function ScopeSwitcher() {
             {!owners.isLoading && filtered.length === 0 && (
               <p className="px-2 py-3 text-sm text-muted-foreground">
                 {filter.trim()
-                  ? `Press Enter to view "${filter.trim()}"`
+                  ? isAllowed(filter.trim())
+                    ? `Press Enter to view "${filter.trim()}"`
+                    : `You are not permitted to manage "${filter.trim()}".`
                   : 'No data owners found yet.'}
               </p>
             )}
@@ -105,6 +123,12 @@ export function ScopeSwitcher() {
             ))}
           </div>
         </ScrollArea>
+        {bound && (
+          <p className="border-t px-2 py-1.5 text-xs text-muted-foreground">
+            Limited to your assigned data owner
+            {(allowedTenants.data as string[]).length === 1 ? '' : 's'}.
+          </p>
+        )}
       </PopoverContent>
     </Popover>
   );

@@ -2,6 +2,7 @@ import type { Session } from 'next-auth';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BackendError, type EngramBackend } from '@/server/backend';
+import { allowedTenantsFor } from '@/server/env';
 import type { TRPCContext } from '../context';
 import { createCaller } from '../root';
 
@@ -174,6 +175,21 @@ describe('memory router', () => {
     );
   });
 
+  it('threads a TTL through update for STM preserve-by-default (WP2 T3/D4)', async () => {
+    const updateMemory = vi.fn().mockResolvedValue({ id: 'm1' });
+    const backend = makeBackend({ updateMemory });
+    const api = caller(backend);
+    await api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x', ttl: 1800 });
+    expect(updateMemory).toHaveBeenCalledWith(expect.objectContaining({ ttl: 1800 }));
+  });
+
+  it('rejects an out-of-range TTL on update (WP2 T3)', async () => {
+    const api = caller(makeBackend());
+    await expect(
+      api.memory.update({ userId: 'qp', memoryId: 'm1', content: 'x', ttl: 5 })
+    ).rejects.toBeTruthy();
+  });
+
   it('injects the operator email as actorLabel on delete (WP2 T5)', async () => {
     const deleteMemory = vi.fn().mockResolvedValue({ deleted: true });
     const backend = makeBackend({ deleteMemory });
@@ -315,5 +331,13 @@ describe('health + analytics + meta routers', () => {
     await expect(api.meta.session()).resolves.toMatchObject({
       user: { email: 'op@example.com' },
     });
+  });
+
+  it('exposes the operator tenant binding from the env snapshot (WP2 T9)', async () => {
+    // Compare against the same env-derived source the router reads (session email
+    // op@example.com), so a set ENGRAM_OPERATOR_TENANTS in CI/dev can't make this
+    // assertion flaky (Copilot review).
+    const api = caller(makeBackend());
+    await expect(api.meta.allowedTenants()).resolves.toEqual(allowedTenantsFor('op@example.com'));
   });
 });

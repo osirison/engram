@@ -28,15 +28,33 @@ import {
   type MemoryTypeFilter,
 } from '@/lib/memory-filters';
 
+/**
+ * Wraps a filter control so an explanatory `title` still surfaces when the
+ * control is disabled: a native tooltip does not render on a disabled `<button>`
+ * (e.g. a disabled `SelectTrigger`), so we hang it on a non-disabled span
+ * instead (Copilot review, WP2 T9/D3).
+ */
+function FilterControl({ hint, children }: { hint?: string; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex" title={hint}>
+      {children}
+    </span>
+  );
+}
+
 export function MemoryFiltersBar({
   filters,
   onChange,
   searching = false,
+  stmView = false,
 }: {
   filters: MemoryFilters;
   onChange: (patch: Partial<MemoryFilters>) => void;
   /** In semantic-search mode, type and sort don't apply, so they're disabled. */
   searching?: boolean;
+  /** On the live short-term tier, SCAN order is undefined and rows are sorted
+   *  client-side by expiry — so sort + date-range don't apply (WP2 T3/D3). */
+  stmView?: boolean;
 }) {
   const active = activeFilterCount(filters);
 
@@ -53,68 +71,75 @@ export function MemoryFiltersBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
-        value={filters.type}
-        disabled={searching}
-        onValueChange={(value) => onChange({ type: value as MemoryTypeFilter })}
-      >
-        <SelectTrigger
-          size="sm"
-          className="w-[140px]"
-          title={searching ? 'Type filter does not apply to semantic search' : undefined}
+      <FilterControl hint={searching ? 'Type filter does not apply to semantic search' : undefined}>
+        <Select
+          value={filters.type}
+          disabled={searching}
+          onValueChange={(value) => onChange({ type: value as MemoryTypeFilter })}
         >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {TYPE_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <SelectTrigger size="sm" className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TYPE_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterControl>
 
-      <Select
-        value={filters.range}
-        onValueChange={(value) => onChange({ range: value as RangeKey })}
+      <FilterControl
+        hint={stmView ? 'Date range does not apply to the live short-term tier' : undefined}
       >
-        <SelectTrigger size="sm" className="w-[150px]">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {RANGE_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={`${filters.sort}:${filters.order}`}
-        disabled={searching}
-        onValueChange={(value) => {
-          const [sort, order] = value.split(':') as [SortKey, OrderKey];
-          onChange({ sort, order });
-        }}
-      >
-        <SelectTrigger
-          size="sm"
-          className="w-[160px]"
-          title={
-            searching ? 'Sort does not apply to semantic search (ranked by relevance)' : undefined
-          }
+        <Select
+          value={filters.range}
+          disabled={stmView}
+          onValueChange={(value) => onChange({ range: value as RangeKey })}
         >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {SORT_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <SelectTrigger size="sm" className="w-[150px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {RANGE_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterControl>
+
+      <FilterControl
+        hint={
+          searching
+            ? 'Sort does not apply to semantic search (ranked by relevance)'
+            : stmView
+              ? 'Short-term items are ordered by time to expiry'
+              : undefined
+        }
+      >
+        <Select
+          value={`${filters.sort}:${filters.order}`}
+          disabled={searching || stmView}
+          onValueChange={(value) => {
+            const [sort, order] = value.split(':') as [SortKey, OrderKey];
+            onChange({ sort, order });
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterControl>
 
       <Input
         value={scopeDraft}

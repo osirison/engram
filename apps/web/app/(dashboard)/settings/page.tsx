@@ -36,8 +36,11 @@ export default function SettingsPage() {
   const session = trpc.meta.session.useQuery();
   const capabilities = trpc.meta.capabilities.useQuery();
   const owners = trpc.meta.owners.useQuery();
+  // The data owners this operator is bound to (WP2 T9): `'*'` when unbound.
+  const allowedTenants = trpc.meta.allowedTenants.useQuery();
 
   const user = session.data?.user;
+  const allowed = allowedTenants.data;
 
   return (
     <PageContainer>
@@ -70,6 +73,20 @@ export default function SettingsPage() {
                   <Badge variant="outline" className="ml-auto capitalize">
                     {user.provider}
                   </Badge>
+                )}
+              </div>
+            )}
+            {allowed !== undefined && (
+              <div className="rounded-md border px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Data-owner access: </span>
+                {allowed === '*' ? (
+                  <span className="font-medium">All data owners</span>
+                ) : allowed.length > 0 ? (
+                  <span className="font-mono text-xs font-medium">{allowed.join(', ')}</span>
+                ) : (
+                  <span className="font-medium text-[var(--warning)]">
+                    None — no tenant binding matches your account
+                  </span>
                 )}
               </div>
             )}

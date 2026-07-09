@@ -6,7 +6,7 @@ import { Database, Download, Loader2, Search, Sparkles, X } from 'lucide-react';
 
 import { toast } from 'sonner';
 
-import { BulkDeleteDialog } from '@/components/memories/bulk-delete-dialog';
+import { BulkDeleteDialog, type BulkDeleteOutcome } from '@/components/memories/bulk-delete-dialog';
 import { ExportDialog, type ExportOptions } from '@/components/memories/export-dialog';
 import { MemoryDetailSheet } from '@/components/memories/memory-detail-sheet';
 import { MemoryFiltersBar } from '@/components/memories/memory-filters';
@@ -29,6 +29,10 @@ import {
   type MemoryTypeFilter,
 } from '@/lib/memory-filters';
 import { trpc } from '@/trpc/react';
+
+/** Server-enforced bulk-delete batch cap (WP2 T6). Mirrored client-side so a
+ *  larger selection is blocked with a hint before the round-trip. */
+const MAX_BULK_DELETE = 100;
 
 function parseFilters(params: URLSearchParams): MemoryFilters {
   const type = params.get('type');
@@ -150,6 +154,10 @@ export function MemoryNavigator() {
   // it is cleared when the filter/search context changes so stale ids can't leak.
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
+  // Per-item outcome of the last bulk delete (WP2 T6): set only on partial
+  // failure so the dialog can show which ids failed and why.
+  const [bulkResult, setBulkResult] = React.useState<BulkDeleteOutcome | null>(null);
+  const overBulkCap = selectedIds.size > MAX_BULK_DELETE;
   const selectionContext = `${filters.type}|${filters.scope}|${filters.tags.join(',')}|${filters.q}`;
   React.useEffect(() => {
     // Reset selection when the filter/search context changes (canonical
@@ -179,22 +187,31 @@ export function MemoryNavigator() {
   const bulkDelete = trpc.memory.bulkDelete.useMutation({
     onSuccess: async (result) => {
       const failedCount = result.failed.length;
-      toast.success(`Deleted ${result.deleted.length} of ${result.deleted.length + failedCount}`, {
-        description:
-          failedCount > 0
-            ? `${failedCount} could not be deleted (${result.failed[0]?.reason ?? 'error'}${
-                failedCount > 1 ? ', …' : ''
-              }).`
-            : undefined,
-      });
-      setSelectedIds(new Set());
-      setBulkDialogOpen(false);
+      const total = result.deleted.length + failedCount;
       await Promise.all([
         utils.memory.list.invalidate(),
         utils.memory.listStm.invalidate(),
         utils.memory.search.invalidate(),
         utils.analytics.invalidate(),
       ]);
+      if (failedCount === 0) {
+        toast.success(`Deleted ${result.deleted.length}`);
+        setSelectedIds(new Set());
+        setBulkResult(null);
+        setBulkDialogOpen(false);
+        return;
+      }
+      // Partial failure: keep the dialog open with an expandable failure list,
+      // and drop the successfully-deleted ids so a retry targets only failures.
+      toast.warning(`Deleted ${result.deleted.length} of ${total}`, {
+        description: `${failedCount} could not be deleted — see details.`,
+      });
+      setBulkResult(result);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of result.deleted) next.delete(id);
+        return next;
+      });
     },
     onError: (error) => toast.error('Bulk delete failed', { description: error.message }),
   });
@@ -276,7 +293,12 @@ export function MemoryNavigator() {
           </form>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <MemoryFiltersBar filters={filters} onChange={writeFilters} searching={isSearch} />
+            <MemoryFiltersBar
+              filters={filters}
+              onChange={writeFilters}
+              searching={isSearch}
+              stmView={isStmView}
+            />
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               {isSearch && search.data && (
                 <Badge variant={search.data.semantic ? 'success' : 'muted'}>
@@ -339,13 +361,30 @@ export function MemoryNavigator() {
                 />
               )}
               {selectedIds.size > 0 && (
-                <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                  <span>{selectedIds.size} selected</span>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  <span>
+                    {selectedIds.size} selected
+                    {overBulkCap && (
+                      <span className="ml-2 text-[var(--warning)]">
+                        Select at most {MAX_BULK_DELETE} to delete at once.
+                      </span>
+                    )}
+                  </span>
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
                       Clear
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setBulkDialogOpen(true)}>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={overBulkCap}
+                      title={
+                        overBulkCap
+                          ? `Bulk delete is limited to ${MAX_BULK_DELETE} memories at once.`
+                          : undefined
+                      }
+                      onClick={() => setBulkDialogOpen(true)}
+                    >
                       Delete {selectedIds.size} selected
                     </Button>
                   </div>
@@ -392,10 +431,14 @@ export function MemoryNavigator() {
 
       <BulkDeleteDialog
         open={bulkDialogOpen}
-        onOpenChange={setBulkDialogOpen}
+        onOpenChange={(o) => {
+          setBulkDialogOpen(o);
+          if (!o) setBulkResult(null);
+        }}
         count={selectedIds.size}
         previews={previews}
         isPending={bulkDelete.isPending}
+        result={bulkResult}
         onConfirm={() => bulkDelete.mutate({ userId, memoryIds: selectionArray })}
       />
 

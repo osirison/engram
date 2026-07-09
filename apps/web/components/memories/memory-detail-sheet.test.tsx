@@ -125,6 +125,50 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
     expect(screen.queryByText('+1h TTL')).not.toBeInTheDocument();
   });
 
+  it('preserves the remaining TTL window on an STM save, not the full stored window (WP2 T3/D4)', () => {
+    // The stored window is 3600s but only ~1800s remain. A plain console save
+    // must send the REMAINING window so the store keeps the current expiry —
+    // sending 3600 would reset the expiry to a full window (the D4 regression).
+    const expiresAt = new Date(Date.now() + 1800_000).toISOString();
+    h.memory = fixture({ type: 'short-term', ttlSeconds: 3600, expiresAt });
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Edit'));
+    // The TTL input is prefilled with the remaining seconds (~1800), not 3600.
+    const ttlInput = screen.getByLabelText('TTL in seconds') as HTMLInputElement;
+    expect(Number(ttlInput.value)).toBeGreaterThanOrEqual(1795);
+    expect(Number(ttlInput.value)).toBeLessThanOrEqual(1800);
+
+    fireEvent.click(screen.getByText('Save changes'));
+    const arg = h.updateMutate.mock.calls.at(-1)?.[0] as { ttl?: number };
+    expect(arg.ttl).toBeGreaterThanOrEqual(1795);
+    expect(arg.ttl).toBeLessThanOrEqual(1800);
+    expect(arg.ttl).not.toBe(3600);
+  });
+
+  it('honors an operator-overridden TTL on an STM save (WP2 T3/D4)', () => {
+    h.memory = fixture({
+      type: 'short-term',
+      ttlSeconds: 3600,
+      expiresAt: new Date(Date.now() + 1800_000).toISOString(),
+    });
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.change(screen.getByLabelText('TTL in seconds'), { target: { value: '120' } });
+    fireEvent.click(screen.getByText('Save changes'));
+    expect(h.updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ ttl: 120 }));
+  });
+
+  it('renders no TTL input and threads no ttl for a long-term memory (WP2 T3)', () => {
+    h.memory = fixture({ type: 'long-term' });
+    renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByText('Edit'));
+    expect(screen.queryByLabelText('TTL in seconds')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Save changes'));
+    const arg = h.updateMutate.mock.calls.at(-1)?.[0] as { ttl?: number };
+    expect(arg.ttl).toBeUndefined();
+  });
+
   it('shows a stale-vector badge and a Re-embed action that calls the mutation', () => {
     h.memory = fixture({ embeddingStale: true });
     renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);

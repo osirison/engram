@@ -344,8 +344,8 @@ Modify `prisma/schema.prisma`:
 STM needs no migration: its `version` lives in the Redis JSON payload (absent ⇒ treated
 as 1). No backfill: `version` defaults to 1 for existing rows.
 
-Task card below (**SHARED-2** — renumbered per the suite registry in `../README.md`:
-SHARED-2 is the `MemoryLink` model, canonical in `../SHARED-2-memory-link.md`; this
+Task card below (**SHARED-2** — per the suite registry in `../README.md`:
+SHARED-1 is the `MemoryLink` model, canonical in `../SHARED-1-memory-link.md`; this
 version/audit task is SHARED-2).
 
 ## Work breakdown
