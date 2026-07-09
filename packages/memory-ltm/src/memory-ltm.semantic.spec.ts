@@ -240,5 +240,62 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       const results = await noVectorService.semanticSearch(mockUserId, 'query');
       expect(results).toEqual([]);
     });
+
+    describe('superseded exclusion', () => {
+      const activeId = 'cldx4k8xp000308l85d6e0x4s';
+      const supersededId = 'cldx4k8xp000408l86e7f1y5t';
+
+      function seedActiveAndSuperseded(): void {
+        vectorStore.search.mockResolvedValue([
+          { id: activeId, score: 0.9 },
+          { id: supersededId, score: 0.85 },
+        ]);
+        prisma.memory.findMany.mockResolvedValue([
+          buildMemory({ id: activeId, metadata: { status: 'active' } }),
+          buildMemory({
+            id: supersededId,
+            metadata: {
+              status: 'superseded',
+              supersededBy: activeId,
+              supersededReason: 'contradiction',
+            },
+          }),
+        ]);
+      }
+
+      it('drops superseded memories from recall by default', async () => {
+        seedActiveAndSuperseded();
+
+        const results = await service.semanticSearch(mockUserId, 'query');
+
+        expect(results.map((r) => r.memory.id)).toEqual([activeId]);
+      });
+
+      it('includes superseded memories when includeSuperseded is set', async () => {
+        seedActiveAndSuperseded();
+
+        const results = await service.semanticSearch(mockUserId, 'query', {
+          includeSuperseded: true,
+        });
+
+        expect(results.map((r) => r.memory.id).sort()).toEqual([activeId, supersededId].sort());
+      });
+
+      it('excludes on the supersededBy marker even after decay rewrote status', async () => {
+        // Decay rewrites `status` to active/stale/archived on every run, so a
+        // superseded row can carry status='stale' while still being superseded.
+        vectorStore.search.mockResolvedValue([{ id: supersededId, score: 0.9 }]);
+        prisma.memory.findMany.mockResolvedValue([
+          buildMemory({
+            id: supersededId,
+            metadata: { status: 'stale', supersededBy: activeId },
+          }),
+        ]);
+
+        const results = await service.semanticSearch(mockUserId, 'query');
+
+        expect(results).toEqual([]);
+      });
+    });
   });
 });

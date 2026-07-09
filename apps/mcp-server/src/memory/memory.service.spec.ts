@@ -858,6 +858,20 @@ describe('MemoryService', () => {
         expect.objectContaining({ createdFrom, createdTo }),
       );
     });
+
+    it('does not opt into superseded results — recall inherits the safe default', async () => {
+      // The recall surface (recall/reflect/forget/compressContext) must never
+      // pass includeSuperseded, so a contradicted/stale fact stays out of recall.
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      await service.recall('user-1', 'query');
+
+      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+        'user-1',
+        'query',
+        expect.not.objectContaining({ includeSuperseded: true }),
+      );
+    });
   });
 
   describe('reindex', () => {

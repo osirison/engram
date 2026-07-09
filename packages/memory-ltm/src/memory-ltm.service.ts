@@ -1113,6 +1113,7 @@ export class MemoryLtmService {
         memories.map((memory: PrismaMemory) => [memory.id, memory])
       );
 
+      const includeSuperseded = options?.includeSuperseded === true;
       const hydrated = hits
         .map((hit: { id: string; score: number }) => {
           const memory = byId.get(hit.id);
@@ -1123,6 +1124,12 @@ export class MemoryLtmService {
         })
         .filter(
           (result: SemanticSearchResult | null): result is SemanticSearchResult => result !== null
+        )
+        // Drop superseded memories so a contradicted/stale fact never resurfaces
+        // in recall; opt back in via `includeSuperseded` for audit/UI reads.
+        .filter(
+          (result: SemanticSearchResult) =>
+            includeSuperseded || !this.isSuperseded(result.memory.metadata)
         );
 
       // Re-rank by blended similarity + recency + importance, then trim to requested limit.
@@ -1172,7 +1179,12 @@ export class MemoryLtmService {
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: PrismaMemory[] = await (this.prisma as any).memory.findMany({ where });
-    const memories = rows.map((row) => this.mapToLtmMemory(row));
+    const includeSuperseded = options?.includeSuperseded === true;
+    const memories = rows
+      .map((row) => this.mapToLtmMemory(row))
+      // Mirror the vector-store path: superseded memories are excluded from
+      // recall pre-index unless the caller explicitly opts in.
+      .filter((m) => includeSuperseded || !this.isSuperseded(m.metadata));
 
     // Apply tag scope filter pre-index so the retriever's postings reflect
     // only eligible memories.
@@ -1560,6 +1572,22 @@ export class MemoryLtmService {
 
   private readPinned(metadata: Record<string, unknown> | null | undefined): boolean {
     return metadata?.['pinned'] === true;
+  }
+
+  /**
+   * A memory is superseded once a later contradicting write records it as such.
+   * Keys on the `supersededBy` audit marker rather than `status === 'superseded'`
+   * because the decay pass rewrites `status` (active/stale/archived) on every
+   * run and would otherwise silently un-hide a superseded memory; `supersededBy`
+   * is written once by {@link ContradictionDetectionService.annotateSuperseded}
+   * and never cleared. Falls back to the legacy `status` marker for rows written
+   * before `supersededBy` existed.
+   */
+  private isSuperseded(metadata: Record<string, unknown> | null | undefined): boolean {
+    if (!metadata) return false;
+    const supersededBy = metadata['supersededBy'];
+    if (typeof supersededBy === 'string' && supersededBy.length > 0) return true;
+    return metadata['status'] === 'superseded';
   }
 
   private readLastAccessedAt(metadata: Record<string, unknown> | null | undefined): Date | null {

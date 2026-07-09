@@ -98,6 +98,14 @@ export interface SemanticSearchOptions {
    * Non-positive or non-finite values are silently replaced with the default.
    */
   recencyHalfLifeDays?: number;
+  /**
+   * Include memories that have been superseded by a later contradicting write.
+   * Defaults to `false`: superseded memories are dropped from recall so a stale
+   * or contradicted fact never resurfaces. Audit/UI callers that need the full
+   * history set this to `true`; superseded rows always remain fetchable by id
+   * via `findById` regardless of this flag.
+   */
+  includeSuperseded?: boolean;
 }
 
 // A semantic-search hit: a memory plus its relevance score
