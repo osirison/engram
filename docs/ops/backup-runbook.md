@@ -114,12 +114,16 @@ Two layers of automated coverage:
 
 - **Every PR / push** — `backup-restore.spec.ts` (mcp-server suite) checks
   the Postgres leg: `backup.sh` produces an archive and `restore.sh
---pg-only` round-trips data. `retention.sh` pruning is covered by
-  `backup-scripts.spec.ts` against fake aged archives.
+--pg-only` round-trips data. Beyond a legacy sentinel table, it now seeds
+  and asserts the WP2-4 tables — `memory_links`, `memory_audits`, and
+  `memory_import_sources` — so a dump that silently drops them (e.g. a future
+  `--table` allowlist) reddens the PR (G9). `retention.sh` pruning is covered
+  by `backup-scripts.spec.ts` against fake aged archives.
 - **Nightly** — [`backup-verify.yml`](../../.github/workflows/backup-verify.yml)
   (cron + manual `workflow_dispatch`) runs the full `backup.sh` →
   `restore.sh` path against throwaway Postgres, Redis, and Qdrant service
-  containers: seeds all three stores, backs up, destroys the live data,
+  containers: provisions the real ENGRAM schema, seeds all three stores
+  (including the same WP2-4 tables), backs up, destroys the live data,
   restores, asserts every sentinel round-trips, and exercises the
   `retention.sh` GFS policy. A red run means the restore path is broken —
   treat it like a production incident, not a flaky test.
