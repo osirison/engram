@@ -31,24 +31,24 @@ decisions so any resume is unambiguous. Branch: `feat/gaps-critical-g1-g4` (from
 
 Legend: ✅ done+verified · 🟨 in progress · ⬜ not started.
 
-| Order | Task                                                       | Size | Level | Status | Commit / note                                                            |
-| ----- | ---------------------------------------------------------- | ---- | ----- | ------ | ------------------------------------------------------------------------ |
-| 1     | **G3-T1** recall drops/flags superseded                    | S    | crit  | ✅     | default-exclude in semanticSearch + transient path; keys on supersededBy |
-| 2     | **G3-T5** validate+document lifecycle config               | S    | high  | ⬜     | config schema seam                                                       |
-| 3     | **G4-T1** concurrency policy ADR (doc)                     | S    | high  | ⬜     | gates G4-T2/T3/T4                                                        |
-| 4     | **G2-T1** enforce `embeddingExcluded` (create+reindex)     | M    | high  | ⬜     | blocked on Decision 3 (flag semantics)                                   |
-| 5     | **G2-T2** scan frontmatter + title                         | M    | high  | ⬜     | Decision 6                                                               |
-| 6     | **G2-T3** correct IMPORT.md flag/reindex claims            | S    | high  | ⬜     | after G2-T1                                                              |
-| 7     | **G1-T1** engage-ready auth + extend boot fail-safe + docs | S    | crit  | ⬜     | adapted: no default flip                                                 |
-| 8     | **G3-T3** lifecycle writes → version CAS + audit           | M    | crit  | ⬜     | shared CAS helper + ToolCallContext                                      |
-| 9     | **G4-T2** enforce/observe optimistic concurrency on update | M    | high  | ⬜     | conservative = reject blind; shares actor seam                           |
-| 10    | **G1-T2** per-agent key provisioning + docs                | M    | high  | ⬜     | after G1-T1; owns actor-signature shape                                  |
-| 11    | **G1-T3** import path allowlist/traversal guard (A18)      | S    | high  | ⬜     | Decision 5 ownership (assign to G1)                                      |
-| 12    | **G3-T4** both-kept-flagged contradiction policy           | M    | high  | ⬜     | conservative default = flag                                              |
-| 13    | **G4-T3** import-vs-agent-edit concurrency policy          | M    | high  | ⬜     | after G4-T1; maybe new migration                                         |
-| 14    | **G3-T6** stronger contradiction detection                 | M    | high  | ⬜     | after G3-T4; Decision 11 (LLM?)                                          |
-| 15    | **G4-T4** STM atomic Lua CAS                               | M    | high  | ⬜     | Decision 14 (optional)                                                   |
-| 16    | **G3-T2** periodic corpus consolidation (dry-run gated)    | L    | crit  | ⬜     | LAST; after G3-T1+G3-T4                                                  |
+| Order | Task                                                       | Size | Level | Status | Commit / note                                                                |
+| ----- | ---------------------------------------------------------- | ---- | ----- | ------ | ---------------------------------------------------------------------------- |
+| 1     | **G3-T1** recall drops/flags superseded                    | S    | crit  | ✅     | default-exclude in semanticSearch + transient path; keys on supersededBy     |
+| 2     | **G3-T5** validate+document lifecycle config               | S    | high  | ✅     | 9 MEMORY\_\* vars in env.schema (boot-validated) + .env.example + docs table |
+| 3     | **G4-T1** concurrency policy ADR (doc)                     | S    | high  | ⬜     | gates G4-T2/T3/T4                                                            |
+| 4     | **G2-T1** enforce `embeddingExcluded` (create+reindex)     | M    | high  | ⬜     | blocked on Decision 3 (flag semantics)                                       |
+| 5     | **G2-T2** scan frontmatter + title                         | M    | high  | ⬜     | Decision 6                                                                   |
+| 6     | **G2-T3** correct IMPORT.md flag/reindex claims            | S    | high  | ⬜     | after G2-T1                                                                  |
+| 7     | **G1-T1** engage-ready auth + extend boot fail-safe + docs | S    | crit  | ⬜     | adapted: no default flip                                                     |
+| 8     | **G3-T3** lifecycle writes → version CAS + audit           | M    | crit  | ⬜     | shared CAS helper + ToolCallContext                                          |
+| 9     | **G4-T2** enforce/observe optimistic concurrency on update | M    | high  | ⬜     | conservative = reject blind; shares actor seam                               |
+| 10    | **G1-T2** per-agent key provisioning + docs                | M    | high  | ⬜     | after G1-T1; owns actor-signature shape                                      |
+| 11    | **G1-T3** import path allowlist/traversal guard (A18)      | S    | high  | ⬜     | Decision 5 ownership (assign to G1)                                          |
+| 12    | **G3-T4** both-kept-flagged contradiction policy           | M    | high  | ⬜     | conservative default = flag                                                  |
+| 13    | **G4-T3** import-vs-agent-edit concurrency policy          | M    | high  | ⬜     | after G4-T1; maybe new migration                                             |
+| 14    | **G3-T6** stronger contradiction detection                 | M    | high  | ⬜     | after G3-T4; Decision 11 (LLM?)                                              |
+| 15    | **G4-T4** STM atomic Lua CAS                               | M    | high  | ⬜     | Decision 14 (optional)                                                       |
+| 16    | **G3-T2** periodic corpus consolidation (dry-run gated)    | L    | crit  | ⬜     | LAST; after G3-T1+G3-T4                                                      |
 
 ## Shared seams (must not fork — from plan §2.5)
 

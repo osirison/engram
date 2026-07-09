@@ -27,6 +27,15 @@ codebase.
 | `MCP_TRANSPORT` | `stdio` \| `streamable-http` | `stdio` | no | all | MCP transport selection: stdio for local clients, streamable-http for Inspector. |
 | `STM_CONSOLIDATION_ACCESS_THRESHOLD` | number | `3` | no | all | Number of times an STM memory must be accessed before it qualifies for automatic promotion to LTM. Defaults to 3. |
 | `STM_CONSOLIDATION_INTERVAL_MS` | number | `300000` | no | all | How often the consolidation job scans for promotion candidates, in milliseconds. Defaults to 5 minutes. Set to 0 to disable the scheduler. |
+| `MEMORY_DECAY_INTERVAL_MS` | number | `86400000` | no | all | How often the long-term decay/staleness job scans the corpus, in milliseconds. Defaults to 24h. Set to 0 to disable the scheduler. |
+| `MEMORY_DECAY_BATCH_SIZE` | number | `100` | no | all | Rows scanned per decay batch (cursor-resumable). Defaults to 100. |
+| `MEMORY_DECAY_STALE_SCORE_THRESHOLD` | number | `0.3` | no | all | Importance score at/below which a memory is marked `stale`. Defaults to 0.3. |
+| `MEMORY_DECAY_PRUNE_SCORE_THRESHOLD` | number | `0.15` | no | all | Importance score below which an old, unpinned memory is pruned. Defaults to 0.15. |
+| `MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS` | number | `30` | no | all | Minimum age in days before a low-importance memory becomes prune-eligible. Defaults to 30. |
+| `MEMORY_DUPLICATE_THRESHOLD` | number | `0.97` | no | all | Cosine similarity at/above which a new write collapses into an existing row. Defaults to 0.97. |
+| `MEMORY_CONTRADICTION_THRESHOLD` | number | `0.8` | no | all | Lower bound of the contradiction similarity band. Defaults to 0.8. |
+| `MEMORY_CONTRADICTION_THRESHOLD_MAX` | number | `0.97` | no | all | Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. |
+| `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` | number | `14` | no | all | Half-life in days for the recency component of importance scoring. Defaults to 14. |
 | `PGVECTOR_HNSW_M` | number | — | no | all | Optional pgvector HNSW build-time `m` (max connections per layer). |
 | `PGVECTOR_HNSW_EF_CONSTRUCTION` | number | — | no | all | Optional pgvector HNSW build-time `ef_construction` (candidate list size). |
 | `PGVECTOR_HNSW_EF_SEARCH` | number | — | no | all | Optional pgvector HNSW query-time `ef_search` (recall/latency tuning). |
@@ -78,11 +87,6 @@ appears here automatically (add a description in the generator).
 | `ENGRAM_OPERATOR_TENANTS` | Comma-separated tenant allowlist an operator (admin) key may act on. |
 | `LOG_LEVEL` | Pino log level: `debug` \| `info` \| `warn` \| `error`. |
 | `MCP_ADMIN_TOKEN` | Bearer token gating every admin MCP tool. Security-critical. |
-| `MEMORY_CONTRADICTION_THRESHOLD` | Lower similarity bound for contradiction detection. |
-| `MEMORY_CONTRADICTION_THRESHOLD_MAX` | Upper similarity bound for contradiction detection. |
-| `MEMORY_DECAY_INTERVAL_MS` | Interval between importance-decay ticks, in milliseconds. |
-| `MEMORY_DUPLICATE_THRESHOLD` | Cosine-similarity threshold above which a new memory is treated as a duplicate. |
-| `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` | Half-life (days) for the memory importance decay curve. |
 | `METRICS_TOKEN` | Bearer token required to scrape `/health/metrics`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces. Omit to disable OpenTelemetry (no overhead). |
 | `OTEL_SERVICE_NAME` | Service name reported to OpenTelemetry. |
