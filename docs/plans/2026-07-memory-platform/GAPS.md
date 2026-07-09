@@ -10,6 +10,13 @@ agent-memory import, primary-memory integration, developer docs) leave uncovered
 Each gap states why it matters and where it should land. Treat these as candidate
 WP7+ items or as sections to fold into existing WPs at execution time.
 
+> **Medium gaps G5–G9 remediated 2026-07-09.** After WP2–5 shipped, most of the
+> medium tier was already satisfied by merged code; the genuine remainder was
+> closed on branch `feat/gaps-medium-g5-g9`. Each gap below carries a
+> **Status (2026-07-09)** line. Net: G5/G6/G9-backup closed with code; G8 already
+> shipped (DRY cleanup only); G7 substantially closed (two optional-hardening
+> sub-items deferred with rationale); G9 hosted-TLS remains WP6-owned.
+
 ## G1 — Per-user/per-agent authentication and authorization (critical)
 
 Today the only auth is `MCP_ADMIN_TOKEN` for admin tools; regular memory tools trust
@@ -50,6 +57,15 @@ other agents depend on. Needs: `MemoryRevision` table (or soft-delete + `deleted
 restore path, and the audit trail WP2 mentions made queryable from the UI.
 Lands in: WP2 schema section; export (WP3) should optionally include history.
 
+**Status (2026-07-09): CLOSED.** Recoverability was already delivered by WP2's
+`MemoryAudit` trail (update/delete/bulk-delete/promote/reembed/restore) + a working
+restore-by-original-id path + a UI History panel with per-entry restore. A
+`deletedAt`/`MemoryRevision` column was deliberately NOT added — hard-delete +
+audit-snapshot is the documented mechanism (`prisma/schema.prisma` MemoryAudit
+comment), so a soft-delete column would be redundant. The sole open sub-requirement,
+"export (WP3) optionally includes history", was implemented as the opt-in
+`includeHistory` export flag (audit sidecar under `_history/`).
+
 ## G6 — Export→import round-trip guarantee (medium)
 
 WP3 (export) and WP4 (import) define the same frontmatter/wikilink contract from two
@@ -57,6 +73,16 @@ sides. Without a single canonical schema module + a CI round-trip test
 (export N memories → import into clean DB → diff), the two will drift. Needs: shared
 contract package (e.g. `packages/memory-interchange`) + e2e round-trip test.
 Lands in: prerequisite task shared by WP3/WP4.
+
+**Status (2026-07-09): CLOSED.** The shared contract package
+(`packages/memory-interchange`, Prisma/NestJS-free), the parse-side round-trip proof,
+and the `MemoryLink` idempotency constraint (SHARED-1) were all already shipped. The
+open piece — a real DB-backed round-trip test — was implemented: `export-roundtrip.e2e-spec.ts`
+now seeds a durable edge, exports a vault, re-imports into a clean tenant, and asserts
+content/type/durable-link topology round-trip + import idempotency (it also asserts
+≥1 durable edge survives, so it cannot pass vacuously). The test surfaced and fixed a
+real fidelity bug: the markdown importer accreted ENGRAM's `## Related` mirror into
+stored content; it now strips it at `RELATED_MARKER`.
 
 ## G7 — Embedding cost and rate control on bulk operations (medium)
 
@@ -66,6 +92,18 @@ batch embedding API usage, rate limiting, cost estimate in dry-run output, and a
 documented "import with EMBEDDING_PROVIDER=local, then reindex" path (reindex is
 cursor-resumable already). Lands in: WP4 tasks + docs (WP6 operations section).
 
+**Status (2026-07-09): SUBSTANTIALLY CLOSED — two sub-items deferred.** The cost
+estimate in dry-run output (`estimateEmbeddingCost`) and the documented
+"import with `EMBEDDING_PROVIDER=local`, then reindex" path (`docs/IMPORT.md`
+"closes G7", `docs/agent-memory-migration.md`) shipped with WP4 — this is the
+codebase's chosen rate-control story. **Deferred (optional throughput hardening,
+not correctness):** (a) batch embedding API and (b) a proactive tokens/min limiter.
+Rationale: import embeds one memory at a time via `ltm.create`, so only the
+cursor-resumable reindex path would benefit; OpenAI's embedding rate limits are high;
+and the mitigation path already bounds cost. Revisit only if a real years-of-history
+bulk import empirically shows an embedding-throughput bottleneck (target the reindex
+loop as the batching seam; no migration needed).
+
 ## G8 — Recall quality regression gate (medium)
 
 `packages/eval` already scores retrieval quality (precision@k, recall@k, MRR, nDCG).
@@ -74,6 +112,16 @@ every agent gets dumber silently. Needs: seeded eval dataset from real (sanitize
 memories, eval run in CI, thresholds as release gate (RELEASE_GATES.md precedent exists).
 Lands in: WP5 acceptance criteria + CI task.
 
+**Status (2026-07-09): CLOSED (shipped with WP5) — fixture-provenance deferred.** The
+threshold-enforcing gate (`packages/eval` `thresholds.ts`/`gate.ts`), the CI job
+(`ci.yml` runs `pnpm eval` + `pnpm eval:gate` in the required `test` job), and the
+`docs/RELEASE_GATES.md` "Recall quality gate" section all landed with WP5 (#227). This
+PR only did a DRY cleanup: `run.ts` now reuses `RECALL_GATE_THRESHOLDS`/`evaluateGate`
+instead of duplicating the floors, so the two CI checks share one source of truth.
+**Deferred:** sourcing the eval dataset from real (sanitized) memories instead of the
+hand-authored fixtures — optional, privacy-sensitive, and would risk re-pinning a gate
+that already catches regressions today.
+
 ## G9 — Server reachability and deployment story for "primary memory" (medium)
 
 WP5 assumes every agent on every machine can reach one Engram server. Local-only
@@ -81,6 +129,18 @@ WP5 assumes every agent on every machine can reach one Engram server. Local-only
 The nightly backup/restore verification exists — new tables from WP2-4 (links, revisions,
 provenance) must be added to that verification. Lands in: WP5 risks + ops docs (WP6);
 backup coverage check as an explicit task.
+
+**Status (2026-07-09): backup coverage CLOSED; hosted-TLS remains WP6-owned.**
+`scripts/backup.sh` already does a whole-DB `pg_dump` (no table allowlist), so the new
+WP2-4 tables are physically captured. The gap was a missing test _assertion_: the
+backup-restore verification only checked a synthetic sentinel table. Both legs now seed
+and assert `memory_links` / `memory_audits` / `memory_import_sources` round-trip through
+backup→restore — the PR-gated `backup-restore.spec.ts` and the nightly
+`backup-verify.yml` (which now provisions the real schema first) — so a future dump
+narrowing that drops them reddens CI. The single-server reachability + backup/DR ops
+docs already exist; the **hosted/cross-host TLS reachability** substance stays deferred
+to WP6 by design (`docs/agent-memory-server.md` "do not widen the bind" note), not
+buildable now.
 
 ## G10 — Observability of memory operations (low)
 
