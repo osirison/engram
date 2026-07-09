@@ -23,6 +23,7 @@ Export a user's memories as an Obsidian-compatible markdown vault (YAML frontmat
 | `scope` | string | no | — | — |
 | `type` | `short-term` \| `long-term` | no | — | — |
 | `mode` | `multi` \| `single` | no | — | — |
+| `includeHistory` | boolean | no | — | — |
 | `maxInline` | integer | no | `25` | — |
 
 ## Example

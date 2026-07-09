@@ -1546,6 +1546,9 @@ export class MemoryController {
       ...(validated.scope ? { scope: validated.scope } : {}),
       ...(validated.type ? { type: validated.type } : {}),
       ...(validated.mode ? { mode: validated.mode } : {}),
+      ...(validated.includeHistory !== undefined
+        ? { includeHistory: validated.includeHistory }
+        : {}),
       ...(validated.dateFrom ? { dateFrom: new Date(validated.dateFrom) } : {}),
       ...(validated.dateTo ? { dateTo: new Date(validated.dateTo) } : {}),
     };

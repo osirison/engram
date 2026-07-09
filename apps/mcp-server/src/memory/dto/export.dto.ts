@@ -19,6 +19,12 @@ export const exportToolSchema = z
     type: z.enum(['short-term', 'long-term']).optional(),
     mode: z.enum(['multi', 'single']).optional(),
     /**
+     * Also export each memory's audit trail as a `_history/<id>.json` sidecar
+     * (G5). Default false — the trail can contain superseded/sensitive prior
+     * content, so it is opt-in. Sidecars are ignored on WP4 re-import.
+     */
+    includeHistory: z.boolean().optional(),
+    /**
      * Max memory files returned inline. At or below this, documents + manifest
      * come back as JSON; above it, the export is written to a server directory
      * and only a path reference + manifest summary are returned (never a base64

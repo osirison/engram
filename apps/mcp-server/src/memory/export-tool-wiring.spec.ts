@@ -262,4 +262,17 @@ describe('export_memories handler (inline vs server-path branch)', () => {
       expect.anything(),
     );
   });
+
+  it('threads includeHistory through the real strict schema to the export options (G5)', async () => {
+    const exportService = makeExport(1);
+    const controller = await buildController(exportService);
+    await controller.exportMemories({
+      userId: KEY_TENANT,
+      includeHistory: true,
+    });
+    expect(exportService.export).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: KEY_TENANT, includeHistory: true }),
+      expect.anything(),
+    );
+  });
 });

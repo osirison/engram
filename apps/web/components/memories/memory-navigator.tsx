@@ -232,6 +232,7 @@ export function MemoryNavigator() {
       userId,
       // A short-term view must include STM or it would export nothing.
       includeStm: options.includeStm || filters.type === 'short-term',
+      includeHistory: options.includeHistory,
       mode: options.singleFile ? 'single' : 'multi',
       ...(type ? { type } : {}),
       ...(filters.scope ? { scope: filters.scope } : {}),

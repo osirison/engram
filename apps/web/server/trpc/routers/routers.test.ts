@@ -82,6 +82,7 @@ describe('memory router', () => {
     const result = await api.memory.export({
       userId: 'qp',
       includeStm: true,
+      includeHistory: true,
       mode: 'single',
       tags: ['decision'],
       scope: 'project:engram',
@@ -90,6 +91,7 @@ describe('memory router', () => {
       expect.objectContaining({
         userId: 'qp',
         includeStm: true,
+        includeHistory: true,
         mode: 'single',
         tags: ['decision'],
         scope: 'project:engram',

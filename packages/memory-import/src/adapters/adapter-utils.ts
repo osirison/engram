@@ -3,10 +3,29 @@
 // default; the common "split frontmatter → chunk-or-atomic → build facts with
 // links + sourceKey" flow lives here so all adapters stay byte-consistent.
 
+import { RELATED_MARKER } from '@engram/memory-interchange';
 import { splitFrontmatter } from '../parse/frontmatter.js';
 import { extractLinks } from '../parse/links.js';
 import { chunkByHeadings, shouldSplitAtomic } from '../parse/chunk.js';
 import type { ImportedFact, SourceTool } from '../ir/types.js';
+
+/**
+ * Drop ENGRAM's `## Related` mirror when re-importing a canonical export (G6).
+ * The serializer appends a human-readable wikilink mirror of `frontmatter.links`
+ * behind the `RELATED_MARKER` sentinel; the authoritative edges live in the
+ * frontmatter, so the mirror is lossy and MUST NOT accrete into stored content
+ * (else a second export would double it). Mirrors `parseDocument`, which strips
+ * the same marker.
+ *
+ * Gated on `isCanonical` (frontmatter carries `schemaVersion`) so this only ever
+ * touches ENGRAM's own exports — a plain note that merely happens to contain the
+ * sentinel string is left byte-for-byte intact.
+ */
+function stripRelatedMirror(body: string, isCanonical: boolean): string {
+  if (!isCanonical) return body;
+  const idx = body.indexOf(RELATED_MARKER);
+  return idx >= 0 ? body.slice(0, idx).replace(/\s+$/, '') : body;
+}
 
 /** How a file becomes facts (D6). */
 export type ChunkMode =
@@ -77,7 +96,9 @@ export interface BuildFactsInput {
  */
 export function buildFacts(input: BuildFactsInput): ImportedFact[] {
   const { content, sourcePath, sourceTool, tags, chunkMode } = input;
-  const { frontmatter, body } = splitFrontmatter(content);
+  const { frontmatter, body: rawBody } = splitFrontmatter(content);
+  const isCanonical = typeof frontmatter?.['schemaVersion'] === 'string';
+  const body = stripRelatedMirror(rawBody, isCanonical);
 
   const doSplit = chunkMode === 'split' || (chunkMode === 'auto' && shouldSplitAtomic(body));
 

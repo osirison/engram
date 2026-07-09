@@ -5,7 +5,10 @@ name: Backup verification
 # suite (backup-restore.spec.ts) only exercises the Postgres leg; this
 # workflow proves the Redis (BGSAVE/RDB) and Qdrant (snapshot) legs actually
 # round-trip, so a broken restore path is caught within a day instead of
-# during an incident. See docs/ops/backup-runbook.md.
+# during an incident. The Postgres leg provisions the real ENGRAM schema and
+# asserts the WP2-4 tables (memory_links / memory_audits / memory_import_sources)
+# round-trip too, so a dump that silently drops them is caught (G9).
+# See docs/ops/backup-runbook.md.
 
 on:
   schedule:
@@ -82,6 +85,28 @@ jobs:
           sudo apt-get install -y postgresql-client-17 redis-tools
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Provision ENGRAM schema
+        # The new-table round-trip assertions insert into the real memories /
+        # users / memory_links / … tables, so the schema must exist first. Uses
+        # the job-level DATABASE_URL (engram_backup_verify). Mirrors ci.yml.
+        run: |
+          pnpm db:generate
+          pnpm db:migrate:deploy
+
       - name: Wait for Qdrant
         run: |
           echo "Waiting for Qdrant to be ready..."
@@ -89,10 +114,27 @@ jobs:
           echo "Qdrant is ready"
 
       - name: Seed Postgres
+        # A synthetic sentinel table plus one FK-valid graph across the WP2-4
+        # tables (G9). memory_links needs a users+memories parent chain (NOT NULL
+        # Cascade FKs); memory_audits/import_sources have no FK. targetMemoryId is
+        # NULL to cover the unresolved-link case. updatedAt is explicit (Prisma's
+        # @updatedAt has no DB default).
         run: |
-          psql "$DATABASE_URL" <<'SQL'
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           CREATE TABLE backup_verify (id serial PRIMARY KEY, data text NOT NULL);
           INSERT INTO backup_verify (data) VALUES ('pg-round-trip-sentinel');
+          INSERT INTO users (id, email, "createdAt", "updatedAt")
+            VALUES ('g9-user', 'g9-backup-sentinel@example.test', now(), now());
+          INSERT INTO memories (id, "userId", content, tags, type, version, "createdAt", "updatedAt", embedding)
+            VALUES ('g9-mem', 'g9-user', 'g9 backup sentinel memory', '{}', 'long-term', 1, now(), now(), '{}');
+          INSERT INTO memory_links
+            (id, "userId", "sourceMemoryId", "targetLocator", "relType", origin, "createdAt", "updatedAt")
+            VALUES ('g9-link', 'g9-user', 'g9-mem', 'id:g9-link-sentinel', 'related-to', 'authored', now(), now());
+          INSERT INTO memory_audits (id, "memoryId", "userId", action, "actorType", delegated, "createdAt")
+            VALUES ('g9-audit', 'g9-mem', 'g9-user', 'g9-audit-sentinel', 'system', false, now());
+          INSERT INTO memory_import_sources
+            (id, "userId", "memoryId", "sourceTool", "sourcePath", "sourceKey", "contentHash", "importBatchId", "importedAt", "updatedAt")
+            VALUES ('g9-import', 'g9-user', 'g9-mem', 'markdown', '/g9/sentinel.md', 'g9-import-sentinel', 'g9-content-hash', 'g9-batch', now(), now());
           SQL
 
       - name: Seed Redis
@@ -128,9 +170,15 @@ jobs:
       - name: Destroy live data (prove restore does the work)
         run: |
           psql "$DATABASE_URL" -c 'DROP TABLE backup_verify;'
+          # Delete the WP2-4 sentinel rows (children only — FK-safe) so the
+          # post-restore assertion proves the dump carried them back.
+          psql "$DATABASE_URL" -c "DELETE FROM memory_links WHERE id = 'g9-link';"
+          psql "$DATABASE_URL" -c "DELETE FROM memory_audits WHERE id = 'g9-audit';"
+          psql "$DATABASE_URL" -c "DELETE FROM memory_import_sources WHERE id = 'g9-import';"
           redis-cli -h localhost -p 6379 FLUSHALL
           curl -sf -X DELETE "$QDRANT_URL/collections/memories"
           # Sanity: everything is really gone.
+          test "$(psql "$DATABASE_URL" -t -A -c "SELECT COUNT(*) FROM memory_links WHERE \"targetLocator\" = 'id:g9-link-sentinel'")" = "0"
           test "$(redis-cli -h localhost -p 6379 GET engram:backup-verify:sentinel)" = ""
           test "$(curl -s -o /dev/null -w '%{http_code}' "$QDRANT_URL/collections/memories")" = "404"
 
@@ -145,6 +193,17 @@ jobs:
             "SELECT data FROM backup_verify WHERE data = 'pg-round-trip-sentinel'")"
           echo "postgres sentinel: $RESULT"
           test "$RESULT" = "pg-round-trip-sentinel"
+
+      - name: Verify new-table round-trip (memory_links / audits / import provenance)
+        # G9: the WP2-4 tables must survive the full backup→destroy→restore cycle.
+        run: |
+          LINK="$(psql "$DATABASE_URL" -t -A -c "SELECT COUNT(*) FROM memory_links WHERE \"targetLocator\" = 'id:g9-link-sentinel'")"
+          AUDIT="$(psql "$DATABASE_URL" -t -A -c "SELECT COUNT(*) FROM memory_audits WHERE action = 'g9-audit-sentinel'")"
+          IMPORT="$(psql "$DATABASE_URL" -t -A -c "SELECT COUNT(*) FROM memory_import_sources WHERE \"sourceKey\" = 'g9-import-sentinel'")"
+          echo "links=$LINK audits=$AUDIT import=$IMPORT"
+          test "$LINK" = "1"
+          test "$AUDIT" = "1"
+          test "$IMPORT" = "1"
 
       - name: Verify Redis round-trip
         run: |

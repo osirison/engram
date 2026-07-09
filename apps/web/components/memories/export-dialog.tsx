@@ -19,6 +19,8 @@ export interface ExportOptions {
   includeStm: boolean;
   /** `single` = one anchored file; `multi` = one note per memory (default). */
   singleFile: boolean;
+  /** Include each memory's edit/delete audit trail as a `_history/` sidecar (G5). */
+  includeHistory: boolean;
 }
 
 /**
@@ -40,12 +42,14 @@ export function ExportDialog({
 }) {
   const [includeStm, setIncludeStm] = React.useState(false);
   const [singleFile, setSingleFile] = React.useState(false);
+  const [includeHistory, setIncludeHistory] = React.useState(false);
 
   // Reset the options whenever the dialog re-opens.
   React.useEffect(() => {
     if (open) {
       setIncludeStm(false);
       setSingleFile(false);
+      setIncludeHistory(false);
     }
   }, [open]);
 
@@ -90,13 +94,32 @@ export function ExportDialog({
               </span>
             </span>
           </label>
+
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              checked={includeHistory}
+              onCheckedChange={(checked) => setIncludeHistory(checked === true)}
+              disabled={isPending}
+              aria-label="Include edit history"
+            />
+            <span>
+              Include edit history
+              <span className="block text-xs text-muted-foreground">
+                Adds each memory&apos;s audit trail as a <code>_history/</code> sidecar. May contain
+                superseded content.
+              </span>
+            </span>
+          </label>
         </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
-          <Button onClick={() => onConfirm({ includeStm, singleFile })} disabled={isPending}>
+          <Button
+            onClick={() => onConfirm({ includeStm, singleFile, includeHistory })}
+            disabled={isPending}
+          >
             {isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (

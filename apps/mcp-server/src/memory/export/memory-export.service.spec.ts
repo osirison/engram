@@ -67,8 +67,30 @@ const makeStm = (items: unknown[] = []): { list: jest.Mock } => {
   };
 };
 
-const svc = (ltm: unknown, stm?: unknown): MemoryExportService =>
-  new MemoryExportService(ltm as never, stm as never);
+const auditRow = (action = 'update'): Record<string, unknown> => ({
+  id: `aud-${action}`,
+  action,
+  actorType: 'api-key',
+  actorLabel: null,
+  delegated: false,
+  before: { content: 'old content', version: 1 },
+  after: { content: 'new content', version: 2 },
+  createdAt: new Date('2026-06-02T10:00:00.000Z'),
+});
+
+/** Mock MemoryAuditService.list keyed by memoryId; unknown ids resolve to []. */
+const makeAudit = (
+  byId: Record<string, unknown[]> = {},
+): { list: jest.Mock } => ({
+  list: jest.fn((_userId: string, memoryId: string) => byId[memoryId] ?? []),
+});
+
+const svc = (
+  ltm: unknown,
+  stm?: unknown,
+  audit?: unknown,
+): MemoryExportService =>
+  new MemoryExportService(ltm as never, stm as never, audit as never);
 
 // ---- tests ----------------------------------------------------------------
 
@@ -210,6 +232,81 @@ describe('MemoryExportService resilience + sanitization', () => {
     const doc = sink.files.get('memories.md') as string;
     expect(doc).toContain('<a id="mem-claaa1"></a>');
     expect(doc).toContain('<a id="mem-clbbb2"></a>');
+  });
+});
+
+describe('MemoryExportService history sidecars (G5)', () => {
+  it('omits _history sidecars and the historyFiles count by default', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' })]);
+    const audit = makeAudit({ claaa1: [auditRow()] });
+    const sink = new InMemorySink();
+    await svc(ltm, undefined, audit).export(
+      { userId: 'qp', deterministic: true },
+      sink,
+    );
+    // Default: the audit trail is never read and no sidecar is written.
+    expect(audit.list).not.toHaveBeenCalled();
+    expect([...sink.files.keys()].some((p) => p.startsWith('_history/'))).toBe(
+      false,
+    );
+    const manifest = JSON.parse(sink.files.get('manifest.json') as string);
+    expect(manifest.counts.historyFiles).toBeUndefined();
+  });
+
+  it('writes _history/<id>.json for memories with audit rows when includeHistory', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' }), ltmMem({ id: 'clbbb2' })]);
+    const audit = makeAudit({
+      claaa1: [auditRow('update'), auditRow('delete')],
+      clbbb2: [], // no history ⇒ no sidecar
+    });
+    const sink = new InMemorySink();
+    const result = await svc(ltm, undefined, audit).export(
+      { userId: 'qp', includeHistory: true, deterministic: true },
+      sink,
+    );
+    expect(sink.files.has('_history/claaa1.json')).toBe(true);
+    expect(sink.files.has('_history/clbbb2.json')).toBe(false); // empty ⇒ skipped
+    const sidecar = JSON.parse(
+      sink.files.get('_history/claaa1.json') as string,
+    );
+    expect(sidecar.memoryId).toBe('claaa1');
+    expect(sidecar.entries).toHaveLength(2);
+    expect(sidecar.entries[0].action).toBe('update');
+    expect(result.manifest.counts.historyFiles).toBe(1);
+    expect(result.manifest.notes.join(' ')).toContain('Audit history');
+  });
+
+  it('gracefully skips history when the audit service is unavailable', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' })]);
+    const sink = new InMemorySink();
+    const result = await svc(ltm, undefined, undefined).export(
+      { userId: 'qp', includeHistory: true, deterministic: true },
+      sink,
+    );
+    expect([...sink.files.keys()].some((p) => p.startsWith('_history/'))).toBe(
+      false,
+    );
+    expect(result.manifest.counts.historyFiles).toBe(0);
+  });
+
+  it('skips a memory whose history read throws, still writing the others', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' }), ltmMem({ id: 'clbbb2' })]);
+    const audit = {
+      list: jest.fn((_userId: string, memoryId: string) => {
+        if (memoryId === 'claaa1') throw new Error('audit read failed');
+        return [auditRow()];
+      }),
+    };
+    const sink = new InMemorySink();
+    const result = await svc(ltm, undefined, audit).export(
+      { userId: 'qp', includeHistory: true, deterministic: true },
+      sink,
+    );
+    expect(sink.files.has('_history/claaa1.json')).toBe(false); // threw ⇒ skipped
+    expect(sink.files.has('_history/clbbb2.json')).toBe(true);
+    expect(result.manifest.counts.historyFiles).toBe(1);
+    // The memory files themselves are unaffected by a history failure.
+    expect(sink.files.has('memories/memory-claaa1--claaa1.md')).toBe(true);
   });
 });
 
