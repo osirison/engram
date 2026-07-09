@@ -23,6 +23,13 @@ export interface MemoryExportOptions {
   type?: ExportTypeFilter;
   /** `multi` (one file per memory, default) or `single` (one file, anchored). */
   mode?: ExportMode;
+  /**
+   * Opt-in: also emit each memory's `memory_audits` trail as a `_history/<id>.json`
+   * sidecar (G5). Default false — the audit trail can contain superseded/sensitive
+   * prior content, so it is only exported on explicit request. Sidecars are ignored
+   * by the WP4 markdown importer (non-`.md`), so round-trip is unaffected.
+   */
+  includeHistory?: boolean;
   /** Omit `exportedAt` from the manifest for byte-identical CI diffs (PLAN §4.12). */
   deterministic?: boolean;
 }
@@ -66,6 +73,8 @@ export interface ExportManifest {
     shortTerm: number;
     files: number;
     failed: number;
+    /** Number of `_history/<id>.json` audit sidecars written (only when `includeHistory`). */
+    historyFiles?: number;
   };
   /** Target ids referenced by an edge but outside the (filtered) export set. */
   danglingTargets: string[];

@@ -766,6 +766,7 @@ export class PrismaEngramBackend implements EngramBackend {
     }>('export_memories', {
       userId: params.userId,
       ...(params.includeStm !== undefined ? { includeStm: params.includeStm } : {}),
+      ...(params.includeHistory !== undefined ? { includeHistory: params.includeHistory } : {}),
       ...(params.tags && params.tags.length > 0 ? { tags: params.tags } : {}),
       ...(params.scope ? { scope: params.scope } : {}),
       ...(params.type ? { type: params.type } : {}),

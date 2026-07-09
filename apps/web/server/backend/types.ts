@@ -289,6 +289,8 @@ export interface BackendCapabilities {
 export interface ExportMemoriesParams {
   userId: string;
   includeStm?: boolean;
+  /** Also include each memory's audit trail as a `_history/<id>.json` sidecar (G5). */
+  includeHistory?: boolean;
   tags?: string[];
   scope?: string | null;
   type?: 'short-term' | 'long-term';

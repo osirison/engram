@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MemoryLtmService, type LtmMemory } from '@engram/memory-ltm';
 import { MemoryStmService, type StmMemory } from '@engram/memory-stm';
+import { MemoryAuditService } from '../memory-audit.service';
 import {
   MEMORY_INTERCHANGE_VERSION,
   buildFilename,
@@ -68,6 +69,13 @@ const REINDEX_NOTE =
 const STM_TTL_NOTE =
   'Short-term memories carry a point-in-time `expiresAt`; their TTL countdown is ' +
   'NOT preserved on round-trip (PLAN §4.6). Import recreates them with a fresh TTL.';
+const HISTORY_NOTE =
+  'Audit history is included under `_history/<id>.json` (G5). These sidecars can ' +
+  'contain superseded prior content; they are NOT re-imported (the WP4 importer ' +
+  'reads `.md` only).';
+
+/** Rows per memory captured into a history sidecar (mirrors the audit list() cap). */
+const HISTORY_LIMIT = 200;
 
 /**
  * Orchestrates a rich-markdown export (WP3 PLAN §T5). Pages LTM (and optionally
@@ -86,6 +94,7 @@ export class MemoryExportService {
   constructor(
     private readonly ltm: MemoryLtmService,
     @Optional() private readonly stm?: MemoryStmService,
+    @Optional() private readonly audit?: MemoryAuditService,
   ) {}
 
   async export(
@@ -112,6 +121,7 @@ export class MemoryExportService {
 
     const failed: ExportFailure[] = [];
     const written: WrittenEntry[] = [];
+    const exported: SourceMemory[] = [];
 
     const singleSections: string[] = [];
     for (const memory of memories) {
@@ -138,6 +148,7 @@ export class MemoryExportService {
             relativePath,
           });
         }
+        exported.push(memory);
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         this.logger.warn(
@@ -155,6 +166,12 @@ export class MemoryExportService {
       await sink.writeFile('index.md', this.buildMoc(written, memories.length));
     }
 
+    // G5: opt-in audit-history sidecars. Independent of serialize failures above —
+    // only successfully-exported memories get a `_history/<id>.json` companion.
+    const historyFiles = options.includeHistory
+      ? await this.writeHistory(options.userId, exported, sink)
+      : 0;
+
     const manifest = this.buildManifest(
       options,
       mode,
@@ -162,6 +179,7 @@ export class MemoryExportService {
       written,
       failed,
       collected.danglingTargets,
+      historyFiles,
     );
     await sink.writeFile(
       'manifest.json',
@@ -190,6 +208,41 @@ export class MemoryExportService {
         `for ${userId} use metadata edges only`,
     );
     return Promise.resolve(undefined);
+  }
+
+  /**
+   * G5: write each exported memory's `memory_audits` trail as a `_history/<id>.json`
+   * sidecar. Best-effort per memory — a history read failure is logged and skipped,
+   * never aborting the export (mirrors the per-memory serialize policy). Memories
+   * with no audit rows get no sidecar. Returns the number of sidecars written.
+   */
+  private async writeHistory(
+    userId: string,
+    memories: readonly SourceMemory[],
+    sink: ExportSink,
+  ): Promise<number> {
+    if (!this.audit) {
+      this.logger.warn(
+        'includeHistory requested but audit service is unavailable; skipping history',
+      );
+      return 0;
+    }
+    let count = 0;
+    for (const memory of memories) {
+      try {
+        const entries = await this.audit.list(userId, memory.id, HISTORY_LIMIT);
+        if (entries.length === 0) continue;
+        const doc = `${JSON.stringify({ memoryId: memory.id, entries }, null, 2)}\n`;
+        await sink.writeFile(`_history/${memory.id}.json`, doc);
+        count += 1;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Skipping history for memory ${memory.id} during export: ${error}`,
+        );
+      }
+    }
+    return count;
   }
 
   private async collectMemories(
@@ -347,11 +400,13 @@ export class MemoryExportService {
     written: readonly WrittenEntry[],
     failed: readonly ExportFailure[],
     danglingTargets: readonly string[],
+    historyFiles: number,
   ): ExportManifest {
     const longTerm = memories.filter((m) => m.type === 'long-term').length;
     const shortTerm = memories.filter((m) => m.type === 'short-term').length;
     const notes = [REINDEX_NOTE];
     if (shortTerm > 0) notes.push(STM_TTL_NOTE);
+    if (options.includeHistory && historyFiles > 0) notes.push(HISTORY_NOTE);
 
     return {
       schemaVersion: MEMORY_INTERCHANGE_VERSION,
@@ -383,6 +438,7 @@ export class MemoryExportService {
         files:
           mode === 'single' ? (memories.length > 0 ? 1 : 0) : written.length,
         failed: failed.length,
+        ...(options.includeHistory ? { historyFiles } : {}),
       },
       danglingTargets: [...danglingTargets].sort(),
       failedIds: failed.map((f) => f.id).sort(),

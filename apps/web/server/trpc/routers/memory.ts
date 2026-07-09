@@ -65,6 +65,7 @@ const deleteInput = z.object({
 const exportInput = z.object({
   userId,
   includeStm: z.boolean().optional(),
+  includeHistory: z.boolean().optional(),
   tags: z.array(z.string().max(100)).max(50).optional(),
   scope: z.string().max(256).nullish(),
   type: z.enum(['short-term', 'long-term']).optional(),
@@ -82,6 +83,7 @@ export const memoryRouter = router({
     const { files, manifest } = await ctx.backend.exportMemories({
       userId: input.userId,
       includeStm: input.includeStm,
+      includeHistory: input.includeHistory,
       tags: input.tags,
       scope: input.scope ?? undefined,
       type: input.type,
