@@ -26,6 +26,15 @@ decisions so any resume is unambiguous. Branch: `feat/gaps-critical-g1-g4` (from
    (not auto-supersede) as the default; corpus consolidation is dry-run / review-gated
    before it merges; agent blind updates are rejected (with a clear conflict error).
    (Resolves plan Decisions 7 → flag-default, 9 → review-gate, 12 → reject-blind.)
+4. **G2 `flag` semantics = redact + exclude from embedding** (Decision 3). Under `flag`,
+   stored content is redacted AND the row is `embeddingExcluded`; a has-secret review tag
+   flags it. No raw secret ever lands in Postgres — `flag` differs from `redact` only by the
+   review tag. Frontmatter scan (G2-T2) follows the same redact-in-place stance (Decision 6).
+5. **G4 import-vs-agent-edit race = CAS-skip** (Decision 13). Import does version CAS; on
+   conflict it SKIPS and records a `skippedConcurrentEdit` count in the summary — never
+   clobbers the agent edit.
+6. **G4-T4 STM Lua CAS = DEFERRED** (Decision 14). STM is TTL-bounded/low-stakes; document
+   the deferral, don't build the Lua script this round. G4-T4 row → deferred, not done.
 
 ## Execution order (from plan §5, adapted to the decisions above)
 
@@ -35,7 +44,7 @@ Legend: ✅ done+verified · 🟨 in progress · ⬜ not started.
 | ----- | ---------------------------------------------------------- | ---- | ----- | ------ | ---------------------------------------------------------------------------- |
 | 1     | **G3-T1** recall drops/flags superseded                    | S    | crit  | ✅     | default-exclude in semanticSearch + transient path; keys on supersededBy     |
 | 2     | **G3-T5** validate+document lifecycle config               | S    | high  | ✅     | 9 MEMORY\_\* vars in env.schema (boot-validated) + .env.example + docs table |
-| 3     | **G4-T1** concurrency policy ADR (doc)                     | S    | high  | ⬜     | gates G4-T2/T3/T4                                                            |
+| 3     | **G4-T1** concurrency policy ADR (doc)                     | S    | high  | ✅     | docs/concurrency-policy.md + GAPS.md G4 status; pins Dec 12/13/14            |
 | 4     | **G2-T1** enforce `embeddingExcluded` (create+reindex)     | M    | high  | ⬜     | blocked on Decision 3 (flag semantics)                                       |
 | 5     | **G2-T2** scan frontmatter + title                         | M    | high  | ⬜     | Decision 6                                                                   |
 | 6     | **G2-T3** correct IMPORT.md flag/reindex claims            | S    | high  | ⬜     | after G2-T1                                                                  |

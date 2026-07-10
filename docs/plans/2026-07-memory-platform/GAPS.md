@@ -50,6 +50,13 @@ the same memory concurrently (or UI edit racing an agent update) has no defined 
 Needs: optimistic concurrency (version column checked on update), and idempotency keys on
 import. Lands in: SHARED schema task consumed by WP2 and WP4.
 
+**Status (2026-07-10): mechanism shipped; enforcement + policy in progress on
+`feat/gaps-critical-g1-g4`.** `Memory.version` CAS (SHARED-2) + import idempotency
+(`MemoryImportSource`) already exist; the gap was that version-checking is opt-in. The
+concurrent-writer policy is now pinned in [`docs/concurrency-policy.md`](../../concurrency-policy.md)
+(G4-T1): web requires `expectedVersion` (done, WP2), agent `update_memory` rejects blind
+updates (G4-T2), import is CAS-skip (G4-T3), STM atomic Lua CAS deferred (G4-T4).
+
 ## G5 — Edit history / soft delete (medium)
 
 WP2's edit and delete are destructive; an agent (or qp) can silently wipe a memory that
