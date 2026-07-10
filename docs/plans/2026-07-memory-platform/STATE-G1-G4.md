@@ -45,7 +45,7 @@ Legend: ✅ done+verified · 🟨 in progress · ⬜ not started.
 | 1     | **G3-T1** recall drops/flags superseded                    | S    | crit  | ✅     | default-exclude in semanticSearch + transient path; keys on supersededBy     |
 | 2     | **G3-T5** validate+document lifecycle config               | S    | high  | ✅     | 9 MEMORY\_\* vars in env.schema (boot-validated) + .env.example + docs table |
 | 3     | **G4-T1** concurrency policy ADR (doc)                     | S    | high  | ✅     | docs/concurrency-policy.md + GAPS.md G4 status; pins Dec 12/13/14            |
-| 4     | **G2-T1** enforce `embeddingExcluded` (create+reindex)     | M    | high  | ⬜     | blocked on Decision 3 (flag semantics)                                       |
+| 4     | **G2-T1** enforce `embeddingExcluded` (create+reindex)     | M    | high  | ✅     | create+reindex honor the flag; `flag` now redacts (Dec 3). Spy-count tests   |
 | 5     | **G2-T2** scan frontmatter + title                         | M    | high  | ⬜     | Decision 6                                                                   |
 | 6     | **G2-T3** correct IMPORT.md flag/reindex claims            | S    | high  | ⬜     | after G2-T1                                                                  |
 | 7     | **G1-T1** engage-ready auth + extend boot fail-safe + docs | S    | crit  | ⬜     | adapted: no default flip                                                     |

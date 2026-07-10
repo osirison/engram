@@ -151,8 +151,11 @@ export class MemoryLtmService {
       }
 
       // ── Step 11: EmbeddingGenerate (non-fatal) ─────────────────────────
+      // Skip embedding entirely for an `embeddingExcluded` memory (e.g. an
+      // import secret-scan `flag`): the row is stored with an empty vector and
+      // never reaches the embedding provider, until a reindex re-includes it.
       let embedding: number[] = [];
-      if (this.embeddingsService) {
+      if (this.embeddingsService && !this.readEmbeddingExcluded(processedMetadata)) {
         const result = await this.embeddingsService
           .generate({ text: processedContent })
           .catch(() => null);
@@ -1458,6 +1461,11 @@ export class MemoryLtmService {
    * service. Returns an empty array when no embedding can be produced.
    */
   private async resolveEmbedding(memory: LtmMemory, reuseExisting: boolean): Promise<number[]> {
+    // An embeddingExcluded memory is never (re)indexed: return [] so the reindex
+    // loop counts it as skipped and the row stays out of the vector store.
+    if (this.readEmbeddingExcluded(memory.metadata)) {
+      return [];
+    }
     if (reuseExisting && memory.embedding && memory.embedding.length > 0) {
       return memory.embedding;
     }
@@ -1572,6 +1580,15 @@ export class MemoryLtmService {
 
   private readPinned(metadata: Record<string, unknown> | null | undefined): boolean {
     return metadata?.['pinned'] === true;
+  }
+
+  /**
+   * A memory flagged `embeddingExcluded` must never be sent to the external
+   * embedding provider — set e.g. by the import secret-scan `flag` policy. Both
+   * the create path and reindex honor it so the row stays out of the vector index.
+   */
+  private readEmbeddingExcluded(metadata: Record<string, unknown> | null | undefined): boolean {
+    return metadata?.['embeddingExcluded'] === true;
   }
 
   /**

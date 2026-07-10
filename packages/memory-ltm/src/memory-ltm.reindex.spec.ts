@@ -109,6 +109,28 @@ describe('MemoryLtmService.reindex', () => {
     expect(vectorStore.upsert).not.toHaveBeenCalled();
   });
 
+  it('skips an embeddingExcluded memory and never sends it to the provider', async () => {
+    prisma.memory.findMany
+      .mockResolvedValueOnce([
+        buildMemory('a'),
+        buildMemory('excluded', { metadata: { embeddingExcluded: true } }),
+      ])
+      .mockResolvedValueOnce([]);
+
+    // reuse disabled so a non-excluded row WOULD regenerate — proving the
+    // excluded row is skipped by the flag, not by embedding reuse.
+    const result = await service.reindex({ reuseExistingEmbeddings: false, batchSize: 2 });
+
+    expect(result.indexed).toBe(1);
+    expect(result.skipped).toBe(1);
+    // The excluded row is never embedded...
+    expect(embeddings.generate).toHaveBeenCalledTimes(1);
+    expect(embeddings.generate).toHaveBeenCalledWith({ text: 'content-a' });
+    // ...nor upserted into the vector store.
+    expect(vectorStore.upsert).toHaveBeenCalledTimes(1);
+    expect(vectorStore.upsert).toHaveBeenCalledWith([expect.objectContaining({ id: 'a' })]);
+  });
+
   it('recreates the vector index before a full reindex when recreate is set', async () => {
     prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
 

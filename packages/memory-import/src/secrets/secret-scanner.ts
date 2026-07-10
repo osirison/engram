@@ -8,8 +8,8 @@ const REDACTED = '[REDACTED]';
  *
  * - `redact` — replace every match with `[REDACTED]`; the (safe) content is
  *   still embedded and stored.
- * - `flag`   — keep the raw content but exclude it from the external embedding
- *   provider and tag it `has-secret`.
+ * - `flag`   — redact the content (like `redact`) AND hold the row out of the
+ *   external embedding provider, tagging it `has-secret` for later review.
  * - `skip`   — drop the fact entirely.
  * - `fail`   — abort the import with {@link ImportSecretPolicyError}.
  */
@@ -151,9 +151,12 @@ export class SecretScanner {
           extraTags: [],
         };
       case 'flag':
+        // Redact the stored content AND exclude it from embedding (qp Decision 3,
+        // 2026-07-10): no raw secret ever lands in Postgres. `flag` differs from
+        // `redact` only by holding the row out of the vector index + a review tag.
         return {
           action: 'flagged',
-          content: input.content,
+          content: redacted,
           matches,
           embeddingExcluded: true,
           extraTags: ['has-secret'],

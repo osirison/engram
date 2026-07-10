@@ -101,6 +101,31 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
         service.create({ userId: mockUserId, content: 'Test memory content' })
       ).resolves.toMatchObject({ id: mockMemoryId });
     });
+
+    it('never embeds a memory flagged embeddingExcluded', async () => {
+      prisma.memory.create.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [] })
+      );
+
+      await service.create({
+        userId: mockUserId,
+        content: 'token ghp_secretsecretsecretsecretsecretsecret',
+        metadata: { embeddingExcluded: true },
+      });
+
+      // Assert on the spy call count (not the flag) — the flag being inert was
+      // exactly the bug this closes.
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+    });
+
+    it('embeds a normal (non-excluded) memory — control', async () => {
+      prisma.memory.create.mockResolvedValue(buildMemory());
+
+      await service.create({ userId: mockUserId, content: 'ordinary note' });
+
+      expect(embeddings.generate).toHaveBeenCalled();
+    });
   });
 
   describe('delete', () => {
