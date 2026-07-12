@@ -15,7 +15,7 @@ tools require the enterprise profile).
 | [`create_memory`](./create-memory) | `identity` | `memories:write` | Create a new memory in short-term or long-term storage |
 | [`get_memory`](./get-memory) | `identity` | `memories:read` | Retrieve memory by ID |
 | [`list_memories`](./list-memories) | `identity` | `memories:read` | List memories with pagination and filtering |
-| [`update_memory`](./update-memory) | `identity` | `memories:write` | Update existing memory |
+| [`update_memory`](./update-memory) | `identity` | `memories:write` | Update an existing memory. expectedVersion is required (optimistic concurrency): pass the version returned by get_memory or a prior read. Blind updates are rejected, and a stale version fails with a CONFLICT error — re-read the memory and retry with the fresh version. |
 | [`delete_memory`](./delete-memory) | `identity` | `memories:delete` | Delete memory by ID |
 | [`bulk_delete_memories`](./bulk-delete-memories) | `identity` | `memories:delete` | Delete up to 100 memories in a single call, returning a per-item report of deleted ids and failures. STM/LTM routing and scope isolation are inherited per id. |
 | [`promote_memory`](./promote-memory) | `identity` | `memories:write` | Promote short-term memory to long-term storage |

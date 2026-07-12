@@ -469,6 +469,8 @@ describe('MCP Tools Integration', () => {
   // update_memory
   // -------------------------------------------------------------------------
   describe('update_memory tool', () => {
+    // G4-T2 (docs/concurrency-policy.md): update_memory requires the version
+    // the caller read; both tier paths below pass it like a real agent would.
     it('should update STM memory and return updated content', async () => {
       const original = makeStmMemory();
       const updated = makeStmMemory({ content: 'Updated STM content' });
@@ -479,6 +481,7 @@ describe('MCP Tools Integration', () => {
         userId: USER_ID,
         memoryId: MEMORY_ID,
         content: 'Updated STM content',
+        expectedVersion: 1,
       });
 
       expect(text(response)).toContain(`Updated memory ${MEMORY_ID}`);
@@ -498,9 +501,23 @@ describe('MCP Tools Integration', () => {
         userId: USER_ID,
         memoryId: MEMORY_ID,
         content: 'Updated LTM content',
+        expectedVersion: 1,
       });
 
       expect(text(response)).toContain(`Updated memory ${MEMORY_ID}`);
+    });
+
+    it('should reject a blind update (no expectedVersion) before touching either tier (G4-T2)', async () => {
+      await expect(
+        controller.updateMemory({
+          userId: USER_ID,
+          memoryId: MEMORY_ID,
+          content: 'New content',
+        }),
+      ).rejects.toThrow(/CONFLICT: update_memory requires expectedVersion/);
+
+      expect(stmService.update).not.toHaveBeenCalled();
+      expect(ltmService.update).not.toHaveBeenCalled();
     });
 
     it('should throw wrapped error for invalid userId', async () => {
@@ -509,6 +526,7 @@ describe('MCP Tools Integration', () => {
           userId: 'bad-user',
           memoryId: MEMORY_ID,
           content: 'New content',
+          expectedVersion: 1,
         }),
       ).rejects.toThrow('Failed to update memory');
     });
@@ -524,6 +542,7 @@ describe('MCP Tools Integration', () => {
           userId: USER_ID,
           memoryId: MEMORY_ID,
           content: 'New content',
+          expectedVersion: 1,
         }),
       ).rejects.toThrow('Failed to update memory');
     });

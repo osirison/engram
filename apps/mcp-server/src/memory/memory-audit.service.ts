@@ -2,14 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
 import type { ToolCallContext } from '@engram/core';
 
-/** A memory mutation worth auditing (WP2 T5/D6). */
+/** A memory mutation worth auditing (WP2 T5/D6; 'supersede' from G3-T3 lifecycle audit). */
 export type MemoryAuditAction =
   | 'update'
   | 'delete'
   | 'bulk-delete'
   | 'promote'
   | 'reembed'
-  | 'restore';
+  | 'restore'
+  | 'supersede';
 
 /** Snapshot fields captured before a destructive/mutating op. */
 export interface MemorySnapshot {

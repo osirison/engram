@@ -1268,6 +1268,7 @@ export class MemoryLtmService {
     let updated = 0;
     let pruned = 0;
     let stale = 0;
+    let skippedConcurrentEdit = 0;
     let exhausted = false;
 
     for (;;) {
@@ -1317,8 +1318,17 @@ export class MemoryLtmService {
             continue;
           }
           try {
-            await this.delete(memory.userId, memory.id, memory.organizationId ?? undefined);
-            pruned += 1;
+            // Version-guarded prune (G3-T3): retry once against the fresh row,
+            // skip when a concurrent edit keeps winning or disqualifies the row.
+            const outcome = await this.pruneWithCas(memory, {
+              pruneScoreThreshold,
+              pruneOlderThanDays,
+            });
+            if (outcome === 'pruned') {
+              pruned += 1;
+            } else if (outcome === 'conflict') {
+              skippedConcurrentEdit += 1;
+            }
           } catch (error) {
             this.logger.warn(`Decay prune failed for memory ${memory.id}: ${String(error)}`);
           }
@@ -1333,12 +1343,14 @@ export class MemoryLtmService {
             continue;
           }
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await (this.prisma as any).memory.update({
-              where: { id: memory.id },
-              data: { metadata: nextMetadata },
-            });
-            updated += 1;
+            // Version-checked metadata rewrite (G3-T3): a concurrent user edit
+            // between the batch read and this write must never be clobbered.
+            const outcome = await this.decayMetadataWithCas(memory, nextMetadata);
+            if (outcome === 'updated') {
+              updated += 1;
+            } else if (outcome === 'conflict') {
+              skippedConcurrentEdit += 1;
+            }
           } catch (error) {
             this.logger.warn(
               `Decay metadata update failed for memory ${memory.id}: ${String(error)}`
@@ -1355,7 +1367,151 @@ export class MemoryLtmService {
       }
     }
 
-    return { processed, updated, pruned, stale, cursor: exhausted ? null : (cursor ?? null) };
+    return {
+      processed,
+      updated,
+      pruned,
+      stale,
+      skippedConcurrentEdit,
+      cursor: exhausted ? null : (cursor ?? null),
+    };
+  }
+
+  /**
+   * Version-guarded decay prune (G3-T3). Deletes the row only while its version
+   * still matches the one the decay pass scored. On a miss the row is re-read
+   * and RE-SCORED before the single retry — a concurrent user edit may have
+   * boosted importance or pinned the memory, and blindly deleting with the
+   * fresh version would clobber that edit. A second miss (or a disqualified
+   * fresh row) skips the prune. Successful prunes emit a `delete` audit row
+   * (system actor `ltm_decay`) whose `before` snapshot feeds `restore_memory`.
+   */
+  private async pruneWithCas(
+    memory: LtmMemory,
+    criteria: { pruneScoreThreshold: number; pruneOlderThanDays: number }
+  ): Promise<'pruned' | 'conflict' | 'gone'> {
+    let target = memory;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (await this.casDelete(target)) {
+        await this.removeVector([target.id]);
+        await this.recordLifecycleAudit({
+          memoryId: target.id,
+          userId: target.userId,
+          organizationId: target.organizationId ?? null,
+          scope: target.scope ?? null,
+          action: 'delete',
+          actorId: 'ltm_decay',
+          before: this.buildAuditSnapshot(target),
+          after: { deleted: true, reason: 'decay_prune' },
+        });
+        return 'pruned';
+      }
+      if (attempt === 1) {
+        break; // second guard miss — skip below, don't re-read again
+      }
+
+      const fresh = await this.findRawMemory(
+        target.userId,
+        target.id,
+        target.organizationId ?? undefined
+      );
+      if (!fresh) {
+        // Row already gone (concurrent delete) — nothing left to prune.
+        return 'gone';
+      }
+      const freshMemory = this.mapToLtmMemory(fresh);
+      const freshMeta = this.normalizeMetadata(freshMemory.metadata);
+      const freshNext = this.annotateImportance(freshMeta, {
+        content: freshMemory.content,
+        metadata: freshMeta,
+        tags: freshMemory.tags,
+        accessCount: this.readAccessCount(freshMeta),
+        pinned: this.readPinned(freshMeta),
+        createdAt: freshMemory.createdAt,
+        lastAccessedAt: this.readLastAccessedAt(freshMeta),
+      });
+      const stillQualifies =
+        this.readImportance(freshNext) < criteria.pruneScoreThreshold &&
+        this.ageDays(freshMemory.createdAt) >= criteria.pruneOlderThanDays &&
+        !this.readPinned(freshNext);
+      if (!stillQualifies) {
+        this.logger.debug(
+          `Skipping decay prune for memory ${target.id}: concurrent edit disqualified the row`
+        );
+        return 'conflict';
+      }
+      target = freshMemory;
+    }
+    this.logger.debug(
+      `Skipping decay prune for memory ${memory.id}: version conflicted twice (concurrent edits win)`
+    );
+    return 'conflict';
+  }
+
+  /**
+   * Version-checked decay metadata rewrite (G3-T3). On a CAS miss the
+   * annotation is recomputed from the FRESH row — retrying with the originally
+   * computed metadata would overwrite whatever the concurrent edit wrote. A
+   * second miss skips the row; the next decay pass will converge it.
+   */
+  private async decayMetadataWithCas(
+    memory: LtmMemory,
+    nextMetadata: Record<string, unknown>
+  ): Promise<'updated' | 'conflict' | 'noop'> {
+    const first = await this.casMetadataUpdate(
+      memory.id,
+      memory.userId,
+      memory.organizationId,
+      memory.version,
+      { metadata: nextMetadata }
+    );
+    if (first) {
+      return 'updated';
+    }
+
+    const fresh = await this.findRawMemory(
+      memory.userId,
+      memory.id,
+      memory.organizationId ?? undefined
+    );
+    if (!fresh) {
+      return 'noop';
+    }
+    const freshMemory = this.mapToLtmMemory(fresh);
+    const freshMeta = this.normalizeMetadata(freshMemory.metadata);
+    const freshNext = this.annotateImportance(freshMeta, {
+      content: freshMemory.content,
+      metadata: freshMeta,
+      tags: freshMemory.tags,
+      accessCount: this.readAccessCount(freshMeta),
+      pinned: this.readPinned(freshMeta),
+      createdAt: freshMemory.createdAt,
+      lastAccessedAt: this.readLastAccessedAt(freshMeta),
+    });
+    const freshStatus = typeof freshMeta['status'] === 'string' ? freshMeta['status'] : 'active';
+    const nextStatus = typeof freshNext['status'] === 'string' ? freshNext['status'] : 'active';
+    if (
+      freshStatus === nextStatus &&
+      Math.abs(this.readImportance(freshMeta) - this.readImportance(freshNext)) <= 0.01
+    ) {
+      // The concurrent edit already left the row consistent — nothing to write.
+      return 'noop';
+    }
+
+    const second = await this.casMetadataUpdate(
+      memory.id,
+      memory.userId,
+      memory.organizationId,
+      freshMemory.version,
+      { metadata: freshNext }
+    );
+    if (second) {
+      return 'updated';
+    }
+    this.logger.debug(
+      `Skipping decay metadata update for memory ${memory.id}: version conflicted twice`
+    );
+    return 'conflict';
   }
 
   /**
@@ -1566,6 +1722,149 @@ export class MemoryLtmService {
     return (this.prisma as any).memory.findFirst({ where }) as Promise<PrismaMemory | null>;
   }
 
+  /**
+   * Compare-and-swap metadata write for internal lifecycle paths (G3-T3).
+   *
+   * Mirrors the user-facing `update()`'s CAS semantics exactly — same `where`
+   * shape (id + userId + type, plus organizationId when supplied) with the
+   * expected version folded in, and a `version: { increment: 1 }` — so
+   * lifecycle writes participate in the SAME optimistic-concurrency protocol
+   * as user edits instead of silently clobbering them.
+   *
+   * `options.bumpVersion: false` keeps the version-KEYED `where` (a stale
+   * write still can never clobber a concurrent edit — it just misses) but
+   * skips the increment. Used ONLY by the access-bookkeeping hot path: get()
+   * and recall() record accesses, so an access write that bumped `version`
+   * would invalidate the version the caller just read and every
+   * read-then-update flow using `expectedVersion` (G4-T2) would 409 against
+   * its own access bump.
+   *
+   * Returns `null` when the CAS missed (version moved or row gone — Prisma
+   * P2025); callers decide whether to re-read + retry once or skip. Non-P2025
+   * errors are rethrown unchanged.
+   */
+  private async casMetadataUpdate(
+    memoryId: string,
+    userId: string,
+    // `null` (from a mapped LtmMemory, where it is already coerced to
+    // undefined at runtime) is treated like undefined: no org filter — same
+    // as the user-facing update(), which can never receive null either.
+    organizationId: string | null | undefined,
+    expectedVersion: number,
+    data: Record<string, unknown>,
+    options: { bumpVersion?: boolean } = {}
+  ): Promise<PrismaMemory | null> {
+    const bumpVersion = options.bumpVersion ?? true;
+    const where: Record<string, unknown> = {
+      id: memoryId,
+      userId,
+      type: MemoryType.LONG_TERM,
+      version: expectedVersion,
+    };
+    if (organizationId != null) {
+      where.organizationId = organizationId;
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updated = await (this.prisma as any).memory.update({
+        where,
+        data: bumpVersion ? { ...data, version: { increment: 1 } } : { ...data },
+      });
+      return (updated ?? null) as PrismaMemory | null;
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2025') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Version-guarded delete for lifecycle paths (G3-T3): same `where` shape as
+   * {@link casMetadataUpdate} via `deleteMany`, so the row is only removed while
+   * it still matches the version the caller evaluated. Returns false when the
+   * guard missed (version moved or row gone).
+   */
+  private async casDelete(memory: LtmMemory): Promise<boolean> {
+    const where: Record<string, unknown> = {
+      id: memory.id,
+      userId: memory.userId,
+      type: MemoryType.LONG_TERM,
+      version: memory.version,
+    };
+    if (memory.organizationId != null) {
+      where.organizationId = memory.organizationId;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (this.prisma as any).memory.deleteMany({ where });
+    return result.count > 0;
+  }
+
+  /**
+   * Pre-image snapshot for a lifecycle audit row. Matches the shape written by
+   * the mcp-server audit trail (`MemorySnapshot` in WP2 T5's `snapshotOf`), so
+   * `restore_memory` can rebuild a decay-pruned row from it: `{ content, tags,
+   * metadata, type, scope, expiresAt, version }`.
+   */
+  private buildAuditSnapshot(memory: LtmMemory): Record<string, unknown> {
+    return {
+      content: memory.content,
+      tags: memory.tags,
+      metadata: memory.metadata,
+      type: memory.type,
+      scope: memory.scope ?? null,
+      expiresAt: null, // LTM memories never expire
+      version: memory.version,
+    };
+  }
+
+  /**
+   * Append a lifecycle mutation to the `memory_audits` trail (G3-T3).
+   *
+   * Same column shape as the mcp-server `MemoryAuditService.record()` write
+   * (WP2 T5) — action `delete` rows here are picked up unchanged by
+   * `findLatestDeleteSnapshot()` / `restore_memory` — but attributed to a
+   * system actor (`actorType: 'system'`, `actorId` naming the job) because no
+   * verified API-key principal exists inside a background job. Best-effort:
+   * NEVER throws — a lost audit row must not fail the lifecycle mutation that
+   * already happened.
+   */
+  private async recordLifecycleAudit(entry: {
+    memoryId: string;
+    userId: string;
+    organizationId: string | null;
+    scope: string | null;
+    action: 'delete' | 'supersede';
+    actorId: 'ltm_decay' | 'dedup_supersede';
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  }): Promise<void> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (this.prisma as any).memoryAudit.create({
+        data: {
+          memoryId: entry.memoryId,
+          userId: entry.userId,
+          organizationId: entry.organizationId,
+          scope: entry.scope,
+          action: entry.action,
+          actorType: 'system',
+          actorId: entry.actorId,
+          actorLabel: null,
+          delegated: false,
+          before: entry.before,
+          after: entry.after,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to write lifecycle audit (action=${entry.action} memory=${entry.memoryId}): ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
   private normalizeMetadata(
     metadata: Record<string, unknown> | null | undefined
   ): Record<string, unknown> {
@@ -1745,6 +2044,15 @@ export class MemoryLtmService {
     return this.contradictionDetectionService.detect(content, candidates);
   }
 
+  /**
+   * Mark an older contradicted memory as superseded (hidden from default
+   * recall). Version-checked (G3-T3): the supersede marker is merged into the
+   * row version we read; on a CAS miss we re-read and retry ONCE so the marker
+   * lands on the CURRENT metadata, and skip after a second conflict rather
+   * than clobber a concurrent user edit. Emits a `supersede` audit row
+   * (system actor `dedup_supersede`) because hiding a row from recall is a
+   * user-visible mutation.
+   */
   private async markSuperseded(
     memoryId: string,
     supersededById: string,
@@ -1752,29 +2060,60 @@ export class MemoryLtmService {
     userId: string,
     organizationId: string | undefined
   ): Promise<void> {
-    const existing = await this.findRawMemory(userId, memoryId, organizationId);
+    let existing = await this.findRawMemory(userId, memoryId, organizationId);
     if (!existing) return;
-    const updatedMeta = this.contradictionDetectionService!.annotateSuperseded(
-      existing.metadata as Record<string, unknown> | null,
-      supersededById,
-      reason
-    );
-    const updateWhere: Record<string, unknown> = {
-      id: memoryId,
-      userId,
-      type: MemoryType.LONG_TERM,
-    };
-    if (organizationId !== undefined) {
-      updateWhere.organizationId = organizationId;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const updatedMeta = this.contradictionDetectionService!.annotateSuperseded(
+        existing.metadata as Record<string, unknown> | null,
+        supersededById,
+        reason
+      );
+      const updated = await this.casMetadataUpdate(
+        memoryId,
+        userId,
+        organizationId,
+        existing.version,
+        {
+          metadata: updatedMeta,
+        }
+      );
+      if (updated) {
+        this.logger.debug(`Memory ${memoryId} marked superseded by ${supersededById}`);
+        await this.recordLifecycleAudit({
+          memoryId,
+          userId,
+          organizationId: existing.organizationId ?? null,
+          scope: existing.scope ?? null,
+          action: 'supersede',
+          actorId: 'dedup_supersede',
+          before: this.buildAuditSnapshot(this.mapToLtmMemory(existing)),
+          after: { superseded: true, supersededBy: supersededById, supersededReason: reason },
+        });
+        return;
+      }
+      if (attempt === 1) {
+        break; // second CAS miss — skip below, don't re-read again
+      }
+      // CAS missed: re-read and retry once so the marker merges into the
+      // concurrent edit's metadata instead of overwriting it.
+      const fresh = await this.findRawMemory(userId, memoryId, organizationId);
+      if (!fresh) return; // row deleted concurrently — nothing left to supersede
+      existing = fresh;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (this.prisma as any).memory.update({
-      where: updateWhere,
-      data: { metadata: updatedMeta },
-    });
-    this.logger.debug(`Memory ${memoryId} marked superseded by ${supersededById}`);
+    this.logger.debug(
+      `Skipping supersede for memory ${memoryId}: version conflicted twice (concurrent edits win)`
+    );
   }
 
+  /**
+   * Annotate an existing memory as the dedup target of a new write and return
+   * it. Version-checked (G3-T3): the duplicate annotation is CAS'd against the
+   * row version we read, retried ONCE against a fresh read, and DROPPED after a
+   * second conflict — losing a `duplicateMatches` annotation is acceptable;
+   * overwriting a concurrent user edit's metadata is not. Metadata-only
+   * bookkeeping, so no audit row is emitted.
+   */
   private async linkDuplicateAndReturn(
     memoryId: string,
     userId: string,
@@ -1782,36 +2121,67 @@ export class MemoryLtmService {
     score: number,
     content: string
   ): Promise<LtmMemory> {
-    const existing = await this.findRawMemory(userId, memoryId, organizationId);
+    let existing = await this.findRawMemory(userId, memoryId, organizationId);
     if (!existing) {
       throw new LtmMemoryNotFoundError(memoryId);
     }
-    const existingMemory = this.mapToLtmMemory(existing);
-    const match: DuplicateDetectionMatch = { memoryId, score };
-    // duplicateDetectionService is guaranteed non-null here: findDuplicate() returns null
-    // when it is absent, and linkDuplicateAndReturn is only called on a non-null result.
-    const metadataWithDuplicate = this.duplicateDetectionService!.annotateMetadata(
-      existingMemory.metadata,
-      match,
-      content.slice(0, 120)
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const existingMemory = this.mapToLtmMemory(existing);
+      const match: DuplicateDetectionMatch = { memoryId, score };
+      // duplicateDetectionService is guaranteed non-null here: findDuplicate() returns null
+      // when it is absent, and linkDuplicateAndReturn is only called on a non-null result.
+      const metadataWithDuplicate = this.duplicateDetectionService!.annotateMetadata(
+        existingMemory.metadata,
+        match,
+        content.slice(0, 120)
+      );
+      const metadata = this.annotateImportance(metadataWithDuplicate, {
+        content: existingMemory.content,
+        metadata: metadataWithDuplicate,
+        tags: existingMemory.tags,
+        accessCount: this.readAccessCount(existingMemory.metadata),
+        pinned: this.readPinned(existingMemory.metadata),
+        createdAt: existingMemory.createdAt,
+        lastAccessedAt: this.readLastAccessedAt(existingMemory.metadata),
+      });
+      const updated = await this.casMetadataUpdate(
+        memoryId,
+        userId,
+        organizationId,
+        existingMemory.version,
+        { metadata }
+      );
+      if (updated) {
+        return this.mapToLtmMemory(updated);
+      }
+      const fresh = await this.findRawMemory(userId, memoryId, organizationId);
+      if (!fresh) {
+        throw new LtmMemoryNotFoundError(memoryId);
+      }
+      existing = fresh;
+    }
+    // Two CAS misses: concurrent writers own this row right now. Return it
+    // without the duplicate annotation rather than clobbering their writes.
+    this.logger.debug(
+      `Skipping duplicate annotation for memory ${memoryId}: version conflicted twice`
     );
-    const metadata = this.annotateImportance(metadataWithDuplicate, {
-      content: existingMemory.content,
-      metadata: metadataWithDuplicate,
-      tags: existingMemory.tags,
-      accessCount: this.readAccessCount(existingMemory.metadata),
-      pinned: this.readPinned(existingMemory.metadata),
-      createdAt: existingMemory.createdAt,
-      lastAccessedAt: this.readLastAccessedAt(existingMemory.metadata),
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updated = await (this.prisma as any).memory.update({
-      where: { id: existingMemory.id },
-      data: { metadata },
-    });
-    return this.mapToLtmMemory(updated);
+    return this.mapToLtmMemory(existing);
   }
 
+  /**
+   * Best-effort access bookkeeping on the recall/get hot path. Version-checked
+   * (G3-T3) so a stale access bump can never overwrite a concurrent user edit's
+   * metadata — but deliberately WITHOUT a retry: on a version conflict the bump
+   * is simply dropped (a lost access count is acceptable; extra reads in the
+   * hot path are not). Never throws.
+   *
+   * Deliberately does NOT bump `version` (`bumpVersion: false`): get()/recall()
+   * fire this after handing the row to the caller, so incrementing here would
+   * invalidate the version the caller just read — every read-then-update flow
+   * with `expectedVersion` (required by update_memory since G4-T2) would 409
+   * against its own access bookkeeping.
+   */
   private async recordAccess(memory: LtmMemory): Promise<void> {
     if (!this.importanceService) {
       return;
@@ -1827,11 +2197,19 @@ export class MemoryLtmService {
         createdAt: memory.createdAt,
         lastAccessedAt: new Date(),
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (this.prisma as any).memory.update({
-        where: { id: memory.id },
-        data: { metadata },
-      });
+      const updated = await this.casMetadataUpdate(
+        memory.id,
+        memory.userId,
+        memory.organizationId,
+        memory.version,
+        { metadata },
+        { bumpVersion: false }
+      );
+      if (!updated) {
+        this.logger.debug(
+          `Skipped access bump for memory ${memory.id}: version moved (concurrent edit wins)`
+        );
+      }
     } catch (error) {
       this.logger.warn(`Failed to record access for memory ${memory.id}: ${error}`);
     }

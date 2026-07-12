@@ -730,7 +730,7 @@ describe('MemoryController', () => {
     const userId = 'clm0000000000000000000000';
     const memoryId = 'clm1111111111111111111111';
 
-    it('updates memory and includes it in the response text', async () => {
+    it('updates memory (fresh expectedVersion) and includes it in the response text', async () => {
       const updated = { id: memoryId, userId, content: 'new content' };
       mockMemoryService.updateMemory.mockResolvedValue(updated);
 
@@ -738,6 +738,7 @@ describe('MemoryController', () => {
         userId,
         memoryId,
         content: 'new content',
+        expectedVersion: 1,
       });
 
       expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
@@ -748,11 +749,24 @@ describe('MemoryController', () => {
           metadata: undefined,
           tags: undefined,
           ttl: undefined,
-          expectedVersion: undefined,
+          expectedVersion: 1,
         },
         undefined,
       );
       expect(response.content[0]?.text).toContain(memoryId);
+    });
+
+    it('rejects a blind update (no expectedVersion) with an actionable CONFLICT error (G4-T2)', async () => {
+      // The concurrent-writer policy (docs/concurrency-policy.md) pins agent
+      // blind updates to REJECT: the schema fails before any service call, and
+      // the message tells the agent how to recover (re-read, then retry).
+      await expect(
+        controller.updateMemory({ userId, memoryId, content: 'clobber' }),
+      ).rejects.toThrow(
+        /Failed to update memory: CONFLICT: update_memory requires expectedVersion.*get_memory.*retry/,
+      );
+
+      expect(mockMemoryService.updateMemory).not.toHaveBeenCalled();
     });
 
     it('threads expectedVersion to the service and surfaces conflicts as CONFLICT: (WP2 T4)', async () => {
@@ -782,7 +796,11 @@ describe('MemoryController', () => {
 
     it('rejects invalid memoryId', async () => {
       await expect(
-        controller.updateMemory({ userId, memoryId: 'not-a-cuid' }),
+        controller.updateMemory({
+          userId,
+          memoryId: 'not-a-cuid',
+          expectedVersion: 1,
+        }),
       ).rejects.toThrow(/Failed to update memory/);
     });
 
@@ -792,7 +810,7 @@ describe('MemoryController', () => {
       );
 
       await expectGenericFailure(
-        controller.updateMemory({ userId, memoryId }),
+        controller.updateMemory({ userId, memoryId, expectedVersion: 1 }),
         'Failed to update memory',
         'memory not found',
       );
@@ -1148,11 +1166,27 @@ describe('MemoryController audit wiring (WP2 T5)', () => {
       scope: null,
     });
 
+    // G4-T2: the tool now requires the fresh version the caller read.
     await controller.updateMemory(
-      { userId, memoryId, content: 'new', actorLabel: 'op@example.com' },
+      {
+        userId,
+        memoryId,
+        content: 'new',
+        expectedVersion: 3,
+        actorLabel: 'op@example.com',
+      },
       ctx,
     );
 
+    // The CAS version reaches the service…
+    expect(svc.updateMemory).toHaveBeenCalledWith(
+      userId,
+      memoryId,
+      expect.objectContaining({ expectedVersion: 3 }),
+      undefined,
+    );
+    // …and the audit row's post-image carries the bumped version (G4-T2
+    // acceptance: `MemoryAudit.after` records the version the update produced).
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         memoryId,

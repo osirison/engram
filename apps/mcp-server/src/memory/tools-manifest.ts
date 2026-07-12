@@ -89,7 +89,8 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   },
   {
     name: 'update_memory',
-    description: 'Update existing memory',
+    description:
+      'Update an existing memory. expectedVersion is required (optimistic concurrency): pass the version returned by get_memory or a prior read. Blind updates are rejected, and a stale version fails with a CONFLICT error — re-read the memory and retry with the fresh version.',
     inputSchema: updateMemoryToolSchema,
     delegable: true,
     requiredScope: 'memories:write',

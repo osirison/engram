@@ -26,7 +26,10 @@ no memory hook). Only **Claude Code** is 🟢 today.
 > Config formats for the non-Claude clients were verified against each vendor's
 > current (July 2026) docs, but they drift — re-check the vendor doc if a client
 > reports a bad config. Set `ENGRAM_API_KEY` in the environment each client is
-> launched from; never commit a key.
+> launched from — each agent gets its **own** key (mint the whole fleet in one
+> pass: `pnpm --filter mcp-server provision-agent-keys -- --agents
+claude-code,copilot,cursor,codex,gemini --user qp`, see
+> [`security/agent-keys.md`](./security/agent-keys.md)); never commit a key.
 
 ## Claude Code (CLI) — 🟢 deterministic
 
