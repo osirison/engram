@@ -345,10 +345,23 @@ export class MemoryLtmService {
         updateData.tags = validatedInput.tags || [];
       }
 
+      // Resolve final metadata FIRST (full-replace wins over patch; patch merges
+      // into existing) so we know whether this memory is embeddingExcluded before
+      // deciding whether to (re)embed it — an excluded row (e.g. an import
+      // secret-scan `flag`) must never be re-embedded on a content/tag edit.
+      let nextMetadata: Record<string, unknown> | null =
+        validatedInput.metadata !== undefined
+          ? (validatedInput.metadata ?? null)
+          : validatedInput.metadataMerge !== undefined
+            ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
+            : (existing.metadata ?? null);
+      const embeddingExcluded = this.readEmbeddingExcluded(nextMetadata);
+
       // Re-embed when the content changes so the vector stays consistent with
       // the stored text (non-fatal — falls back to the existing embedding).
+      // Skipped entirely for an embeddingExcluded memory.
       let newEmbedding: number[] | undefined;
-      if (validatedInput.content !== undefined && this.embeddingsService) {
+      if (validatedInput.content !== undefined && this.embeddingsService && !embeddingExcluded) {
         const result = await this.embeddingsService
           .generate({ text: validatedInput.content })
           .catch(() => null);
@@ -358,21 +371,15 @@ export class MemoryLtmService {
         }
       }
 
-      // Resolve final metadata: full-replace wins over patch; patch merges into existing.
-      let nextMetadata: Record<string, unknown> | null =
-        validatedInput.metadata !== undefined
-          ? (validatedInput.metadata ?? null)
-          : validatedInput.metadataMerge !== undefined
-            ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
-            : (existing.metadata ?? null);
-
       // Embedding staleness (WP2 T7/A9/D10): a content edit that could NOT be
       // re-embedded (provider down or absent) leaves the OLD vector pointing at
       // the previous text — flag it so recall drift is visible and repairable;
       // clear the flag whenever a fresh embedding is written. Scoped strictly to
       // "embedding column vs content": an indexVector throw below leaves a correct
       // embedding in Postgres (reindex-recoverable) and does NOT set this flag.
-      if (validatedInput.content !== undefined) {
+      // An embeddingExcluded memory is intentionally out of the index, so it is
+      // never marked stale.
+      if (validatedInput.content !== undefined && !embeddingExcluded) {
         const meta = { ...(nextMetadata ?? {}) };
         if (newEmbedding === undefined) {
           meta.embeddingStale = true;
@@ -443,6 +450,7 @@ export class MemoryLtmService {
       // Scope is immutable via update(), so it never triggers a re-index here.
       const embeddingToIndex = newEmbedding ?? ltmMemory.embedding;
       if (
+        !embeddingExcluded &&
         embeddingToIndex.length > 0 &&
         (newEmbedding !== undefined || validatedInput.tags !== undefined)
       ) {
@@ -482,6 +490,13 @@ export class MemoryLtmService {
       throw new LtmMemoryNotFoundError(memoryId);
     }
     const existing = this.mapToLtmMemory(existingRow);
+
+    // An embeddingExcluded memory is intentionally absent from the vector index
+    // (e.g. an import secret-scan `flag`) — there is nothing to re-embed. Return
+    // it unchanged without contacting the embedding provider.
+    if (this.readEmbeddingExcluded(existing.metadata)) {
+      return existing;
+    }
 
     if (!this.embeddingsService) {
       throw new LtmEmbeddingUnavailableError(memoryId);
@@ -536,8 +551,11 @@ export class MemoryLtmService {
     this.logger.debug(`Restoring LTM memory ${input.id} for user: ${input.userId}`);
 
     try {
+      // Honor embeddingExcluded from the delete snapshot: a memory that was held
+      // out of the index (e.g. an import secret-scan `flag`) is restored the same
+      // way — no embedding is generated, so it never re-enters the vector store.
       let embedding: number[] = [];
-      if (this.embeddingsService) {
+      if (this.embeddingsService && !this.readEmbeddingExcluded(input.metadata)) {
         const result = await this.embeddingsService
           .generate({ text: input.content })
           .catch(() => null);

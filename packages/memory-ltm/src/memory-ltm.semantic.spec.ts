@@ -128,6 +128,59 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
     });
   });
 
+  describe('embeddingExcluded on update / reembed / restore', () => {
+    it('update never re-embeds an embeddingExcluded memory on a content edit', async () => {
+      prisma.memory.findFirst.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [] })
+      );
+      prisma.memory.update.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [], content: 'edited' })
+      );
+
+      await service.update(mockUserId, mockMemoryId, { content: 'edited secret content' });
+
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+    });
+
+    it('update still embeds a normal memory on a content edit — control', async () => {
+      prisma.memory.findFirst.mockResolvedValue(buildMemory({ metadata: {} }));
+      prisma.memory.update.mockResolvedValue(buildMemory({ content: 'edited' }));
+
+      await service.update(mockUserId, mockMemoryId, { content: 'edited content' });
+
+      expect(embeddings.generate).toHaveBeenCalledWith({ text: 'edited content' });
+    });
+
+    it('reembed is a no-op for an embeddingExcluded memory', async () => {
+      prisma.memory.findFirst.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true } })
+      );
+
+      const result = await service.reembed(mockUserId, mockMemoryId);
+
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+      expect(result.id).toBe(mockMemoryId);
+    });
+
+    it('restore does not embed an embeddingExcluded snapshot', async () => {
+      prisma.memory.create.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [] })
+      );
+
+      await service.restore({
+        id: mockMemoryId,
+        userId: mockUserId,
+        content: 'restored secret',
+        metadata: { embeddingExcluded: true },
+      });
+
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+    });
+  });
+
   describe('delete', () => {
     it('removes the vector after a successful delete', async () => {
       prisma.memory.deleteMany.mockResolvedValue({ count: 1 });
