@@ -10,9 +10,12 @@ built + verified?).** The [`README.md`](./README.md) "Status" table tracks a dif
 axis — whether each _plan document_ was authored. A WP can be "plan: done" there and
 "execution: not started" here.
 
-- **Last updated:** 2026-07-09 (cross-cutting **medium gaps G5–G9 remediated** — see
-  [`GAPS.md`](./GAPS.md); WP5 row corrected to shipped. Earlier: 2026-07-08 WP2 T3/T6
-  residual follow-ups; 2026-07-06 verified WP2 + merged the suite to `main`).
+- **Last updated:** 2026-07-12 (**wrap-up campaign started** — qp pinned scope to ALL
+  remaining items: G1–G4 remainder, WP6 content T7–T14, WP1 R1–R13. Orchestration,
+  batch tracker, and resume protocol live in [`WRAPUP-PLAN.md`](./WRAPUP-PLAN.md);
+  execute from there. Earlier: 2026-07-09 medium gaps G5–G9 remediated — see
+  [`GAPS.md`](./GAPS.md); 2026-07-08 WP2 T3/T6 residual follow-ups; 2026-07-06
+  verified WP2 + merged the suite to `main`).
 - **Last run:** Medium gaps G5–G9 (branch `feat/gaps-medium-g5-g9`): G5 export
   `includeHistory` sidecar, G6 DB-backed round-trip e2e + importer `## Related`-mirror
   fix, G8 eval-threshold DRY cleanup, G9 backup coverage of the WP2-4 tables. G7 batch
