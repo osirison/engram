@@ -19,7 +19,8 @@ import {
   type AuthedRequest,
 } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
-import { isAuthRequired, isFlagEnabled } from './auth/auth.config';
+import { isAuthRequired } from './auth/auth.config';
+import { unauthenticatedHttpRefusal } from './http-auth-posture';
 import { helmetOptions } from './security/security-headers.util';
 
 type ExpressMiddleware = (
@@ -90,30 +91,21 @@ async function bootstrap(): Promise<void> {
   mcpHandler.setAuthPolicy({ required: authRequired });
 
   // Fail-safe against the most dangerous misconfiguration: an HTTP transport
-  // serving every tenant unauthenticated (userId taken from tool input, not a
-  // credential). Only meaningful on a multi-tenant profile — memory/lite are
-  // single-user, so there is no cross-tenant data to expose. In production this
-  // must be a deliberate choice, so refuse to boot unless the operator
-  // explicitly acknowledges the trusted-network posture.
+  // serving every tenant unauthenticated. Applies in EVERY NODE_ENV (G1-T1) —
+  // see unauthenticatedHttpRefusal for the rationale and conditions.
   const capabilities = resolveCapabilities(
     coerceDeploymentProfile(process.env.DEPLOYMENT_PROFILE),
   );
-  if (
-    capabilities.multiTenant &&
-    mcpTransport === 'streamable-http' &&
-    !authRequired &&
-    process.env.NODE_ENV === 'production' &&
-    !isFlagEnabled(process.env.ALLOW_UNAUTHENTICATED_HTTP)
-  ) {
-    logger.error(
-      'Refusing to start: streamable-http in production without AUTH_REQUIRED=true. ' +
-        'This would serve all tenants unauthenticated with a client-controlled userId. ' +
-        'Set AUTH_REQUIRED=true (recommended), or set ALLOW_UNAUTHENTICATED_HTTP=true to ' +
-        'acknowledge a trusted-network deployment.',
-      'Bootstrap',
-    );
+  const refusal = unauthenticatedHttpRefusal({
+    multiTenant: capabilities.multiTenant,
+    transport: mcpTransport,
+    authRequired,
+    allowUnauthenticatedHttp: process.env.ALLOW_UNAUTHENTICATED_HTTP,
+  });
+  if (refusal) {
+    logger.error(refusal, 'Bootstrap');
     throw new Error(
-      'Unauthenticated streamable-http in production requires explicit ALLOW_UNAUTHENTICATED_HTTP=true',
+      'Unauthenticated multi-tenant streamable-http requires explicit ALLOW_UNAUTHENTICATED_HTTP=true',
     );
   }
 

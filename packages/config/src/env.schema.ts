@@ -130,6 +130,8 @@ export const baseSchema = z.object({
    * enforced over the streamable-http transport.
    */
   AUTH_REQUIRED: booleanFlag(false),
+  /** Explicit operator acknowledgement to run a multi-tenant streamable-http server WITHOUT auth (trusted-network posture). Without it such a server refuses to boot in every NODE_ENV. */
+  ALLOW_UNAUTHENTICATED_HTTP: booleanFlag(false),
   /** Base URL used to build OAuth callback URLs, e.g. `https://api.example.com`. */
   OAUTH_REDIRECT_BASE_URL: z.string().url().optional(),
   /** GitHub OAuth app credentials. Both must be set to enable GitHub login. */
@@ -353,6 +355,7 @@ export type Env = {
   JWT_SECRET?: string;
   JWT_EXPIRES_IN: string;
   AUTH_REQUIRED: boolean;
+  ALLOW_UNAUTHENTICATED_HTTP: boolean;
   OAUTH_REDIRECT_BASE_URL?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;

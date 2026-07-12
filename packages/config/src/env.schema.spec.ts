@@ -38,6 +38,7 @@ describe('envSchema', () => {
         MEMORY_IMPORTANCE_HALF_LIFE_DAYS: 14,
         JWT_EXPIRES_IN: '7d',
         AUTH_REQUIRED: false,
+        ALLOW_UNAUTHENTICATED_HTTP: false,
         RATE_LIMIT_ENABLED: false,
         RATE_LIMIT_WINDOW_SEC: 60,
         RATE_LIMIT_USER_RPM: 120,
