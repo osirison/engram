@@ -7,10 +7,14 @@ description: Resumable execution tracker for the critical/high gap remediation (
 
 Companion to [`GAPS-G1-G4-PLAN.md`](./GAPS-G1-G4-PLAN.md) (the plan: what to build, why,
 and the shared seams). **This file tracks execution** (built + verified?) and pins qp's
-decisions so any resume is unambiguous. Branch: `feat/gaps-critical-g1-g4` (from
-`origin/main` @ `719898d`). Worktree: `/home/qp/Cloud/Projects/engram-gaps-critical`.
+decisions so any resume is unambiguous. Batch 1 (rows 1–4) merged as **#255**
+(`cc10108`); the branch/worktree for it are gone. Remaining execution runs as batches
+**B2–B5** defined in [`WRAPUP-PLAN.md`](./WRAPUP-PLAN.md) — one worktree/branch per
+batch, orchestration + resume protocol there.
 
-- **Last updated:** 2026-07-09 — plan authored + decisions pinned; execution starting.
+- **Last updated:** 2026-07-12 — wrap-up campaign started; decisions 7–10 pinned;
+  batch mapping: B2 = G2-T2, G2-T3, G1-T3, G1-T1 · B3 = G3-T3, G4-T2, G1-T2 ·
+  B4 = G3-T4, G3-T6, G4-T3, G4-T4-deferral · B5 = G3-T2.
 - **Prereq:** these gaps were ~90% delivered by WP2–5; this branch closes the verified
   remainder (16 tasks: 6 S / 9 M / 1 L). See the plan §1 for what is already shipped.
 
@@ -35,6 +39,19 @@ decisions so any resume is unambiguous. Branch: `feat/gaps-critical-g1-g4` (from
    clobbers the agent edit.
 6. **G4-T4 STM Lua CAS = DEFERRED** (Decision 14). STM is TTL-bounded/low-stakes; document
    the deferral, don't build the Lua script this round. G4-T4 row → deferred, not done.
+
+## Decisions (pinned by qp, 2026-07-12 — wrap-up campaign)
+
+7. **G1-T2 = distinct API keys per agent, ONE userId (`qp`)** (plan Decision 2).
+   Attribution via `MemoryAudit.actorId`; shared memory pool intact; no tenancy split.
+8. **`status`/`supersededBy` stay in metadata JSON — no status-column migration**
+   (plan Decision 8). JSON scans accepted at current volume. The only schema change
+   this campaign is G4-T3's `MemoryImportSource.lastWrittenVersion`.
+9. **G3-T6 stays deterministic — no LLM dependency, not even config-gated**
+   (plan Decision 11). Preserves "runs without external services".
+10. **Scope = everything outstanding** (G1–G4 remainder + WP6 content + WP1
+    remediation), sequenced per `WRAPUP-PLAN.md`. Plan Decision 4 (promote the 5
+    import-specific scanner patterns into `PrivacyFilterStep`) stays out of scope.
 
 ## Execution order (from plan §5, adapted to the decisions above)
 
@@ -73,10 +90,10 @@ Legend: ✅ done+verified · 🟨 in progress · ⬜ not started.
 
 ## Resume protocol
 
-1. `cd /home/qp/Cloud/Projects/engram-gaps-critical`; `pnpm install --frozen-lockfile`;
-   `pnpm db:generate` (Prisma client is gitignored — regenerate on fresh checkout).
-2. Read the plan + this file; find the first ⬜ row in the execution order; build it per the
-   plan task card; add tests at BOTH service and wiring level; run
-   `build`/`lint`/`typecheck`/`test`(/`docs:check`); commit as one conventional commit;
-   flip the row to ✅.
+1. Follow [`WRAPUP-PLAN.md`](./WRAPUP-PLAN.md) §0 (global protocol) + §1 (batch
+   tracker): one worktree per batch, first non-✅ batch wins.
+2. Per task: build per the plan task card + the batch's decision deltas
+   (`WRAPUP-PLAN.md` §2); tests at BOTH service and wiring level; run
+   `build`/`lint`/`typecheck`/`test`/`docs:check`; one conventional commit per task,
+   push immediately; flip the row here in the batch's tracker commit.
 3. When a task needs a policy call not covered by the pinned decisions above, ask qp first.
