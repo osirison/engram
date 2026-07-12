@@ -58,8 +58,12 @@ export {
   SecretScanner,
   ImportSecretPolicyError,
   type SecretPolicy,
+  type SecretField,
   type SecretMatch,
   type ScanResult,
+  type FrontmatterScanResult,
+  type SecretScanTarget,
+  type SecretPolicyResult,
 } from './secrets/secret-scanner.js';
 
 // ── Embedding cost estimator (T14) ──────────────────────────────────────────

@@ -84,6 +84,7 @@ import {
   importAgentMemoryToolSchema,
   ImportAgentMemoryToolInput,
 } from './dto/import-agent-memory.dto';
+import { assertImportPathAllowed } from './import-path-guard';
 import { TOOL_MANIFEST } from './tools-manifest';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
@@ -1604,6 +1605,10 @@ export class MemoryController {
           'Agentic memory import is unavailable in this deployment profile (requires Postgres)',
         );
       }
+      // A18: the admin token authorizes WHO, not WHICH paths — the server-side
+      // path (dryRun included) must resolve inside the allowed import root
+      // (IMPORT_ALLOWED_ROOT, defaulting to the server home directory).
+      await assertImportPathAllowed(validated.path);
       const summary = await this.memoryImport.run({
         source: validated.source,
         path: validated.path,

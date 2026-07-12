@@ -1,0 +1,11 @@
+---
+description: Deploy uses key AKIAIOSFODNN7EXAMPLE for the registry
+globs:
+  - "deploy/**"
+alwaysApply: false
+retries: 3
+---
+
+# Deploy rules
+
+Run the deploy checklist and verify the health endpoint before shipping.

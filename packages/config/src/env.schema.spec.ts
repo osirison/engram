@@ -38,6 +38,7 @@ describe('envSchema', () => {
         MEMORY_IMPORTANCE_HALF_LIFE_DAYS: 14,
         JWT_EXPIRES_IN: '7d',
         AUTH_REQUIRED: false,
+        ALLOW_UNAUTHENTICATED_HTTP: false,
         RATE_LIMIT_ENABLED: false,
         RATE_LIMIT_WINDOW_SEC: 60,
         RATE_LIMIT_USER_RPM: 120,
@@ -381,6 +382,40 @@ describe('envSchema', () => {
         ZodError
       );
       expect(() => envSchema.parse({ ...base, MEMORY_DECAY_INTERVAL_MS: '-1' })).toThrow(ZodError);
+    });
+  });
+
+  describe('import path allowlist (IMPORT_ALLOWED_ROOT, A18)', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+      REDIS_URL: 'redis://localhost:6379',
+      QDRANT_URL: 'http://localhost:6333',
+    };
+
+    it('is optional and stays undefined when unset (runtime falls back to the home dir)', () => {
+      const result = envSchema.parse(base);
+      expect(result.IMPORT_ALLOWED_ROOT).toBeUndefined();
+    });
+
+    it('accepts an absolute POSIX path', () => {
+      const result = envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: '/srv/engram/imports' });
+      expect(result.IMPORT_ALLOWED_ROOT).toBe('/srv/engram/imports');
+    });
+
+    it('accepts an absolute Windows drive path', () => {
+      const result = envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: 'C:\\engram\\imports' });
+      expect(result.IMPORT_ALLOWED_ROOT).toBe('C:\\engram\\imports');
+    });
+
+    it('rejects a relative path', () => {
+      expect(() => envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: 'imports' })).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: './imports' })).toThrow(
+        ZodError
+      );
+    });
+
+    it('rejects an empty string', () => {
+      expect(() => envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: '' })).toThrow(ZodError);
     });
   });
 

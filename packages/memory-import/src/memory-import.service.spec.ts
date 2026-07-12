@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LtmMemoryQuotaExceededError } from '@engram/memory-ltm';
 import { MemoryImportService, type ImportRunInput } from './memory-import.service.js';
-import { SecretScanner } from './secrets/secret-scanner.js';
+import { ImportSecretPolicyError, SecretScanner } from './secrets/secret-scanner.js';
 import { computeContentHash } from './content-hash.js';
 import type { ImportIR, ImportedFact } from './ir/types.js';
 import type { SourceAdapter } from './ir/source-adapter.interface.js';
@@ -257,5 +257,95 @@ describe('MemoryImportService.run', () => {
   it('unknown source: throws a clear error', async () => {
     const svc = build(makeIR([]), makeLedger(), ltm, resolver);
     await expect(svc.run({ ...baseInput, source: 'codex' })).rejects.toThrow(/No import adapter/);
+  });
+
+  describe('frontmatter/title secrets (G2-T2)', () => {
+    const dirtyFrontmatter = () => ({
+      description: 'token ghp_1234567890abcdefghijklmnopqrstuvwxyzAB here',
+      nested: { hosts: ['10.0.0.5', 'example.com'], port: 5432 },
+      alwaysApply: true,
+    });
+
+    function dirtyIR() {
+      return makeIR([
+        fact({
+          sourceKey: 'markdown:leaky.md',
+          content: 'clean body about deploys',
+          title: 'rotate AKIAIOSFODNN7EXAMPLE monthly',
+          frontmatter: dirtyFrontmatter(),
+        }),
+      ]);
+    }
+
+    function createdArg(index = 0) {
+      return ltm.create.mock.calls[index]?.[0] as unknown as {
+        content: string;
+        metadata?: Record<string, unknown>;
+        tags?: string[];
+      };
+    }
+
+    it('redact: stores sanitized title + frontmatter, structure and non-strings intact', async () => {
+      const summary = await build(dirtyIR(), makeLedger(), ltm, resolver).run(baseInput);
+      const created = createdArg();
+      expect(JSON.stringify(created)).not.toMatch(
+        /ghp_1234567890|AKIAIOSFODNN7EXAMPLE|10\.0\.0\.5/
+      );
+      expect(created.metadata?.['title']).toBe('rotate [REDACTED] monthly');
+      expect(created.metadata?.['frontmatter']).toEqual({
+        description: 'token [REDACTED] here',
+        nested: { hosts: ['[REDACTED]', 'example.com'], port: 5432 },
+        alwaysApply: true,
+      });
+      expect(summary.secrets).toEqual([
+        { path: 'leaky.md', patterns: expect.arrayContaining(['aws-key', 'github-token']) },
+      ]);
+    });
+
+    it('flag: a frontmatter-only hit redacts, embedding-excludes, and tags has-secret', async () => {
+      const ir = makeIR([
+        fact({
+          sourceKey: 'markdown:fm-only.md',
+          content: 'clean body',
+          frontmatter: { description: 'DB_PASSWORD=s3cr3tvalue' },
+        }),
+      ]);
+      await build(ir, makeLedger(), ltm, resolver).run({ ...baseInput, secretsPolicy: 'flag' });
+      const created = createdArg();
+      expect(created.content).toBe('clean body');
+      expect(created.metadata?.['embeddingExcluded']).toBe(true);
+      expect(created.tags).toContain('has-secret');
+      expect(JSON.stringify(created.metadata?.['frontmatter'])).not.toContain('s3cr3tvalue');
+    });
+
+    it('skip: a title-only hit drops the whole fact', async () => {
+      const ir = makeIR([
+        fact({ sourceKey: 'markdown:t.md', content: 'clean body', title: 'ssn 123-45-6789' }),
+      ]);
+      const summary = await build(ir, makeLedger(), ltm, resolver).run({
+        ...baseInput,
+        secretsPolicy: 'skip',
+      });
+      expect(summary.secretsSkipped).toBe(1);
+      expect(ltm.create).not.toHaveBeenCalled();
+    });
+
+    it('fail: a frontmatter hit aborts, naming the surface', async () => {
+      const svc = build(dirtyIR(), makeLedger(), ltm, resolver);
+      const promise = svc.run({ ...baseInput, secretsPolicy: 'fail' });
+      await expect(promise).rejects.toBeInstanceOf(ImportSecretPolicyError);
+      await expect(promise).rejects.toThrow(/in title, frontmatter/);
+      expect(ltm.create).not.toHaveBeenCalled();
+    });
+
+    it('dry run reports frontmatter/title hits identically to a real run', async () => {
+      const svc = build(dirtyIR(), makeLedger(), ltm, resolver);
+      const dry = await svc.run({ ...baseInput, dryRun: true, secretsPolicy: 'skip' });
+      expect(ltm.create).not.toHaveBeenCalled();
+      const real = await svc.run({ ...baseInput, secretsPolicy: 'skip' });
+      expect(dry.secretsSkipped).toBe(real.secretsSkipped);
+      expect(dry.secrets).toEqual(real.secrets);
+      expect(dry.embeddingCostEstimate).toEqual(real.embeddingCostEstimate);
+    });
   });
 });

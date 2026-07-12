@@ -36,6 +36,7 @@ codebase.
 | `MEMORY_CONTRADICTION_THRESHOLD` | number | `0.8` | no | all | Lower bound of the contradiction similarity band. Defaults to 0.8. |
 | `MEMORY_CONTRADICTION_THRESHOLD_MAX` | number | `0.97` | no | all | Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. |
 | `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` | number | `14` | no | all | Half-life in days for the recency component of importance scoring. Defaults to 14. |
+| `IMPORT_ALLOWED_ROOT` | string | — | no | all | Absolute directory the `import_agent_memory` server-side path must resolve into (symlinks resolved). Defaults to the server process home directory when unset. |
 | `PGVECTOR_HNSW_M` | number | — | no | all | Optional pgvector HNSW build-time `m` (max connections per layer). |
 | `PGVECTOR_HNSW_EF_CONSTRUCTION` | number | — | no | all | Optional pgvector HNSW build-time `ef_construction` (candidate list size). |
 | `PGVECTOR_HNSW_EF_SEARCH` | number | — | no | all | Optional pgvector HNSW query-time `ef_search` (recall/latency tuning). |
@@ -43,6 +44,7 @@ codebase.
 | `JWT_SECRET` | string | — | no | when `AUTH_REQUIRED=true` | HMAC secret for issuing/verifying session JWTs. Required (≥32 chars) when `AUTH_REQUIRED=true`; otherwise optional. Never logged. |
 | `JWT_EXPIRES_IN` | string | `7d` | no | all | JWT lifetime as a duration string (`7d`, `24h`, `30m`, `3600s`) or seconds. |
 | `AUTH_REQUIRED` | boolean | `false` | no | all | When true, `/mcp` tool calls must present a valid JWT or API key, and the acting `userId` is derived from that credential — the `userId` in tool input is ignored. Default false preserves the trusted-caller behaviour. Only enforced over the streamable-http transport. |
+| `ALLOW_UNAUTHENTICATED_HTTP` | boolean | `false` | no | all | Explicit operator acknowledgement to run a multi-tenant streamable-http server WITHOUT auth (trusted-network posture). Without it such a server refuses to boot in every NODE_ENV. |
 | `OAUTH_REDIRECT_BASE_URL` | string | — | no | all | Base URL used to build OAuth callback URLs, e.g. `https://api.example.com`. |
 | `GITHUB_CLIENT_ID` | string | — | no | all | GitHub OAuth app credentials. Both must be set to enable GitHub login. |
 | `GITHUB_CLIENT_SECRET` | string | — | no | all | GitHub OAuth client secret (pairs with `GITHUB_CLIENT_ID`). Never logged. |
@@ -73,7 +75,6 @@ appears here automatically (add a description in the generator).
 
 | Variable | Description |
 | -------- | ----------- |
-| `ALLOW_UNAUTHENTICATED_HTTP` | Dev-only override that allows unauthenticated streamable-http calls. Never set in production. |
 | `AUTH_GITHUB_ID` | GitHub OAuth client id for the dashboard (Auth.js). |
 | `AUTH_GITHUB_SECRET` | GitHub OAuth client secret for the dashboard (Auth.js). |
 | `AUTH_GOOGLE_ID` | Google OAuth client id for the dashboard (Auth.js). |

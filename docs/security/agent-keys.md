@@ -20,6 +20,12 @@ The mitigation is non-negotiable for a multi-agent host:
 - **One least-privilege API key per agent** (below).
 - **Loopback bind** (`127.0.0.1`) so the port is not exposed off-host.
 
+The server enforces this posture at boot: a multi-tenant streamable-http
+server without `AUTH_REQUIRED=true` refuses to start in **every** `NODE_ENV`
+unless the operator explicitly sets `ALLOW_UNAUTHENTICATED_HTTP=true` — the
+trusted-network acknowledgement for a deliberately open deployment (e.g. a
+loopback-bound single-operator host).
+
 With auth on, the server **injects the key's `userId`** over any client-supplied
 `userId` for identity tools — the tenant is the token, not the body — and
 enforces per-key **scopes** (`memories:read`, `memories:write`,
