@@ -27,6 +27,15 @@ describe('envSchema', () => {
         VECTOR_BACKEND: 'qdrant',
         STM_CONSOLIDATION_ACCESS_THRESHOLD: 3,
         STM_CONSOLIDATION_INTERVAL_MS: 300_000,
+        MEMORY_DECAY_INTERVAL_MS: 86_400_000,
+        MEMORY_DECAY_BATCH_SIZE: 100,
+        MEMORY_DECAY_STALE_SCORE_THRESHOLD: 0.3,
+        MEMORY_DECAY_PRUNE_SCORE_THRESHOLD: 0.15,
+        MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS: 30,
+        MEMORY_DUPLICATE_THRESHOLD: 0.97,
+        MEMORY_CONTRADICTION_THRESHOLD: 0.8,
+        MEMORY_CONTRADICTION_THRESHOLD_MAX: 0.97,
+        MEMORY_IMPORTANCE_HALF_LIFE_DAYS: 14,
         JWT_EXPIRES_IN: '7d',
         AUTH_REQUIRED: false,
         RATE_LIMIT_ENABLED: false,
@@ -322,6 +331,56 @@ describe('envSchema', () => {
       expect(() => envSchema.parse({ ...base, OAUTH_REDIRECT_BASE_URL: 'not-a-url' })).toThrow(
         ZodError
       );
+    });
+  });
+
+  describe('LTM lifecycle configuration', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+      REDIS_URL: 'redis://localhost:6379',
+      QDRANT_URL: 'http://localhost:6333',
+    };
+
+    it('applies defaults matching the services inline fallbacks', () => {
+      const result = envSchema.parse(base);
+      expect(result.MEMORY_DECAY_INTERVAL_MS).toBe(86_400_000);
+      expect(result.MEMORY_DECAY_BATCH_SIZE).toBe(100);
+      expect(result.MEMORY_DECAY_STALE_SCORE_THRESHOLD).toBe(0.3);
+      expect(result.MEMORY_DECAY_PRUNE_SCORE_THRESHOLD).toBe(0.15);
+      expect(result.MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS).toBe(30);
+      expect(result.MEMORY_DUPLICATE_THRESHOLD).toBe(0.97);
+      expect(result.MEMORY_CONTRADICTION_THRESHOLD).toBe(0.8);
+      expect(result.MEMORY_CONTRADICTION_THRESHOLD_MAX).toBe(0.97);
+      expect(result.MEMORY_IMPORTANCE_HALF_LIFE_DAYS).toBe(14);
+    });
+
+    it('coerces string values and allows disabling the decay scheduler with 0', () => {
+      const result = envSchema.parse({
+        ...base,
+        MEMORY_DECAY_INTERVAL_MS: '0',
+        MEMORY_DUPLICATE_THRESHOLD: '0.95',
+        MEMORY_IMPORTANCE_HALF_LIFE_DAYS: '30',
+      });
+      expect(result.MEMORY_DECAY_INTERVAL_MS).toBe(0);
+      expect(result.MEMORY_DUPLICATE_THRESHOLD).toBe(0.95);
+      expect(result.MEMORY_IMPORTANCE_HALF_LIFE_DAYS).toBe(30);
+    });
+
+    it('rejects a similarity threshold above 1', () => {
+      expect(() => envSchema.parse({ ...base, MEMORY_DUPLICATE_THRESHOLD: '1.5' })).toThrow(
+        ZodError
+      );
+      expect(() => envSchema.parse({ ...base, MEMORY_CONTRADICTION_THRESHOLD: '2' })).toThrow(
+        ZodError
+      );
+    });
+
+    it('rejects a non-numeric or non-positive lifecycle value', () => {
+      expect(() => envSchema.parse({ ...base, MEMORY_DECAY_BATCH_SIZE: 'lots' })).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, MEMORY_IMPORTANCE_HALF_LIFE_DAYS: '0' })).toThrow(
+        ZodError
+      );
+      expect(() => envSchema.parse({ ...base, MEMORY_DECAY_INTERVAL_MS: '-1' })).toThrow(ZodError);
     });
   });
 

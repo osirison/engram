@@ -70,6 +70,27 @@ export const baseSchema = z.object({
    * milliseconds. Defaults to 5 minutes. Set to 0 to disable the scheduler.
    */
   STM_CONSOLIDATION_INTERVAL_MS: z.coerce.number().int().min(0).optional().default(300_000),
+  /**
+   * How often the long-term decay/staleness job scans the corpus, in
+   * milliseconds. Defaults to 24h. Set to 0 to disable the scheduler.
+   */
+  MEMORY_DECAY_INTERVAL_MS: z.coerce.number().int().min(0).optional().default(86_400_000),
+  /** Rows scanned per decay batch (cursor-resumable). Defaults to 100. */
+  MEMORY_DECAY_BATCH_SIZE: z.coerce.number().int().positive().optional().default(100),
+  /** Importance score at/below which a memory is marked `stale`. Defaults to 0.3. */
+  MEMORY_DECAY_STALE_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.3),
+  /** Importance score below which an old, unpinned memory is pruned. Defaults to 0.15. */
+  MEMORY_DECAY_PRUNE_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.15),
+  /** Minimum age in days before a low-importance memory becomes prune-eligible. Defaults to 30. */
+  MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS: z.coerce.number().min(0).optional().default(30),
+  /** Cosine similarity at/above which a new write collapses into an existing row. Defaults to 0.97. */
+  MEMORY_DUPLICATE_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.97),
+  /** Lower bound of the contradiction similarity band. Defaults to 0.8. */
+  MEMORY_CONTRADICTION_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.8),
+  /** Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. */
+  MEMORY_CONTRADICTION_THRESHOLD_MAX: z.coerce.number().min(0).max(1).optional().default(0.97),
+  /** Half-life in days for the recency component of importance scoring. Defaults to 14. */
+  MEMORY_IMPORTANCE_HALF_LIFE_DAYS: z.coerce.number().positive().optional().default(14),
   /** Optional pgvector HNSW build-time `m` (max connections per layer). */
   PGVECTOR_HNSW_M: z.coerce.number().int().min(2).max(100).optional(),
   /** Optional pgvector HNSW build-time `ef_construction` (candidate list size). */
@@ -294,6 +315,15 @@ export type Env = {
   MCP_TRANSPORT: 'stdio' | 'streamable-http';
   STM_CONSOLIDATION_ACCESS_THRESHOLD: number;
   STM_CONSOLIDATION_INTERVAL_MS: number;
+  MEMORY_DECAY_INTERVAL_MS: number;
+  MEMORY_DECAY_BATCH_SIZE: number;
+  MEMORY_DECAY_STALE_SCORE_THRESHOLD: number;
+  MEMORY_DECAY_PRUNE_SCORE_THRESHOLD: number;
+  MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS: number;
+  MEMORY_DUPLICATE_THRESHOLD: number;
+  MEMORY_CONTRADICTION_THRESHOLD: number;
+  MEMORY_CONTRADICTION_THRESHOLD_MAX: number;
+  MEMORY_IMPORTANCE_HALF_LIFE_DAYS: number;
   PGVECTOR_HNSW_M?: number;
   PGVECTOR_HNSW_EF_CONSTRUCTION?: number;
   PGVECTOR_HNSW_EF_SEARCH?: number;

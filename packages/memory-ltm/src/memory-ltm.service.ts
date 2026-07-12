@@ -151,8 +151,11 @@ export class MemoryLtmService {
       }
 
       // ── Step 11: EmbeddingGenerate (non-fatal) ─────────────────────────
+      // Skip embedding entirely for an `embeddingExcluded` memory (e.g. an
+      // import secret-scan `flag`): the row is stored with an empty vector and
+      // never reaches the embedding provider, until a reindex re-includes it.
       let embedding: number[] = [];
-      if (this.embeddingsService) {
+      if (this.embeddingsService && !this.readEmbeddingExcluded(processedMetadata)) {
         const result = await this.embeddingsService
           .generate({ text: processedContent })
           .catch(() => null);
@@ -342,10 +345,23 @@ export class MemoryLtmService {
         updateData.tags = validatedInput.tags || [];
       }
 
+      // Resolve final metadata FIRST (full-replace wins over patch; patch merges
+      // into existing) so we know whether this memory is embeddingExcluded before
+      // deciding whether to (re)embed it — an excluded row (e.g. an import
+      // secret-scan `flag`) must never be re-embedded on a content/tag edit.
+      let nextMetadata: Record<string, unknown> | null =
+        validatedInput.metadata !== undefined
+          ? (validatedInput.metadata ?? null)
+          : validatedInput.metadataMerge !== undefined
+            ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
+            : (existing.metadata ?? null);
+      const embeddingExcluded = this.readEmbeddingExcluded(nextMetadata);
+
       // Re-embed when the content changes so the vector stays consistent with
       // the stored text (non-fatal — falls back to the existing embedding).
+      // Skipped entirely for an embeddingExcluded memory.
       let newEmbedding: number[] | undefined;
-      if (validatedInput.content !== undefined && this.embeddingsService) {
+      if (validatedInput.content !== undefined && this.embeddingsService && !embeddingExcluded) {
         const result = await this.embeddingsService
           .generate({ text: validatedInput.content })
           .catch(() => null);
@@ -355,21 +371,15 @@ export class MemoryLtmService {
         }
       }
 
-      // Resolve final metadata: full-replace wins over patch; patch merges into existing.
-      let nextMetadata: Record<string, unknown> | null =
-        validatedInput.metadata !== undefined
-          ? (validatedInput.metadata ?? null)
-          : validatedInput.metadataMerge !== undefined
-            ? { ...(existing.metadata ?? {}), ...validatedInput.metadataMerge }
-            : (existing.metadata ?? null);
-
       // Embedding staleness (WP2 T7/A9/D10): a content edit that could NOT be
       // re-embedded (provider down or absent) leaves the OLD vector pointing at
       // the previous text — flag it so recall drift is visible and repairable;
       // clear the flag whenever a fresh embedding is written. Scoped strictly to
       // "embedding column vs content": an indexVector throw below leaves a correct
       // embedding in Postgres (reindex-recoverable) and does NOT set this flag.
-      if (validatedInput.content !== undefined) {
+      // An embeddingExcluded memory is intentionally out of the index, so it is
+      // never marked stale.
+      if (validatedInput.content !== undefined && !embeddingExcluded) {
         const meta = { ...(nextMetadata ?? {}) };
         if (newEmbedding === undefined) {
           meta.embeddingStale = true;
@@ -440,6 +450,7 @@ export class MemoryLtmService {
       // Scope is immutable via update(), so it never triggers a re-index here.
       const embeddingToIndex = newEmbedding ?? ltmMemory.embedding;
       if (
+        !embeddingExcluded &&
         embeddingToIndex.length > 0 &&
         (newEmbedding !== undefined || validatedInput.tags !== undefined)
       ) {
@@ -479,6 +490,13 @@ export class MemoryLtmService {
       throw new LtmMemoryNotFoundError(memoryId);
     }
     const existing = this.mapToLtmMemory(existingRow);
+
+    // An embeddingExcluded memory is intentionally absent from the vector index
+    // (e.g. an import secret-scan `flag`) — there is nothing to re-embed. Return
+    // it unchanged without contacting the embedding provider.
+    if (this.readEmbeddingExcluded(existing.metadata)) {
+      return existing;
+    }
 
     if (!this.embeddingsService) {
       throw new LtmEmbeddingUnavailableError(memoryId);
@@ -533,8 +551,11 @@ export class MemoryLtmService {
     this.logger.debug(`Restoring LTM memory ${input.id} for user: ${input.userId}`);
 
     try {
+      // Honor embeddingExcluded from the delete snapshot: a memory that was held
+      // out of the index (e.g. an import secret-scan `flag`) is restored the same
+      // way — no embedding is generated, so it never re-enters the vector store.
       let embedding: number[] = [];
-      if (this.embeddingsService) {
+      if (this.embeddingsService && !this.readEmbeddingExcluded(input.metadata)) {
         const result = await this.embeddingsService
           .generate({ text: input.content })
           .catch(() => null);
@@ -1113,6 +1134,7 @@ export class MemoryLtmService {
         memories.map((memory: PrismaMemory) => [memory.id, memory])
       );
 
+      const includeSuperseded = options?.includeSuperseded === true;
       const hydrated = hits
         .map((hit: { id: string; score: number }) => {
           const memory = byId.get(hit.id);
@@ -1123,6 +1145,12 @@ export class MemoryLtmService {
         })
         .filter(
           (result: SemanticSearchResult | null): result is SemanticSearchResult => result !== null
+        )
+        // Drop superseded memories so a contradicted/stale fact never resurfaces
+        // in recall; opt back in via `includeSuperseded` for audit/UI reads.
+        .filter(
+          (result: SemanticSearchResult) =>
+            includeSuperseded || !this.isSuperseded(result.memory.metadata)
         );
 
       // Re-rank by blended similarity + recency + importance, then trim to requested limit.
@@ -1172,7 +1200,12 @@ export class MemoryLtmService {
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: PrismaMemory[] = await (this.prisma as any).memory.findMany({ where });
-    const memories = rows.map((row) => this.mapToLtmMemory(row));
+    const includeSuperseded = options?.includeSuperseded === true;
+    const memories = rows
+      .map((row) => this.mapToLtmMemory(row))
+      // Mirror the vector-store path: superseded memories are excluded from
+      // recall pre-index unless the caller explicitly opts in.
+      .filter((m) => includeSuperseded || !this.isSuperseded(m.metadata));
 
     // Apply tag scope filter pre-index so the retriever's postings reflect
     // only eligible memories.
@@ -1446,6 +1479,11 @@ export class MemoryLtmService {
    * service. Returns an empty array when no embedding can be produced.
    */
   private async resolveEmbedding(memory: LtmMemory, reuseExisting: boolean): Promise<number[]> {
+    // An embeddingExcluded memory is never (re)indexed: return [] so the reindex
+    // loop counts it as skipped and the row stays out of the vector store.
+    if (this.readEmbeddingExcluded(memory.metadata)) {
+      return [];
+    }
     if (reuseExisting && memory.embedding && memory.embedding.length > 0) {
       return memory.embedding;
     }
@@ -1560,6 +1598,31 @@ export class MemoryLtmService {
 
   private readPinned(metadata: Record<string, unknown> | null | undefined): boolean {
     return metadata?.['pinned'] === true;
+  }
+
+  /**
+   * A memory flagged `embeddingExcluded` must never be sent to the external
+   * embedding provider — set e.g. by the import secret-scan `flag` policy. Both
+   * the create path and reindex honor it so the row stays out of the vector index.
+   */
+  private readEmbeddingExcluded(metadata: Record<string, unknown> | null | undefined): boolean {
+    return metadata?.['embeddingExcluded'] === true;
+  }
+
+  /**
+   * A memory is superseded once a later contradicting write records it as such.
+   * Keys on the `supersededBy` audit marker rather than `status === 'superseded'`
+   * because the decay pass rewrites `status` (active/stale/archived) on every
+   * run and would otherwise silently un-hide a superseded memory; `supersededBy`
+   * is written once by {@link ContradictionDetectionService.annotateSuperseded}
+   * and never cleared. Falls back to the legacy `status` marker for rows written
+   * before `supersededBy` existed.
+   */
+  private isSuperseded(metadata: Record<string, unknown> | null | undefined): boolean {
+    if (!metadata) return false;
+    const supersededBy = metadata['supersededBy'];
+    if (typeof supersededBy === 'string' && supersededBy.length > 0) return true;
+    return metadata['status'] === 'superseded';
   }
 
   private readLastAccessedAt(metadata: Record<string, unknown> | null | undefined): Date | null {

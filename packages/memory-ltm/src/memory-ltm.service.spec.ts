@@ -1165,18 +1165,22 @@ describe('MemoryLtmService', () => {
 
     it('applies decay updates and prunes low-importance memories', async () => {
       const importanceService = new ImportanceScoringService();
+      // Dates are relative to now so the prune-age boundary (pruneOlderThanDays)
+      // doesn't drift into strongMemory as wall-clock time passes — otherwise this
+      // test is a time bomb (strongMemory's fixed date crossed 30 days on 2026-07-10).
+      const DAY_MS = 86_400_000;
       const oldMemory = {
         ...mockMemory,
         id: 'old-memory',
         content: 'misc note',
-        createdAt: new Date('2025-01-01T00:00:00Z'),
+        createdAt: new Date(Date.now() - 400 * DAY_MS),
         metadata: {},
       };
       const strongMemory = {
         ...mockMemory,
         id: 'strong-memory',
         content: 'Decision: keep after launch milestone',
-        createdAt: new Date('2026-06-10T00:00:00Z'),
+        createdAt: new Date(Date.now() - 2 * DAY_MS),
         metadata: {},
       };
       prismaService.memory.findMany

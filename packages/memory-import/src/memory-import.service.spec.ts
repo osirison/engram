@@ -236,6 +236,24 @@ describe('MemoryImportService.run', () => {
     expect(summary.secrets.some((s) => s.path === 'leak.md')).toBe(true);
   });
 
+  it('flag policy: persists redacted content and marks the row embeddingExcluded', async () => {
+    const ir = makeIR([
+      fact({ sourceKey: 'markdown:leak.md', content: 'aws key AKIAIOSFODNN7EXAMPLE in here' }),
+    ]);
+    await build(ir, makeLedger(), ltm, resolver).run({ ...baseInput, secretsPolicy: 'flag' });
+
+    expect(ltm.create).toHaveBeenCalledTimes(1);
+    const created = ltm.create.mock.calls[0][0] as {
+      content: string;
+      metadata?: Record<string, unknown>;
+    };
+    // Decision 3: no raw secret is persisted under flag...
+    expect(created.content).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(created.content).toContain('[REDACTED]');
+    // ...and the row is held out of the embedding index (enforced by ltm.create).
+    expect(created.metadata?.embeddingExcluded).toBe(true);
+  });
+
   it('unknown source: throws a clear error', async () => {
     const svc = build(makeIR([]), makeLedger(), ltm, resolver);
     await expect(svc.run({ ...baseInput, source: 'codex' })).rejects.toThrow(/No import adapter/);

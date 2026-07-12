@@ -152,10 +152,12 @@ describe('SecretScanner.apply — policy modes', () => {
     expect(patternNames(out.matches)).toContain('github-token');
   });
 
-  it('flag: keeps raw content, excludes embedding, adds has-secret tag', () => {
+  it('flag: redacts content, excludes embedding, adds has-secret tag', () => {
     const out = scanner.apply(withSecret, 'flag');
     expect(out.action).toBe('flagged');
-    expect(out.content).toBe(withSecret.content);
+    // Decision 3: flag now redacts (no raw secret stored) AND excludes embedding.
+    expect(out.content).toContain('[REDACTED]');
+    expect(out.content).not.toContain('ghp_');
     expect(out.embeddingExcluded).toBe(true);
     expect(out.extraTags).toEqual(['has-secret']);
   });

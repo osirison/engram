@@ -101,6 +101,84 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
         service.create({ userId: mockUserId, content: 'Test memory content' })
       ).resolves.toMatchObject({ id: mockMemoryId });
     });
+
+    it('never embeds a memory flagged embeddingExcluded', async () => {
+      prisma.memory.create.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [] })
+      );
+
+      await service.create({
+        userId: mockUserId,
+        content: 'token ghp_secretsecretsecretsecretsecretsecret',
+        metadata: { embeddingExcluded: true },
+      });
+
+      // Assert on the spy call count (not the flag) — the flag being inert was
+      // exactly the bug this closes.
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+    });
+
+    it('embeds a normal (non-excluded) memory — control', async () => {
+      prisma.memory.create.mockResolvedValue(buildMemory());
+
+      await service.create({ userId: mockUserId, content: 'ordinary note' });
+
+      expect(embeddings.generate).toHaveBeenCalled();
+    });
+  });
+
+  describe('embeddingExcluded on update / reembed / restore', () => {
+    it('update never re-embeds an embeddingExcluded memory on a content edit', async () => {
+      prisma.memory.findFirst.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [] })
+      );
+      prisma.memory.update.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [], content: 'edited' })
+      );
+
+      await service.update(mockUserId, mockMemoryId, { content: 'edited secret content' });
+
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+    });
+
+    it('update still embeds a normal memory on a content edit — control', async () => {
+      prisma.memory.findFirst.mockResolvedValue(buildMemory({ metadata: {} }));
+      prisma.memory.update.mockResolvedValue(buildMemory({ content: 'edited' }));
+
+      await service.update(mockUserId, mockMemoryId, { content: 'edited content' });
+
+      expect(embeddings.generate).toHaveBeenCalledWith({ text: 'edited content' });
+    });
+
+    it('reembed is a no-op for an embeddingExcluded memory', async () => {
+      prisma.memory.findFirst.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true } })
+      );
+
+      const result = await service.reembed(mockUserId, mockMemoryId);
+
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+      expect(result.id).toBe(mockMemoryId);
+    });
+
+    it('restore does not embed an embeddingExcluded snapshot', async () => {
+      prisma.memory.create.mockResolvedValue(
+        buildMemory({ metadata: { embeddingExcluded: true }, embedding: [] })
+      );
+
+      await service.restore({
+        id: mockMemoryId,
+        userId: mockUserId,
+        content: 'restored secret',
+        metadata: { embeddingExcluded: true },
+      });
+
+      expect(embeddings.generate).not.toHaveBeenCalled();
+      expect(vectorStore.upsert).not.toHaveBeenCalled();
+    });
   });
 
   describe('delete', () => {
@@ -239,6 +317,63 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       const noVectorService = new MemoryLtmService(prisma, undefined, embeddings, undefined);
       const results = await noVectorService.semanticSearch(mockUserId, 'query');
       expect(results).toEqual([]);
+    });
+
+    describe('superseded exclusion', () => {
+      const activeId = 'cldx4k8xp000308l85d6e0x4s';
+      const supersededId = 'cldx4k8xp000408l86e7f1y5t';
+
+      function seedActiveAndSuperseded(): void {
+        vectorStore.search.mockResolvedValue([
+          { id: activeId, score: 0.9 },
+          { id: supersededId, score: 0.85 },
+        ]);
+        prisma.memory.findMany.mockResolvedValue([
+          buildMemory({ id: activeId, metadata: { status: 'active' } }),
+          buildMemory({
+            id: supersededId,
+            metadata: {
+              status: 'superseded',
+              supersededBy: activeId,
+              supersededReason: 'contradiction',
+            },
+          }),
+        ]);
+      }
+
+      it('drops superseded memories from recall by default', async () => {
+        seedActiveAndSuperseded();
+
+        const results = await service.semanticSearch(mockUserId, 'query');
+
+        expect(results.map((r) => r.memory.id)).toEqual([activeId]);
+      });
+
+      it('includes superseded memories when includeSuperseded is set', async () => {
+        seedActiveAndSuperseded();
+
+        const results = await service.semanticSearch(mockUserId, 'query', {
+          includeSuperseded: true,
+        });
+
+        expect(results.map((r) => r.memory.id).sort()).toEqual([activeId, supersededId].sort());
+      });
+
+      it('excludes on the supersededBy marker even after decay rewrote status', async () => {
+        // Decay rewrites `status` to active/stale/archived on every run, so a
+        // superseded row can carry status='stale' while still being superseded.
+        vectorStore.search.mockResolvedValue([{ id: supersededId, score: 0.9 }]);
+        prisma.memory.findMany.mockResolvedValue([
+          buildMemory({
+            id: supersededId,
+            metadata: { status: 'stale', supersededBy: activeId },
+          }),
+        ]);
+
+        const results = await service.semanticSearch(mockUserId, 'query');
+
+        expect(results).toEqual([]);
+      });
     });
   });
 });
