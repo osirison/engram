@@ -142,7 +142,7 @@ export class MemoryImportService {
             links: entry.fact.links,
           };
           if (entry.fact.anchor !== undefined) rf.anchor = entry.fact.anchor;
-          if (entry.fact.frontmatter !== undefined) rf.frontmatter = entry.fact.frontmatter;
+          if (entry.frontmatter !== undefined) rf.frontmatter = entry.frontmatter;
           resolverFacts.push(rf);
         }
       } catch (err) {
@@ -181,7 +181,7 @@ export class MemoryImportService {
     importedAt: string,
     summary: ImportSummary
   ): Promise<string | null> {
-    const { fact, content, embeddingExcluded, extraTags } = entry;
+    const { fact, content, extraTags } = entry;
     const userId = summary.userId;
     const contentHash = computeContentHash(content);
     const existing = await this.ledger.find(userId, fact.sourceKey);
@@ -201,15 +201,7 @@ export class MemoryImportService {
     let memoryId: string;
     if (existing) {
       // Ledger hit, hash changed → update the mapped memory (re-embeds, merges meta).
-      const meta = this.buildMetadata(
-        fact,
-        importBatchId,
-        importedAt,
-        ir,
-        contentHash,
-        embeddingExcluded,
-        [source]
-      );
+      const meta = this.buildMetadata(entry, importBatchId, importedAt, ir, contentHash, [source]);
       const updated = await this.ltm.update(
         userId,
         existing.memoryId,
@@ -228,15 +220,7 @@ export class MemoryImportService {
         scope,
         content,
         tags,
-        metadata: this.buildMetadata(
-          fact,
-          importBatchId,
-          importedAt,
-          ir,
-          contentHash,
-          embeddingExcluded,
-          [source]
-        ),
+        metadata: this.buildMetadata(entry, importBatchId, importedAt, ir, contentHash, [source]),
       });
       memoryId = created.id;
       if (priorSameContent.length > 0) {
@@ -283,14 +267,14 @@ export class MemoryImportService {
   }
 
   private buildMetadata(
-    fact: ImportedFact,
+    entry: ScannedFact,
     importBatchId: string,
     importedAt: string,
     ir: ImportIR,
     contentHash: string,
-    embeddingExcluded: boolean,
     sources: ProvenanceSource[]
   ): Record<string, unknown> {
+    const { fact } = entry;
     const metadata: Record<string, unknown> = {
       provenance: {
         sourceTool: ir.sourceTool,
@@ -303,9 +287,11 @@ export class MemoryImportService {
         sources,
       },
     };
-    if (fact.frontmatter !== undefined) metadata['frontmatter'] = fact.frontmatter;
-    if (fact.title !== undefined) metadata['title'] = fact.title;
-    if (embeddingExcluded) metadata['embeddingExcluded'] = true;
+    // Persist the SANITIZED title/frontmatter from the secret scan (G2-T2) —
+    // never fact.title / fact.frontmatter verbatim.
+    if (entry.frontmatter !== undefined) metadata['frontmatter'] = entry.frontmatter;
+    if (entry.title !== undefined) metadata['title'] = entry.title;
+    if (entry.embeddingExcluded) metadata['embeddingExcluded'] = true;
     return metadata;
   }
 
@@ -341,8 +327,14 @@ export class MemoryImportService {
     const out: ScannedFact[] = [];
     for (const fact of ir.facts) {
       // `fail` throws ImportSecretPolicyError up to run()'s caller (aborts).
+      // Title + frontmatter are scanned under the same policy as content (G2-T2).
       const result = this.secrets.apply(
-        { content: fact.content, sourcePath: fact.sourcePath },
+        {
+          content: fact.content,
+          sourcePath: fact.sourcePath,
+          ...(fact.title !== undefined ? { title: fact.title } : {}),
+          ...(fact.frontmatter !== undefined ? { frontmatter: fact.frontmatter } : {}),
+        },
         policy
       );
       if (result.matches.length > 0) {
@@ -354,6 +346,8 @@ export class MemoryImportService {
       out.push({
         fact,
         content: result.content,
+        ...(result.title !== undefined ? { title: result.title } : {}),
+        ...(result.frontmatter !== undefined ? { frontmatter: result.frontmatter } : {}),
         skip: result.action === 'skipped',
         embeddingExcluded: result.embeddingExcluded,
         extraTags: result.extraTags,
@@ -444,7 +438,10 @@ export class MemoryImportService {
 
 interface ScannedFact {
   fact: ImportedFact;
+  /** Sanitized surfaces from the secret scan — persist these, never `fact.*`. */
   content: string;
+  title?: string;
+  frontmatter?: Record<string, unknown>;
   skip: boolean;
   embeddingExcluded: boolean;
   extraTags: string[];

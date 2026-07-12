@@ -191,3 +191,116 @@ describe('SecretScanner.apply — policy modes', () => {
     }
   });
 });
+
+describe('SecretScanner.scanFrontmatter', () => {
+  it('redacts string leaves in place, recursing into nested objects and arrays', () => {
+    const result = scanner.scanFrontmatter({
+      description: 'uses key AKIAIOSFODNN7EXAMPLE for deploys',
+      nested: { hosts: ['10.0.0.5', 'example.com'], note: 'clean' },
+    });
+    expect(result.hasSecret).toBe(true);
+    expect(patternNames(result.matches)).toEqual(
+      expect.arrayContaining(['aws-key', 'private-ipv4'])
+    );
+    expect(result.redacted).toEqual({
+      description: 'uses key [REDACTED] for deploys',
+      nested: { hosts: ['[REDACTED]', 'example.com'], note: 'clean' },
+    });
+  });
+
+  it('leaves non-string leaves (numbers, booleans, null) untouched', () => {
+    const result = scanner.scanFrontmatter({
+      password: 'password: hunter2secret',
+      alwaysApply: true,
+      retries: 3,
+      globs: null,
+    });
+    expect(result.redacted['alwaysApply']).toBe(true);
+    expect(result.redacted['retries']).toBe(3);
+    expect(result.redacted['globs']).toBeNull();
+    expect(result.redacted['password']).toContain('[REDACTED]');
+  });
+
+  it('aggregates match counts across leaves', () => {
+    const result = scanner.scanFrontmatter({ a: 'ip 10.0.0.1', b: { c: 'ip 10.0.0.2' } });
+    const ip = result.matches.find((m) => m.pattern === 'private-ipv4');
+    expect(ip?.count).toBe(2);
+  });
+
+  it('returns hasSecret false and an equal map for clean frontmatter', () => {
+    const clean = { description: 'ordinary rules', globs: ['src/**'], alwaysApply: false };
+    const result = scanner.scanFrontmatter(clean);
+    expect(result.hasSecret).toBe(false);
+    expect(result.matches).toEqual([]);
+    expect(result.redacted).toEqual(clean);
+  });
+});
+
+describe('SecretScanner.apply — title + frontmatter surfaces (G2-T2)', () => {
+  const dirty = {
+    content: 'body with no secrets at all',
+    sourcePath: 'rules/deploy.mdc',
+    title: 'rotate AKIAIOSFODNN7EXAMPLE monthly',
+    frontmatter: { description: 'server 10.0.0.5', nested: { port: 5432 } },
+  };
+
+  it('redact: sanitizes title and frontmatter in place, content untouched', () => {
+    const out = scanner.apply(dirty, 'redact');
+    expect(out.action).toBe('redacted');
+    expect(out.content).toBe(dirty.content);
+    expect(out.title).toBe('rotate [REDACTED] monthly');
+    expect(out.frontmatter).toEqual({
+      description: 'server [REDACTED]',
+      nested: { port: 5432 },
+    });
+    expect(patternNames(out.matches)).toEqual(expect.arrayContaining(['aws-key', 'private-ipv4']));
+  });
+
+  it('flag: a frontmatter-only hit redacts AND excludes embedding + tags has-secret', () => {
+    const out = scanner.apply(
+      {
+        content: 'clean body',
+        sourcePath: 'rules/a.mdc',
+        frontmatter: { description: 'DB_PASSWORD=s3cr3tvalue' },
+      },
+      'flag'
+    );
+    expect(out.action).toBe('flagged');
+    expect(out.embeddingExcluded).toBe(true);
+    expect(out.extraTags).toEqual(['has-secret']);
+    expect(out.frontmatter?.['description']).toBe('[REDACTED]');
+  });
+
+  it('skip: a title-only hit marks the fact skipped', () => {
+    const out = scanner.apply(
+      { content: 'clean body', sourcePath: 'rules/a.mdc', title: 'ssn 123-45-6789' },
+      'skip'
+    );
+    expect(out.action).toBe('skipped');
+    expect(out.matches.length).toBeGreaterThan(0);
+  });
+
+  it('fail: names the matching surfaces in the error', () => {
+    let error: unknown;
+    try {
+      scanner.apply(dirty, 'fail');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(ImportSecretPolicyError);
+    const typed = error as ImportSecretPolicyError;
+    expect(typed.fields).toEqual(['title', 'frontmatter']);
+    expect(typed.message).toMatch(/in title, frontmatter/);
+  });
+
+  it('kept: clean title + frontmatter pass through as the same values', () => {
+    const frontmatter = { description: 'ordinary rules', alwaysApply: true };
+    const out = scanner.apply(
+      { content: 'clean body', sourcePath: 'rules/a.mdc', title: 'ordinary title', frontmatter },
+      'redact'
+    );
+    expect(out.action).toBe('kept');
+    expect(out.title).toBe('ordinary title');
+    expect(out.frontmatter).toBe(frontmatter);
+  });
+});

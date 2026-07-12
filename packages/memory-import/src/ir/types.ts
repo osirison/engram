@@ -70,7 +70,11 @@ export interface ImportedFact {
   title?: string;
   content: string;
   tags: string[];
-  /** Preserved verbatim (sanitized) source frontmatter, when present. */
+  /**
+   * Source frontmatter as parsed (shape preserved). Adapters do NOT sanitize
+   * it — the pipeline's secret scan (`scanFacts`) redacts string values under
+   * the import secret policy before anything is persisted.
+   */
   frontmatter?: Record<string, unknown>;
   links: ImportedLink[];
 }

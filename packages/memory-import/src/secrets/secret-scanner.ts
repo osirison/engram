@@ -3,8 +3,9 @@ import { Injectable } from '@nestjs/common';
 const REDACTED = '[REDACTED]';
 
 /**
- * Policy applied when a fact's content matches one or more secret / PII
- * patterns during import.
+ * Policy applied when any of a fact's scannable surfaces — content, title, or
+ * frontmatter string values — matches one or more secret / PII patterns during
+ * import (G2-T2: all surfaces are scanned under the same policy).
  *
  * - `redact` — replace every match with `[REDACTED]`; the (safe) content is
  *   still embedded and stored.
@@ -14,6 +15,9 @@ const REDACTED = '[REDACTED]';
  * - `fail`   — abort the import with {@link ImportSecretPolicyError}.
  */
 export type SecretPolicy = 'redact' | 'flag' | 'skip' | 'fail';
+
+/** Fact surface a secret was found in (reported by the `fail` policy error). */
+export type SecretField = 'content' | 'title' | 'frontmatter';
 
 export interface SecretMatch {
   pattern: string;
@@ -29,17 +33,46 @@ export interface ScanResult {
   hasSecret: boolean;
 }
 
+export interface FrontmatterScanResult {
+  /** Structure-preserving copy with every matched string span `[REDACTED]`. */
+  redacted: Record<string, unknown>;
+  matches: SecretMatch[];
+  hasSecret: boolean;
+}
+
+/** One fact's scannable surfaces, handed to {@link SecretScanner.apply}. */
+export interface SecretScanTarget {
+  content: string;
+  sourcePath: string;
+  title?: string;
+  frontmatter?: Record<string, unknown>;
+}
+
+export interface SecretPolicyResult {
+  action: 'kept' | 'redacted' | 'flagged' | 'skipped';
+  content: string;
+  /** Sanitized title — present iff the input carried one. */
+  title?: string;
+  /** Sanitized frontmatter — present iff the input carried one. */
+  frontmatter?: Record<string, unknown>;
+  matches: SecretMatch[];
+  embeddingExcluded: boolean;
+  extraTags: string[];
+}
+
 /**
  * Thrown by {@link SecretScanner.apply} under the `fail` policy when a fact
- * contains one or more secrets.
+ * contains one or more secrets. `fields` names the surface(s) that matched.
  */
 export class ImportSecretPolicyError extends Error {
   constructor(
     public readonly path: string,
-    public readonly patterns: string[]
+    public readonly patterns: string[],
+    public readonly fields: SecretField[] = ['content']
   ) {
     super(
-      `Import blocked by secret policy: ${path} matched secret pattern(s): ${patterns.join(', ')}`
+      `Import blocked by secret policy: ${path} matched secret pattern(s): ` +
+        `${patterns.join(', ')} (in ${fields.join(', ')})`
     );
     this.name = 'ImportSecretPolicyError';
   }
@@ -87,6 +120,22 @@ const PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ['internal-host', /\b[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:internal|local|corp)\b/gi],
 ];
 
+/** Plain data map (not a Date/Map/class instance) — the only object kind the frontmatter scan recurses into. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** Merge per-surface match lists, summing counts per pattern (first-seen order). */
+function mergeMatches(...lists: Array<SecretMatch[] | undefined>): SecretMatch[] {
+  const tally = new Map<string, number>();
+  for (const list of lists) {
+    for (const m of list ?? []) tally.set(m.pattern, (tally.get(m.pattern) ?? 0) + m.count);
+  }
+  return [...tally].map(([pattern, count]) => ({ pattern, count }));
+}
+
 /**
  * First-class scan stage for the import pipeline.  Runs before facts are
  * embedded so that no raw secret ever reaches an external embedding provider.
@@ -116,36 +165,71 @@ export class SecretScanner {
   }
 
   /**
-   * Apply a {@link SecretPolicy} to one fact-like object, returning the
-   * (possibly redacted) content plus the side-effects the caller must honour.
+   * Scan every string leaf of a frontmatter map, recursing into nested plain
+   * objects and arrays. Keys and non-string leaves (numbers, booleans, dates…)
+   * pass through untouched, so the redacted map keeps the exact shape the WP3
+   * export round-trip depends on.
    */
-  apply(
-    input: { content: string; sourcePath: string },
-    policy: SecretPolicy
-  ): {
-    action: 'kept' | 'redacted' | 'flagged' | 'skipped';
-    content: string;
-    matches: SecretMatch[];
-    embeddingExcluded: boolean;
-    extraTags: string[];
-  } {
-    const { redacted, matches, hasSecret } = this.scan(input.content);
+  scanFrontmatter(frontmatter: Record<string, unknown>): FrontmatterScanResult {
+    const tally = new Map<string, number>();
+    const redacted = this.redactLeaves(frontmatter, tally) as Record<string, unknown>;
+    const matches = [...tally].map(([pattern, count]) => ({ pattern, count }));
+    return { redacted, matches, hasSecret: matches.length > 0 };
+  }
 
-    if (!hasSecret) {
+  private redactLeaves(value: unknown, tally: Map<string, number>): unknown {
+    if (typeof value === 'string') {
+      const { redacted, matches } = this.scan(value);
+      for (const m of matches) tally.set(m.pattern, (tally.get(m.pattern) ?? 0) + m.count);
+      return redacted;
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactLeaves(item, tally));
+    }
+    if (isPlainObject(value)) {
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(value)) out[key] = this.redactLeaves(item, tally);
+      return out;
+    }
+    return value;
+  }
+
+  /**
+   * Apply a {@link SecretPolicy} to one fact's surfaces (content + optional
+   * title/frontmatter), returning the (possibly redacted) surfaces plus the
+   * side-effects the caller must honour. A hit on ANY surface triggers the
+   * policy; redaction is always in place so shapes are preserved.
+   */
+  apply(input: SecretScanTarget, policy: SecretPolicy): SecretPolicyResult {
+    const content = this.scan(input.content);
+    const title = input.title !== undefined ? this.scan(input.title) : undefined;
+    const frontmatter =
+      input.frontmatter !== undefined ? this.scanFrontmatter(input.frontmatter) : undefined;
+    const matches = mergeMatches(content.matches, title?.matches, frontmatter?.matches);
+
+    if (matches.length === 0) {
       return {
         action: 'kept',
         content: input.content,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
         matches,
         embeddingExcluded: false,
         extraTags: [],
       };
     }
 
+    const sanitized = {
+      content: content.redacted,
+      ...(title !== undefined ? { title: title.redacted } : {}),
+      ...(frontmatter !== undefined ? { frontmatter: frontmatter.redacted } : {}),
+    };
+
     switch (policy) {
       case 'redact':
         return {
           action: 'redacted',
-          content: redacted,
+          ...sanitized,
           matches,
           embeddingExcluded: false,
           extraTags: [],
@@ -156,24 +240,31 @@ export class SecretScanner {
         // `redact` only by holding the row out of the vector index + a review tag.
         return {
           action: 'flagged',
-          content: redacted,
+          ...sanitized,
           matches,
           embeddingExcluded: true,
           extraTags: ['has-secret'],
         };
       case 'skip':
+        // Dropped by the caller — still return redacted surfaces, never raw.
         return {
           action: 'skipped',
-          content: input.content,
+          ...sanitized,
           matches,
           embeddingExcluded: false,
           extraTags: [],
         };
-      case 'fail':
+      case 'fail': {
+        const fields: SecretField[] = [];
+        if (content.hasSecret) fields.push('content');
+        if (title?.hasSecret) fields.push('title');
+        if (frontmatter?.hasSecret) fields.push('frontmatter');
         throw new ImportSecretPolicyError(
           input.sourcePath,
-          matches.map((m) => m.pattern)
+          matches.map((m) => m.pattern),
+          fields
         );
+      }
     }
   }
 }
