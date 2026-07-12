@@ -384,6 +384,40 @@ describe('envSchema', () => {
     });
   });
 
+  describe('import path allowlist (IMPORT_ALLOWED_ROOT, A18)', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+      REDIS_URL: 'redis://localhost:6379',
+      QDRANT_URL: 'http://localhost:6333',
+    };
+
+    it('is optional and stays undefined when unset (runtime falls back to the home dir)', () => {
+      const result = envSchema.parse(base);
+      expect(result.IMPORT_ALLOWED_ROOT).toBeUndefined();
+    });
+
+    it('accepts an absolute POSIX path', () => {
+      const result = envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: '/srv/engram/imports' });
+      expect(result.IMPORT_ALLOWED_ROOT).toBe('/srv/engram/imports');
+    });
+
+    it('accepts an absolute Windows drive path', () => {
+      const result = envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: 'C:\\engram\\imports' });
+      expect(result.IMPORT_ALLOWED_ROOT).toBe('C:\\engram\\imports');
+    });
+
+    it('rejects a relative path', () => {
+      expect(() => envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: 'imports' })).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: './imports' })).toThrow(
+        ZodError
+      );
+    });
+
+    it('rejects an empty string', () => {
+      expect(() => envSchema.parse({ ...base, IMPORT_ALLOWED_ROOT: '' })).toThrow(ZodError);
+    });
+  });
+
   describe('validateEnv', () => {
     it('should validate valid configuration', () => {
       const config = {

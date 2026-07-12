@@ -36,6 +36,7 @@ codebase.
 | `MEMORY_CONTRADICTION_THRESHOLD` | number | `0.8` | no | all | Lower bound of the contradiction similarity band. Defaults to 0.8. |
 | `MEMORY_CONTRADICTION_THRESHOLD_MAX` | number | `0.97` | no | all | Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. |
 | `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` | number | `14` | no | all | Half-life in days for the recency component of importance scoring. Defaults to 14. |
+| `IMPORT_ALLOWED_ROOT` | string | — | no | all | Absolute directory the `import_agent_memory` server-side path must resolve into (symlinks resolved). Defaults to the server process home directory when unset. |
 | `PGVECTOR_HNSW_M` | number | — | no | all | Optional pgvector HNSW build-time `m` (max connections per layer). |
 | `PGVECTOR_HNSW_EF_CONSTRUCTION` | number | — | no | all | Optional pgvector HNSW build-time `ef_construction` (candidate list size). |
 | `PGVECTOR_HNSW_EF_SEARCH` | number | — | no | all | Optional pgvector HNSW query-time `ef_search` (recall/latency tuning). |

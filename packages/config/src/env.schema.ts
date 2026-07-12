@@ -91,6 +91,8 @@ export const baseSchema = z.object({
   MEMORY_CONTRADICTION_THRESHOLD_MAX: z.coerce.number().min(0).max(1).optional().default(0.97),
   /** Half-life in days for the recency component of importance scoring. Defaults to 14. */
   MEMORY_IMPORTANCE_HALF_LIFE_DAYS: z.coerce.number().positive().optional().default(14),
+  /** Absolute directory the `import_agent_memory` server-side path must resolve into (symlinks resolved). Defaults to the server process home directory when unset. */
+  IMPORT_ALLOWED_ROOT: z.string().min(1).optional(),
   /** Optional pgvector HNSW build-time `m` (max connections per layer). */
   PGVECTOR_HNSW_M: z.coerce.number().int().min(2).max(100).optional(),
   /** Optional pgvector HNSW build-time `ef_construction` (candidate list size). */
@@ -247,6 +249,20 @@ export const envSchema: z.ZodType<Env> = baseSchema.transform((value, ctx) => {
     }
   }
 
+  // A relative import root would silently depend on the process CWD, making
+  // the import path allowlist (A18) unpredictable — reject it at boot.
+  if (
+    typeof value.IMPORT_ALLOWED_ROOT === 'string' &&
+    !isAbsolutePathLike(value.IMPORT_ALLOWED_ROOT)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['IMPORT_ALLOWED_ROOT'],
+      message: 'IMPORT_ALLOWED_ROOT must be an absolute filesystem path',
+    });
+    return z.NEVER;
+  }
+
   // When auth enforcement is on, a real JWT secret is mandatory.
   if (value.AUTH_REQUIRED) {
     if (typeof value.JWT_SECRET !== 'string' || value.JWT_SECRET.length < 32) {
@@ -290,6 +306,12 @@ function isValidToolOverrides(raw: string): boolean {
   });
 }
 
+function isAbsolutePathLike(value: string): boolean {
+  // POSIX absolute (`/…`), Windows drive (`C:\…` / `C:/…`), or UNC (`\\…`).
+  // A regex keeps this package free of `node:path` (no `@types/node` here).
+  return /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(value);
+}
+
 function isLikelyUrl(value: string): boolean {
   // Permissive URL check that matches `z.string().url()` without requiring
   // the `URL` constructor (which needs `@types/node`). We only need to
@@ -324,6 +346,7 @@ export type Env = {
   MEMORY_CONTRADICTION_THRESHOLD: number;
   MEMORY_CONTRADICTION_THRESHOLD_MAX: number;
   MEMORY_IMPORTANCE_HALF_LIFE_DAYS: number;
+  IMPORT_ALLOWED_ROOT?: string;
   PGVECTOR_HNSW_M?: number;
   PGVECTOR_HNSW_EF_CONSTRUCTION?: number;
   PGVECTOR_HNSW_EF_SEARCH?: number;
