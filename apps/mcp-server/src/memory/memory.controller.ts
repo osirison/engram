@@ -390,7 +390,10 @@ export class MemoryController {
 
   /**
    * MCP Tool: update_memory
-   * Update existing memory
+   * Update existing memory. `expectedVersion` is required at this tool boundary
+   * (G4-T2, docs/concurrency-policy.md): a blind update is rejected by the Zod
+   * schema with a conflict-class message telling the agent to re-read (get_memory)
+   * and retry; a stale version surfaces via the `CONFLICT:` mapping below.
    */
   async updateMemory(
     input: unknown,

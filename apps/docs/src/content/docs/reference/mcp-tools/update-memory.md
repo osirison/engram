@@ -1,11 +1,11 @@
 ---
 title: "update_memory"
-description: "Update existing memory"
+description: "Update an existing memory. expectedVersion is required (optimistic concurrency): pass the version returned by get_memory or a prior read. Blind updates are rejected, and a stale version fails with a CONFLICT error — re-read the memory and retry with the fresh version."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Update existing memory
+Update an existing memory. expectedVersion is required (optimistic concurrency): pass the version returned by get_memory or a prior read. Blind updates are rejected, and a stale version fails with a CONFLICT error — re-read the memory and retry with the fresh version.
 
 **Auth mode:** `identity`  
 **Required scope:** `memories:write`  
@@ -22,7 +22,7 @@ Update existing memory
 | `tags` | string[] | no | — | — |
 | `ttl` | integer | no | — | — |
 | `scope` | string | no | — | — |
-| `expectedVersion` | integer | no | — | — |
+| `expectedVersion` | integer | yes | — | — |
 | `actorLabel` | string | no | — | — |
 
 ## Example
@@ -32,7 +32,8 @@ Update existing memory
   "name": "update_memory",
   "arguments": {
     "userId": "qp",
-    "memoryId": "<memoryId>"
+    "memoryId": "<memoryId>",
+    "expectedVersion": 1
   }
 }
 ```
