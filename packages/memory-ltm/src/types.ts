@@ -222,6 +222,14 @@ export interface DecayPolicyResult {
   updated: number;
   pruned: number;
   stale: number;
+  /**
+   * Rows the decay pass SKIPPED because a concurrent edit moved the row's
+   * version twice (or disqualified it) between read and write (G3-T3 —
+   * lifecycle writes never clobber a concurrent user edit). Optional so
+   * pre-G3-T3 callers constructing empty results stay source-compatible;
+   * `applyDecayPolicy` always sets it.
+   */
+  skippedConcurrentEdit?: number;
   cursor: string | null;
 }
 

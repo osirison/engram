@@ -61,6 +61,9 @@ describe('MemoryLtmService', () => {
         findMany: vi.fn(),
         count: vi.fn(),
       },
+      memoryAudit: {
+        create: vi.fn().mockResolvedValue({ id: 'audit-row' }),
+      },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $transaction: vi.fn(),
     };
@@ -1147,8 +1150,15 @@ describe('MemoryLtmService', () => {
 
       expect(prismaService.memory.create).not.toHaveBeenCalled();
       expect(prismaService.memory.update).toHaveBeenCalled();
+      // G3-T3: the duplicate annotation is a version-checked CAS write that
+      // mirrors the user-facing update() where-shape and always bumps version.
       expect(prismaService.memory.update).toHaveBeenCalledWith({
-        where: { id: mockMemoryId },
+        where: {
+          id: mockMemoryId,
+          userId: mockUserId,
+          type: MemoryType.LONG_TERM,
+          version: mockMemory.version,
+        },
         data: {
           metadata: expect.objectContaining({
             duplicateMatches: expect.arrayContaining([
@@ -1158,6 +1168,7 @@ describe('MemoryLtmService', () => {
               }),
             ]),
           }),
+          version: { increment: 1 },
         },
       });
       expect(result.id).toBe(mockMemoryId);
@@ -1205,11 +1216,15 @@ describe('MemoryLtmService', () => {
       expect(result.processed).toBe(2);
       expect(result.pruned).toBe(1);
       expect(result.updated).toBe(1);
+      expect(result.skippedConcurrentEdit).toBe(0);
+      // G3-T3: the prune delete is version-guarded so a concurrent user edit
+      // (which bumps version) makes the delete miss instead of clobbering.
       expect(prismaService.memory.deleteMany).toHaveBeenCalledWith({
         where: {
           id: 'old-memory',
           userId: mockUserId,
           type: MemoryType.LONG_TERM,
+          version: oldMemory.version,
         },
       });
     });
