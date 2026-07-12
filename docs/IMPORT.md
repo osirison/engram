@@ -77,25 +77,25 @@ them.
 
 ## Secrets (`--secrets`, closes G2)
 
-Every fact is scanned before persistence. Under the default `redact` (and under
-`skip` / `fail`) no raw secret reaches an external embedding provider. `flag` is
-the exception: it deliberately keeps the raw content, so see the caveat below.
+Every fact is scanned before persistence — content, title, and all string
+values in frontmatter. Under **every** policy no raw secret reaches Postgres
+or an external embedding provider.
 
-| Policy   | Behavior                                                           |
-| -------- | ------------------------------------------------------------------ |
-| `redact` | replace matches with `[REDACTED]` and record the pattern (default) |
-| `flag`   | keep content, set `metadata.embeddingExcluded`, tag `has-secret`   |
-| `skip`   | drop the whole fact (counted `secretsSkipped`)                     |
-| `fail`   | abort the run before any write                                     |
+| Policy   | Behavior                                                                       |
+| -------- | ------------------------------------------------------------------------------ |
+| `redact` | replace matches with `[REDACTED]` in place and record the pattern (default)    |
+| `flag`   | redact like `redact`, plus set `metadata.embeddingExcluded` + tag `has-secret` |
+| `skip`   | drop the whole fact (counted `secretsSkipped`)                                 |
+| `fail`   | abort the run before any write, naming the matched surfaces                    |
 
-`flag` marks a fact `embeddingExcluded` and omits it from the embedding-cost
-estimate, but persistence still embeds inline when an external provider is
-configured. To keep flagged raw content out of an external provider at import
-time, run `flag` together with `--no-embed` (or `EMBEDDING_PROVIDER=disabled`),
-then backfill with `reindex` — which honors `embeddingExcluded`. Per-fact
-embedding suppression inside `create()` is a tracked follow-up.
+`flag` differs from `redact` only by the review markers: the `has-secret` tag
+surfaces the fact for human follow-up, and `embeddingExcluded` keeps it out of
+embedding entirely — both `create()` and `reindex` honor the flag (a flagged
+fact stores an empty vector and reindex counts it `skipped`). No `--no-embed`
+workaround is needed for secret handling; `--no-embed` remains the bulk-import
+cost control (next section).
 
-Dry-run lists the files + matched pattern names.
+Dry-run lists the files + matched pattern names, identical to a real run.
 
 ## Embedding cost (`--no-embed`, closes G7)
 
