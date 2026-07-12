@@ -59,6 +59,17 @@ tricked (or bugged) into destroying memories. Never grant the `admin` scope to
 an agent key — `admin` satisfies every scope check and is meant for operators
 only.
 
+> **`ENGRAM_AGENT` is attribution-only — it is not a substitute for distinct
+> keys.** The CLI bridge's `ENGRAM_AGENT` label
+> (`packages/agent-bridge/src/config.ts`) is an unauthenticated, self-declared
+> provenance string: any process can claim any label, and it never enters an
+> authorization decision. Verified per-agent attribution comes from the key —
+> the server stamps the authenticated key's id into `MemoryAudit.actorId` on
+> every audited mutation. With one shared key, every agent's operations
+> collapse into a single actor: you can neither tell agents apart in the audit
+> trail nor revoke one agent without cutting off all of them. Distinct keys
+> per agent are required for per-agent authz, attribution, and revocation.
+
 ## Minting a key
 
 Keys are minted with the **admin** MCP tool `create_api_key`. There is **no REST
@@ -101,6 +112,35 @@ server stores only a hash — it can never show the plaintext again. **Copy the
 `eng_…` value immediately** into the target agent's config (next section); if
 you lose it, revoke and re-mint. Repeat the call once per agent, changing only
 `name` (and `scopes`).
+
+## Provisioning in one command
+
+Instead of repeating the manual `create_api_key` call per agent, the
+`provision-agent-keys` CLI mints the whole fleet in one pass. It uses
+`ApiKeysService` directly against the database — run it on the server host
+(with the server's `.env`); it needs neither a running server nor
+`MCP_ADMIN_TOKEN`:
+
+```bash
+pnpm --filter mcp-server provision-agent-keys -- \
+  --agents claude-code,copilot,cursor,codex,gemini,cli-bridge --user qp
+```
+
+For each agent name it mints one **distinct** key labelled `agent:<name>`
+under the **single shared tenant** (`--user`, normally `qp` — distinct keys,
+one memory pool), prints the `eng_` plaintext **once** with ready-to-paste
+`ENGRAM_API_KEY` / `Authorization: Bearer` snippets (next section), and
+refuses `admin` outright. Options:
+
+- `--scopes` — default `memories:read,memories:write,memories:delete`. To
+  follow the delete-is-opt-in table above, pass
+  `--scopes memories:read,memories:write` for agents that never delete.
+- `--expires-in <duration>` — key lifetime, e.g. `90d`, `12w`, `1y`
+  (default: no expiry).
+- `--rotate` — revoke-and-replace. Without it, an agent whose `agent:<name>`
+  key is still active is reported as **already provisioned** and skipped —
+  the plaintext is not recoverable, and the CLI never silently re-mints — so
+  re-running the command is safe.
 
 ## Where each key goes
 

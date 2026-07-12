@@ -16,6 +16,7 @@
     "reindex": "nest build && node dist/reindex.cli.js",
     "import": "nest build && node dist/import.cli.js",
     "export": "nest build && node dist/export.cli.js",
+    "provision-agent-keys": "nest build && node dist/provision-agent-keys.cli.js",
     "watch": "nest build && node dist/watch.cli.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
@@ -120,6 +121,7 @@
       "!**/*.module.ts",
       "!src/reindex.cli.ts",
       "!src/export.cli.ts",
+      "!src/provision-agent-keys.cli.ts",
       "!**/*.d.ts",
       "!test/**"
     ],
@@ -137,6 +139,7 @@
       "^@engram/auth$": "<rootDir>/../../packages/auth/src/index.ts",
       "^@engram/database$": "<rootDir>/../../packages/database/src/index.ts",
       "^@engram/embeddings$": "<rootDir>/../../packages/embeddings/src/index.ts",
+      "^@engram/eval$": "<rootDir>/../../packages/eval/src/index.ts",
       "^@engram/memory-import$": "<rootDir>/../../packages/memory-import/src/index.ts",
       "^@engram/memory-interchange$": "<rootDir>/../../packages/memory-interchange/src/index.ts",
       "^@engram/memory-lite$": "<rootDir>/../../packages/memory-lite/src/index.ts",
