@@ -10,7 +10,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
-  { ignores: ['dist/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'dist-ssr/**', 'node_modules/**'] },
   js.configs.recommended,
   {
     files: ['**/*.{js,jsx}'],
@@ -43,8 +43,8 @@ export default [
     },
   },
   {
-    // Node-side config files (not shipped to the browser).
-    files: ['vite.config.js', 'eslint.config.js'],
+    // Node-side config/build files (not shipped to the browser).
+    files: ['vite.config.js', 'eslint.config.js', 'prerender.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,

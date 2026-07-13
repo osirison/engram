@@ -19,10 +19,14 @@ a slowly cycling sacred-geometry backdrop.
 
 | File               | Role                                                                                                                                                                        |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`       | Shell, styles, and copy. Entry point.                                                                                                                                       |
-| `app.jsx`          | React app: hero input, memory panels, the four verbs, install section, and the Tweaks panel.                                                                                |
+| `index.html`       | Shell, styles, and copy. Loads `main.jsx`.                                                                                                                                  |
+| `main.jsx`         | Browser entry: hydrates the prerendered `#root` (production) or falls back to a plain client render (dev); pulls in `smooth-scroll.js`.                                     |
+| `app.jsx`          | React app (exported `<App/>`, no module side effects): hero input, memory panels, the four verbs, install section.                                                          |
+| `entry-server.jsx` | Build-time prerender entry: `renderToString(<App/>)` for `prerender.mjs`.                                                                                                   |
+| `prerender.mjs`    | Post-build script (`postbuild`): SSR-bundles `entry-server.jsx` via Vite, renders the app, injects the markup into `dist/index.html`'s `#root`.                             |
 | `memory-haze.js`   | The depth-of-field engine: fragment field, lantern, idle drift, and the sacred-geometry backdrop (Flower of Life, Metatron's Cube, Sri Yantra, Hexagram, Pentagram, Torus). |
 | `smooth-scroll.js` | Eased momentum scrolling that keeps the real scroll position authoritative.                                                                                                 |
+| `dev-tweaks.jsx`   | Dev-only lazy wrapper that mounts the Tweaks panel (dropped from production builds).                                                                                        |
 | `tweaks-panel.jsx` | In-page Tweaks panel (haze, lantern, float, geometry shape, idle drift).                                                                                                    |
 
 ## Running
@@ -40,7 +44,7 @@ npm run dev      # Vite dev server with hot reload
 Production build and local preview:
 
 ```bash
-npm run build    # emits dist/
+npm run build    # emits dist/, then prerenders <App/> into dist/index.html (postbuild)
 npm run preview  # serve the built dist/ locally
 ```
 
