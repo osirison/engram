@@ -36,6 +36,7 @@ function makeImport(): { run: jest.Mock } {
         created: 0,
         updated: 0,
         skipped: 0,
+        skippedConcurrentEdit: 0,
         mergedIntoExisting: 0,
         secretsSkipped: 0,
         failed: 0,

@@ -20,6 +20,13 @@ export interface LedgerEntry {
   importBatchId: string;
   importedAt: Date;
   updatedAt: Date;
+  /**
+   * `Memory.version` as of the importer's last successful write (G4-T3
+   * CAS-skip): the `expectedVersion` for the next re-import update. NULL on
+   * rows written before the column existed — no CAS is possible for that
+   * first re-import (one last LWW write), which backfills it.
+   */
+  lastWrittenVersion: number | null;
 }
 
 /** Fields required to record (or refresh) a ledger row. */
@@ -31,6 +38,8 @@ export interface UpsertLedgerInput {
   sourceKey: string;
   contentHash: string;
   importBatchId: string;
+  /** `Memory.version` returned by the create/update this row records (G4-T3). */
+  lastWrittenVersion?: number;
 }
 
 function toEntry(row: {
@@ -44,6 +53,7 @@ function toEntry(row: {
   importBatchId: string;
   importedAt: Date;
   updatedAt: Date;
+  lastWrittenVersion: number | null;
 }): LedgerEntry {
   return { ...row, sourceTool: row.sourceTool as SourceTool };
 }
@@ -62,8 +72,9 @@ export class ImportLedgerService {
 
   /**
    * Record a first import or refresh an existing one. On re-import of the same
-   * `sourceKey`, updates `contentHash`, `memoryId`, and `importBatchId` (drift
-   * detection depends on the stored hash staying current).
+   * `sourceKey`, updates `contentHash`, `memoryId`, `importBatchId`, and
+   * `lastWrittenVersion` (drift detection depends on the stored hash staying
+   * current; the CAS-skip policy depends on the stored version staying current).
    */
   async upsert(input: UpsertLedgerInput): Promise<LedgerEntry> {
     const row = await this.prisma.memoryImportSource.upsert({
@@ -76,6 +87,7 @@ export class ImportLedgerService {
         sourceKey: input.sourceKey,
         contentHash: input.contentHash,
         importBatchId: input.importBatchId,
+        lastWrittenVersion: input.lastWrittenVersion ?? null,
       },
       update: {
         memoryId: input.memoryId,
@@ -83,6 +95,7 @@ export class ImportLedgerService {
         sourcePath: input.sourcePath,
         contentHash: input.contentHash,
         importBatchId: input.importBatchId,
+        lastWrittenVersion: input.lastWrittenVersion ?? null,
       },
     });
     return toEntry(row);

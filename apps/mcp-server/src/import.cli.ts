@@ -151,11 +151,19 @@ async function main(): Promise<void> {
 
     logger.log(
       `Import complete: parsed=${summary.parsed} created=${summary.created} updated=${summary.updated} ` +
-        `skipped=${summary.skipped} merged=${summary.mergedIntoExisting} secretsSkipped=${summary.secretsSkipped} ` +
+        `skipped=${summary.skipped} skippedConcurrentEdit=${summary.skippedConcurrentEdit} ` +
+        `merged=${summary.mergedIntoExisting} secretsSkipped=${summary.secretsSkipped} ` +
         `failed=${summary.failed} links(resolved=${summary.links.resolved} deferred=${summary.links.deferred} ` +
         `dangling=${summary.links.dangling}) est=$${summary.embeddingCostEstimate.approxUsd}`,
     );
     for (const advisory of summary.advisories) logger.warn(advisory);
+    if (summary.skippedConcurrentEdit > 0) {
+      logger.warn(
+        `${summary.skippedConcurrentEdit} fact(s) skipped: edited inside ENGRAM since their last import ` +
+          `(CAS-skip — the ENGRAM edit wins; see docs/concurrency-policy.md). ` +
+          `Reconcile in ENGRAM or update the source file to match.`,
+      );
+    }
     if (summary.secrets.length > 0) {
       logger.warn(
         `Secrets detected in ${summary.secrets.length} file(s): ${summary.secrets.map((s) => s.path).join(', ')}`,
