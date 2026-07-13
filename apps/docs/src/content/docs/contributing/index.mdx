@@ -1,0 +1,65 @@
+---
+title: Contributing
+description: How to contribute to Engram — workflow, quality gates, and where each guide lives.
+sidebar:
+  order: 1
+  label: Overview
+---
+
+Engram is a TypeScript monorepo (pnpm workspaces + Turborepo) with a NestJS MCP
+server as its main runtime. Contributions follow a short loop: branch, change,
+run the quality gates, open a pull request against `main`.
+
+## The workflow
+
+1. Check your branch with `git status --short --branch`; if you are on `main`,
+   create a feature branch first (see
+   [commit style](/docs/contributing/commit-style/) for branch naming).
+2. Make the change, keeping it tied to the issue in front of you.
+3. Run the quality gates (below) before pushing.
+4. Open a pull request against `main` and link the issue with `Closes #<issue>`
+   when one exists.
+
+## Quality gates
+
+All of these must pass before a PR is mergeable — CI runs the same commands:
+
+```bash
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm docs:check
+```
+
+If `pnpm` is not on your `PATH`, replace the leading `pnpm` with
+`npm exec --yes pnpm@11.5.0 --`.
+
+Never bypass a failing hook or gate (no `git commit --no-verify`); fix the
+gate instead.
+
+## Ground rules
+
+- **TypeScript strict** — no `any` without justification.
+- **Zod for validation** — all MCP tool inputs and DTO boundaries use Zod
+  `.strict()` schemas.
+- **NestJS dependency injection throughout** — services are injected, not
+  imported as singletons.
+- **Shared behavior lives in `packages/*`** — do not duplicate cross-cutting
+  logic inside an app.
+- **Postgres is the source of truth** — the vector store is a derived index
+  that must always be rebuildable.
+- Prefer framework CLIs (`nest g …`, `prisma …`) over hand-rolled boilerplate
+  when a generator exists.
+
+## The guides
+
+- [Development setup](/docs/contributing/development-setup/) — local
+  environment and per-package commands.
+- [Adding MCP tools](/docs/contributing/adding-tools/) — the end-to-end pattern
+  for a new tool.
+- [Testing conventions](/docs/contributing/testing-conventions/) — service
+  level plus wiring level, and the coverage thresholds.
+- [Commit style](/docs/contributing/commit-style/) — conventional commits and
+  the commitlint rules that enforce them.
+- [Roadmap](/docs/contributing/roadmap/) — where the project is heading.

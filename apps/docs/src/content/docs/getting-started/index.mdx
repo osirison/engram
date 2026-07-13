@@ -1,0 +1,55 @@
+---
+title: Getting started
+description: Pick an Engram deployment profile and follow the matching tutorial — quick start, full installation, first memory, and MCP client setup.
+sidebar:
+  order: 1
+  label: Overview
+---
+
+Engram runs in one of three deployment profiles, selected by the
+`DEPLOYMENT_PROFILE` environment variable. Pick the profile that matches the
+durability, scale, and infrastructure you want, then follow the matching
+tutorial.
+
+| Profile              | `DEPLOYMENT_PROFILE` | External dependencies     | Use it for                                         |
+| -------------------- | -------------------- | ------------------------- | -------------------------------------------------- |
+| Memory               | `memory`             | None                      | Demos, CI smoke tests, exploring the MCP surface   |
+| Lite                 | `lite`               | Postgres only             | Single-host deployments needing at-rest encryption |
+| Enterprise (default) | `enterprise`         | Postgres + Redis + Qdrant | Production, cluster scale, queued reindex          |
+
+## Which page do I want?
+
+- **[Quick start](/docs/getting-started/quick-start/)** — the `memory` profile:
+  zero external services, three commands to a running MCP server. Start here if
+  you just want to try Engram.
+- **[Installation](/docs/getting-started/installation/)** — the full
+  `enterprise` profile setup (Postgres + Redis + Qdrant via Docker Compose),
+  plus the `lite` profile variant with an encrypted local store.
+- **[Store your first memory](/docs/getting-started/first-memory/)** — call
+  `create_memory`, `recall`, and `get_memory` end-to-end against a running
+  server.
+- **[MCP client setup](/docs/getting-started/mcp-client-setup/)** — connect
+  Claude Desktop or Claude Code to your server.
+
+## Prerequisites (all profiles)
+
+- Node.js 20 or newer with npm
+- Git
+- Optional: pnpm on your `PATH` (the repository pins `pnpm@11.5.0`)
+- Optional: Docker and Docker Compose v2 (only for the `enterprise` profile)
+- Optional: `openssl` (to generate `LOCAL_ENCRYPTION_KEY` for the `lite` profile)
+
+When `pnpm` is not installed, replace the leading `pnpm` in any command with
+`npm exec --yes pnpm@11.5.0 --`. For example:
+
+```bash
+npm exec --yes pnpm@11.5.0 -- install
+```
+
+## Where to go next
+
+Once your server is running, the [how-to guides](/docs/how-to/deploy-production/)
+cover production deployment, backups, and observability, and the
+[reference section](/docs/reference/) documents every MCP tool and environment
+variable. To make Engram the shared primary memory for a fleet of AI coding
+agents, start at the [agent memory contract](/docs/agent-memory/contract/).

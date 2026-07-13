@@ -1,13 +1,16 @@
 ---
 title: Agent Memory File-Watcher Sync
-description: The ongoing file-watcher bridge that keeps native agent-memory files synced into ENGRAM, with the D7 newest-wins conflict rule
+description: The ongoing file-watcher bridge that keeps native agent-memory files synced into ENGRAM, with the D7 newest-wins conflict rule.
+sidebar:
+  order: 4
+  label: Sync
 ---
 
-> Also published at [engram.events/docs/agent-memory/sync/](https://engram.events/docs/agent-memory/sync/). This repository copy is canonical — agents read it at runtime.
+> The canonical copy of this guide lives in the repository at
+> [`docs/agent-memory-sync.md`](https://github.com/osirison/engram/blob/main/docs/agent-memory-sync.md) —
+> agents read it from the repo at runtime. This page is a published mirror.
 
-# Agent Memory File-Watcher Sync
-
-The one-time [migration runbook](./agent-memory-migration.md) imports existing
+The one-time [migration runbook](/docs/agent-memory/migration/) imports existing
 native memory once. The **sync bridge** keeps ENGRAM current afterward: it
 watches native agent-memory files and re-imports the ones that change, so nothing
 important lives only on disk. It reuses the WP4 importer (parsing, dedup,
@@ -19,13 +22,13 @@ On a change under a watched root, the file is mapped to its WP4 importer source
 and that source is re-imported (the importer's ledger makes re-runs idempotent —
 only changed facts update):
 
-| File(s)                                                                     | Source        |
-| --------------------------------------------------------------------------- | ------------- |
-| `CLAUDE.md`, `CLAUDE.local.md`, `.claude/**/memory/*.md`                    | `claude-code` |
-| `AGENTS.md`                                                                 | `codex`       |
-| `GEMINI.md`                                                                 | `gemini`      |
-| `.cursor/rules/*.mdc`, `.cursorrules`                                       | `cursor`      |
-| `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` | `copilot`     |
+| File(s)                                                                      | Source        |
+| ---------------------------------------------------------------------------- | ------------- |
+| `CLAUDE.md`, `CLAUDE.local.md`, `.claude/**/memory/*.md`                     | `claude-code` |
+| `AGENTS.md`                                                                  | `codex`       |
+| `GEMINI.md`                                                                  | `gemini`      |
+| `.cursor/rules/*.mdc`, `.cursorrules`                                        | `cursor`      |
+| `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`  | `copilot`     |
 
 Bursty writes (editor temp-file + rename) are debounced so one import runs after
 the writes settle, not one per raw filesystem event.
@@ -58,7 +61,7 @@ pnpm --filter mcp-server watch -- "$PWD" --user qp --scope project:engram --once
 ```
 
 As a long-lived daemon (systemd user service, alongside the MCP server — see
-[`agent-memory-server.md`](./agent-memory-server.md)):
+the [server runbook](/docs/agent-memory/server/)):
 
 ```bash
 cp deploy/systemd/engram-sync.service ~/.config/systemd/user/
@@ -69,7 +72,7 @@ journalctl --user -u engram-sync -f
 
 The watcher needs the same database/Redis environment as the server (it writes
 via the importer), so the unit reads the same `~/.engram/engram-mcp.env`. Identity
-is `userId: "qp"`; scope follows the [contract](./agent-memory-contract.md).
+is `userId: "qp"`; scope follows the [contract](/docs/agent-memory/contract/).
 
 ## Verify
 

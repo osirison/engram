@@ -1,0 +1,115 @@
+---
+title: Migrate lite to enterprise
+description: Runbook for promoting a profile-lite deployment to profile-enterprise with dual-write, verification, cutover, and rollback.
+sidebar:
+  order: 6
+---
+
+This runbook covers promoting a `profile-lite` deployment to
+`profile-enterprise`. The migration is dual-write, resumable, and verifies zero
+data loss before cutover. SLO targets live in the
+[release gates reference](/docs/reference/release-gates/).
+
+If `pnpm` is not on your `PATH`, replace the leading `pnpm` in any command with
+`npm exec --yes pnpm@11.5.0 --`.
+
+> **Note:** the `verify-migration` / `cutover-migration` / `abort-migration`
+> workspace scripts referenced in steps 4–6 are the runbook's documented
+> interface to the migration tooling (`apps/mcp-server/src/migration/` —
+> dual-write coordinator, backfill, verifier, state machine). If your build
+> does not expose them yet, check the `scripts` block of
+> `apps/mcp-server/package.json` for the current entrypoints before cutover.
+
+## Prerequisites
+
+- `profile-lite` deployment running with a known `LOCAL_ENCRYPTION_KEY`
+- Postgres reachable from the `profile-enterprise` host
+- Redis and Qdrant reachable from the `profile-enterprise` host
+- `MCP_ADMIN_TOKEN` set in both environments
+- A `profile-enterprise` build with the migration tooling enabled (the server
+  build from this repository)
+
+## Step 1 — Stop profile-lite writes
+
+Stop the `profile-lite` server cleanly so no in-flight writes remain
+unflushed. The on-disk `LiteJsonStore` writes atomically on every mutation, so
+a graceful shutdown leaves a consistent snapshot.
+
+```bash
+# On the profile-lite host
+systemctl stop engram
+ls -la ~/.engram/data
+# Confirm every file is mode 0600
+```
+
+## Step 2 — Bring up profile-enterprise infrastructure
+
+On the new host, start Postgres, Redis, and Qdrant, then run the migrations.
+
+```bash
+DEPLOYMENT_PROFILE=enterprise pnpm docker:up
+DEPLOYMENT_PROFILE=enterprise pnpm db:generate
+DEPLOYMENT_PROFILE=enterprise pnpm db:migrate
+```
+
+The migration state machine starts at `idle`. No client traffic flows to
+`profile-enterprise` yet.
+
+## Step 3 — Export and dual-write
+
+Boot the `profile-enterprise` server with the migration tooling enabled. The
+dual-write coordinator begins streaming the `profile-lite` source into the
+`profile-enterprise` shadow store while the backfill service streams the
+historical snapshot.
+
+```bash
+DEPLOYMENT_PROFILE=enterprise \
+LOCAL_ENCRYPTION_KEY="<source-key>" \
+  pnpm --filter mcp-server dev
+```
+
+The state machine advances `idle → preparing → copying → verifying`. The
+`copying` phase streams in pages; the cursor is persisted on every page so an
+interrupted pass resumes from the last `(userId, memoryId)` pair with no
+duplicates.
+
+## Step 4 — Verify (count + hash comparison)
+
+Run the verifier to confirm the `profile-lite` source matches the
+`profile-enterprise` shadow before allowing cutover.
+
+```bash
+DEPLOYMENT_PROFILE=enterprise \
+LOCAL_ENCRYPTION_KEY="<source-key>" \
+  pnpm --filter mcp-server verify-migration
+```
+
+The verifier emits a JSON report and refuses to advance when the hard-stop
+fraction (`0.00001` default) is exceeded. Investigate any per-user count or
+content-hash mismatch before continuing. A passing report auto-advances the
+state to `cutting_over`.
+
+## Step 5 — Cutover
+
+Once verification passes, complete the migration:
+
+```bash
+DEPLOYMENT_PROFILE=enterprise \
+  pnpm --filter mcp-server cutover-migration
+```
+
+Re-point the client configuration to the `profile-enterprise` endpoint and
+restart the client. The `profile-lite` host remains in read-only shadow mode
+during the rollback window.
+
+## Step 6 — Rollback
+
+If `profile-enterprise` is unhealthy after cutover, abort the migration:
+
+```bash
+DEPLOYMENT_PROFILE=enterprise \
+  pnpm --filter mcp-server abort-migration
+```
+
+Re-point the client back to `profile-lite` and start it. The on-disk state was
+never modified by the migration tooling, so the source remains readable.

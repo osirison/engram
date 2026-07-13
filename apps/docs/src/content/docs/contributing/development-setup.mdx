@@ -1,0 +1,86 @@
+---
+title: Development setup
+description: Local development environment for Engram contributors — first run, quality checks, and per-package commands.
+sidebar:
+  order: 2
+---
+
+All commands run from the repository root. The repository pins `pnpm@11.5.0`;
+if `pnpm` is not installed globally, replace the leading `pnpm` with
+`npm exec --yes pnpm@11.5.0 --`.
+
+## First run
+
+```bash
+pnpm install
+test -f .env || cp .env.example .env    # then edit as needed
+pnpm docker:up                          # starts PostgreSQL, Redis, Qdrant
+pnpm db:generate                        # generate Prisma client
+pnpm db:migrate                         # run migrations
+pnpm build
+pnpm --filter mcp-server dev            # MCP server on http://localhost:3000
+```
+
+This is the `enterprise` profile flow (the default). For lighter profiles and
+the full walkthrough, see [Installation](/docs/getting-started/installation/).
+
+## Quality checks
+
+Run these before opening a pull request:
+
+```bash
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm docs:check
+```
+
+## Working on a single package
+
+Turborepo lets you filter any script to one workspace:
+
+```bash
+pnpm --filter @engram/memory-ltm test
+pnpm --filter mcp-server test:e2e:docker
+pnpm --filter @engram/vector-store test   # set PGVECTOR_TEST_URL for pgvector integration tests
+pnpm --filter docs dev                    # docs site on http://localhost:3001
+```
+
+> pgvector integration tests and the pgvector backend require the
+> `pgvector/pgvector:pg16+` Docker image; plain `postgres:*-alpine` images lack
+> the extension.
+
+## Framework CLIs
+
+Use project and framework generators when they exist instead of hand-creating
+files:
+
+| Task                       | Command                    |
+| -------------------------- | -------------------------- |
+| Generate NestJS resource   | `nest g resource <name>`   |
+| Generate NestJS module     | `nest g module <name>`     |
+| Generate NestJS service    | `nest g service <name>`    |
+| Generate NestJS controller | `nest g controller <name>` |
+| Generate Prisma client     | `pnpm db:generate`         |
+| Create Prisma migration    | `pnpm db:migrate`          |
+| Open Prisma Studio         | `pnpm db:studio`           |
+
+Manual file creation is fine for documentation, Zod schemas, custom types,
+small utilities, and configuration files when no generator exists.
+
+## Evaluation and benchmarks
+
+```bash
+pnpm eval             # recall quality harness (precision@k, recall@k, MRR, nDCG@k)
+pnpm bench:backends   # vector-backend latency benchmark
+```
+
+## Documentation rules
+
+- Keep setup instructions short and copy-pasteable.
+- Put detailed explanations in focused docs and link to them from the root
+  README.
+- `pnpm docs:check` validates frontmatter and relative links on every `.md`
+  file in the repo; the docs site build additionally validates internal links
+  in `.mdx` content.

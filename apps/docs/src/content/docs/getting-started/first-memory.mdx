@@ -1,0 +1,158 @@
+---
+title: Store your first memory
+description: Create, recall, and inspect a memory end-to-end with the MCP Inspector or curl.
+sidebar:
+  order: 4
+---
+
+This tutorial stores one memory and gets it back, using any profile from the
+[quick start](/docs/getting-started/quick-start/) or
+[installation](/docs/getting-started/installation/). There is **no REST memory
+API** — every memory operation is an MCP tool call (JSON-RPC), so you talk to
+the server through an MCP client. Two options below: the MCP Inspector UI, or
+raw curl against the Streamable HTTP transport.
+
+## Option A — MCP Inspector
+
+Start the server (any profile), then launch the Inspector from a second
+terminal:
+
+```bash
+pnpm inspector
+```
+
+In the Inspector, connect to your server (for a locally spawned stdio server,
+point it at `node apps/mcp-server/dist/main.js`; for a Streamable HTTP server,
+use `http://localhost:3000/mcp`), open the **Tools** tab, and run the calls
+below.
+
+### 1. Create a memory
+
+Call `create_memory`:
+
+```json
+{
+  "userId": "qp",
+  "content": "ENGRAM uses Postgres as the source of truth; the vector store is a derived index.",
+  "type": "long-term",
+  "tags": ["architecture"]
+}
+```
+
+The response includes the new memory's `id` and its `version` (used later for
+updates).
+
+### 2. Recall it semantically
+
+Call `recall`:
+
+```json
+{
+  "userId": "qp",
+  "query": "what is the source of truth for memories?"
+}
+```
+
+The stored memory comes back with a relevance score. When embeddings are
+disabled or the vector store is unavailable, `recall` degrades gracefully and
+returns `{ "results": [] }` rather than erroring — with
+`EMBEDDING_PROVIDER=local` (or `openai`) you get real hybrid matches.
+
+### 3. Inspect it
+
+Call `get_memory` with the `id` from step 1:
+
+```json
+{
+  "userId": "qp",
+  "memoryId": "<id from create_memory>"
+}
+```
+
+### 4. Update it (optimistic concurrency)
+
+`update_memory` **requires `expectedVersion`** — pass the `version` you read in
+step 3. Blind updates are rejected, and a stale version fails with a
+`CONFLICT` error; re-read the memory and retry with the fresh version:
+
+```json
+{
+  "userId": "qp",
+  "memoryId": "<id from create_memory>",
+  "content": "ENGRAM uses Postgres as the source of truth; vector stores are derived and rebuildable.",
+  "expectedVersion": 1
+}
+```
+
+See the [concurrent-writer policy](/docs/reference/concurrency-policy/) for why
+this is enforced.
+
+## Option B — curl (Streamable HTTP)
+
+Start the server with the HTTP transport:
+
+```bash
+DEPLOYMENT_PROFILE=memory \
+MCP_TRANSPORT=streamable-http \
+  pnpm --filter mcp-server dev
+```
+
+The MCP endpoint is a single route, `http://localhost:3000/mcp`, keyed by a
+per-session `mcp-session-id` header. First perform the `initialize` handshake
+and capture the session id:
+
+```bash
+SID=$(curl -sS -D - -o /dev/null \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -X POST http://localhost:3000/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}' \
+  | tr -d '\r' | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2; exit}')
+echo "session: $SID"
+
+curl -sS -o /dev/null \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" \
+  -X POST http://localhost:3000/mcp \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+```
+
+Then call the tools with `tools/call`:
+
+```bash
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" \
+  -X POST http://localhost:3000/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_memory","arguments":{"userId":"qp","content":"ENGRAM uses Postgres as the source of truth.","type":"long-term"}}}'
+
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" \
+  -X POST http://localhost:3000/mcp \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"recall","arguments":{"userId":"qp","query":"what is the source of truth?"}}}'
+```
+
+> The `memory` profile is single-user, so it serves HTTP without an auth gate.
+> A multi-tenant (`enterprise`) Streamable HTTP server refuses to start without
+> `AUTH_REQUIRED=true` (or an explicit `ALLOW_UNAUTHENTICATED_HTTP=true`); on
+> an authenticated server, add an `Authorization: Bearer <api-key>` header to
+> every request — see
+> [Provision agent API keys](/docs/how-to/provision-agent-keys/).
+
+## Higher-level alternative: remember
+
+For agents, the preferred write path is the higher-level `remember` tool
+instead of raw `create_memory`: it auto-routes short-term vs long-term and
+deduplicates, so re-storing the same fact is a safe no-op. See the
+[MCP tools reference](/docs/reference/mcp-tools/) for every tool's schema.
+
+## Next steps
+
+- [MCP client setup](/docs/getting-started/mcp-client-setup/) — let Claude
+  Desktop or Claude Code make these calls for you.
+- [Agent memory contract](/docs/agent-memory/contract/) — the conventions
+  agents follow for scopes, tags, and what is memory-worthy.

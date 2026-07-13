@@ -1,0 +1,122 @@
+---
+title: MCP client setup
+description: Connect Claude Desktop and Claude Code to the Engram MCP server, including the authentication rules for shared HTTP servers.
+sidebar:
+  order: 5
+---
+
+Two common client wirings: Claude Desktop spawning its own local server over
+stdio (the default transport), and Claude Code talking to a persistent shared
+server over Streamable HTTP. For the full five-agent fleet (Copilot, Cursor,
+Codex, Gemini), see [client wiring](/docs/agent-memory/clients/).
+
+## Build the server first
+
+```bash
+pnpm build
+```
+
+## Claude Desktop (stdio)
+
+Claude Desktop spawns the server as a subprocess. Copy the example config from
+the repository root:
+
+```bash
+cp claude_desktop_config.json.example claude_desktop_config.json
+```
+
+Edit it so the `args` value points to the absolute path of
+`apps/mcp-server/dist/main.js` in your checkout:
+
+```json
+{
+  "mcpServers": {
+    "engram": {
+      "command": "node",
+      "args": ["/absolute/path/to/your/engram/apps/mcp-server/dist/main.js"],
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:password@localhost:5432/engram",
+        "REDIS_URL": "redis://localhost:6379",
+        "QDRANT_URL": "http://localhost:6333",
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+Add `"DEPLOYMENT_PROFILE": "memory"` (or `lite` / `enterprise`) to the `env`
+block to pick a profile; leaner profiles need fewer of the datastore URLs.
+
+Copy the file into Claude Desktop's config location and restart the client:
+
+| Operating system | Config path                                                       |
+| ---------------- | ----------------------------------------------------------------- |
+| Linux            | `~/.config/Claude/claude_desktop_config.json`                     |
+| macOS            | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows          | `%APPDATA%\Claude\claude_desktop_config.json`                     |
+
+Then ask the client to call the `ping` tool to confirm connectivity.
+
+## Claude Code (Streamable HTTP)
+
+To share one persistent server across sessions (and across agents), run the
+server with `MCP_TRANSPORT=streamable-http` — see the
+[server runbook](/docs/agent-memory/server/) — and register it in the
+repository's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "engram": {
+      "type": "http",
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ENGRAM_API_KEY:-}"
+      }
+    }
+  }
+}
+```
+
+The `${ENGRAM_API_KEY:-}` default keeps the file parseable when the key is
+unset. Mint a key with the steps in
+[Provision agent API keys](/docs/how-to/provision-agent-keys/).
+
+## Authentication rules (read before sharing a server)
+
+- `AUTH_REQUIRED` defaults to **`false`**. A single-user stdio server spawned
+  by your own client needs no key.
+- With `AUTH_REQUIRED=false` on an HTTP server, the tenant `userId` is read
+  from the request body and is spoofable by any process that can reach the
+  port. For that reason a **multi-tenant Streamable HTTP server without
+  `AUTH_REQUIRED=true` refuses to start in every `NODE_ENV`** unless the
+  operator explicitly sets `ALLOW_UNAUTHENTICATED_HTTP=true` — an acknowledged
+  trusted-network escape hatch (for example a loopback-bound, single-operator
+  host). Multi-tenant means the `enterprise` profile; the `memory` and `lite`
+  profiles are single-user, so the gate does not apply to them.
+- The recommended posture for any shared server: `AUTH_REQUIRED=true`, one
+  least-privilege API key per agent, and a loopback (`127.0.0.1`) bind. Setting
+  `AUTH_REQUIRED=true` also requires a `JWT_SECRET` of at least 32 characters.
+
+## Verify
+
+With the server running:
+
+```bash
+curl http://localhost:3000/health
+```
+
+For an HTTP server, the repository's verification script checks the full MCP
+handshake and the auth gate:
+
+```bash
+AUTH_REQUIRED=true ./scripts/verify-engram-server.sh
+```
+
+## Next steps
+
+- [Store your first memory](/docs/getting-started/first-memory/) — do a manual
+  round trip through the tools.
+- [Agent memory contract](/docs/agent-memory/contract/) — the rules agents
+  follow once connected.

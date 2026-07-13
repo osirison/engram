@@ -1,0 +1,104 @@
+---
+title: Enable observability
+description: Turn on Prometheus metrics scraping and OpenTelemetry tracing for the ENGRAM MCP server.
+sidebar:
+  order: 3
+---
+
+ENGRAM exposes Prometheus metrics out of the box and ships an optional
+OpenTelemetry tracing layer that is fully disabled until you point it at a
+collector. The complete metric catalogue and health-endpoint tables live in the
+[observability reference](/docs/reference/observability/).
+
+## Scrape Prometheus metrics
+
+Metrics are always exposed at `GET /health/metrics` in Prometheus text format —
+nothing to enable:
+
+```bash
+curl http://localhost:3000/health/metrics
+```
+
+Add a scrape job to your Prometheus config:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: engram-mcp-server
+    static_configs:
+      - targets: ['localhost:3000']
+    metrics_path: /health/metrics
+    scrape_interval: 15s
+```
+
+### Monitor per-agent memory adoption
+
+`engram_agent_memory_operations_total` shows whether each agent actually uses
+ENGRAM as primary memory. The `agent` label is the authenticated API-key id (or
+`local` for unauthenticated/stdio calls); `op` is `store` or `recall`.
+
+Store/recall rate per agent:
+
+```promql
+sum by (agent, op) (rate(engram_agent_memory_operations_total[5m]))
+```
+
+Daily adoption (an agent with no series has never used ENGRAM):
+
+```promql
+sum by (agent) (increase(engram_agent_memory_operations_total[1d]))
+```
+
+## Enable OpenTelemetry tracing
+
+Distributed tracing is **disabled by default** and activates when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set. When unset, the SDK is never loaded and
+there is zero overhead:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+OTEL_SERVICE_NAME=engram-mcp-server        # default
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
+```
+
+Traces are exported over OTLP HTTP to `<endpoint>/v1/traces`.
+
+### Instrumented paths
+
+HTTP requests and Express routes are auto-instrumented. Memory
+operations (`create`, `recall`, `reindex`) emit spans via the
+`@opentelemetry/api` integration.
+
+### Compatible backends
+
+Any OTLP-compatible collector:
+
+- [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
+- Jaeger (via OTLP receiver)
+- Grafana Tempo
+- Honeycomb, Datadog, Lightstep (OTLP endpoint)
+
+### Local tracing with Jaeger
+
+```bash
+# Start Jaeger with OTLP support
+docker run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:latest
+
+# Start ENGRAM with tracing
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+  pnpm --filter mcp-server dev
+```
+
+Open [http://localhost:16686](http://localhost:16686) to explore traces.
+
+## Wire health probes
+
+Point liveness probes at `GET /health` and readiness probes at
+`GET /health/ready` (which checks all backing-service dependencies). See
+[Deploy to production](/docs/how-to/deploy-production/) for the Docker
+Compose wiring and the
+[observability reference](/docs/reference/observability/#health-endpoints)
+for the endpoint table.
