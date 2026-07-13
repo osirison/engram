@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { PrismaService } from '@engram/database';
 import { MemoryLtmService, type LtmMemory } from '@engram/memory-ltm';
 import { MemoryStmService, type StmMemory } from '@engram/memory-stm';
 import { MemoryAuditService } from '../memory-audit.service';
@@ -78,6 +79,12 @@ const HISTORY_NOTE =
 const HISTORY_LIMIT = 200;
 
 /**
+ * Ids per `memory_links` query (SHARED-1). Large exports are chunked so the
+ * `IN (…)` lists stay far below Postgres's bind-parameter ceiling.
+ */
+const LINK_QUERY_CHUNK = 200;
+
+/**
  * Orchestrates a rich-markdown export (WP3 PLAN §T5). Pages LTM (and optionally
  * STM), sanitizes each memory, collects typed edges over the whole set, and
  * serializes each to per-memory files (or one single-doc file) plus a Map-of-
@@ -95,6 +102,7 @@ export class MemoryExportService {
     private readonly ltm: MemoryLtmService,
     @Optional() private readonly stm?: MemoryStmService,
     @Optional() private readonly audit?: MemoryAuditService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   async export(
@@ -193,21 +201,66 @@ export class MemoryExportService {
   }
 
   /**
-   * Load first-class `MemoryLink` rows (SHARED-1) for the export set. Returns
-   * `undefined` until SHARED-1 lands — the collector then reads metadata edges
-   * only, which is fully functional for everything that exists today (PLAN §5
-   * dependency note). WP-later: query `prisma.memoryLink` and map to
-   * {@link CollectableMemoryLink}.
+   * Load first-class `MemoryLink` rows (SHARED-1) for the export set. Queries
+   * both directions — rows whose source OR target is an exported memory — and
+   * lets `collectEdges` decide what attaches (its contract: direct edges hang
+   * off in-set sources, inverses off in-set targets; out-of-set sources are
+   * dropped, out-of-set targets flagged dangling). Scope/tag/date filtering is
+   * inherited from `ids` (the already-filtered export set); `userId` re-scopes
+   * the rows themselves so another tenant's links can never leak in. Returns
+   * `undefined` when Postgres is not wired (unit tests / lite profiles) — the
+   * collector then reads metadata edges only, which stays fully functional.
    */
-  protected loadMemoryLinks(
+  protected async loadMemoryLinks(
     userId: string,
     ids: readonly string[],
   ): Promise<CollectableMemoryLink[] | undefined> {
-    this.logger.debug(
-      `MemoryLink source not enabled (SHARED-1 pending); ${ids.length} memories ` +
-        `for ${userId} use metadata edges only`,
-    );
-    return Promise.resolve(undefined);
+    if (!this.prisma) {
+      this.logger.debug(
+        `MemoryLink source unavailable (no Postgres); ${ids.length} memories ` +
+          `for ${userId} use metadata edges only`,
+      );
+      return undefined;
+    }
+    if (ids.length === 0) return [];
+
+    // A row can match by source in one chunk and by target in another, so
+    // chunked paging may fetch it twice — dedupe on the SHARED-1 unique key.
+    const byUniqueKey = new Map<string, CollectableMemoryLink>();
+    for (let i = 0; i < ids.length; i += LINK_QUERY_CHUNK) {
+      const chunk = ids.slice(i, i + LINK_QUERY_CHUNK);
+      const rows = await this.prisma.memoryLink.findMany({
+        where: {
+          userId,
+          OR: [
+            { sourceMemoryId: { in: chunk } },
+            { targetMemoryId: { in: chunk } },
+          ],
+        },
+        // Deterministic order keeps deterministic exports byte-stable.
+        orderBy: [
+          { sourceMemoryId: 'asc' },
+          { relType: 'asc' },
+          { targetLocator: 'asc' },
+        ],
+        select: {
+          sourceMemoryId: true,
+          targetMemoryId: true,
+          targetLocator: true,
+          relType: true,
+          origin: true,
+          score: true,
+          note: true,
+        },
+      });
+      for (const row of rows) {
+        byUniqueKey.set(
+          `${row.sourceMemoryId} ${row.targetLocator} ${row.relType}`,
+          row,
+        );
+      }
+    }
+    return [...byUniqueKey.values()];
   }
 
   /**

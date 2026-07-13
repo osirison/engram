@@ -85,12 +85,47 @@ const makeAudit = (
   list: jest.fn((_userId: string, memoryId: string) => byId[memoryId] ?? []),
 });
 
+/** A `memory_links` row as the SHARED-1 seam selects it. */
+interface RawLinkRow {
+  sourceMemoryId: string;
+  targetMemoryId: string | null;
+  targetLocator: string;
+  relType: string;
+  origin: string;
+  score: number | null;
+  note: string | null;
+}
+
+const linkRow = (row: Partial<RawLinkRow> = {}): RawLinkRow => ({
+  sourceMemoryId: 'claaa1',
+  targetMemoryId: 'clbbb2',
+  targetLocator: 'id:clbbb2',
+  relType: 'relates-to',
+  origin: 'authored',
+  score: null,
+  note: null,
+  ...row,
+});
+
+/** Mock PrismaService exposing only the seam's `memoryLink.findMany`. */
+const makePrisma = (
+  rows: RawLinkRow[] = [],
+): { memoryLink: { findMany: jest.Mock } } => ({
+  memoryLink: { findMany: jest.fn().mockResolvedValue(rows) },
+});
+
 const svc = (
   ltm: unknown,
   stm?: unknown,
   audit?: unknown,
+  prisma?: unknown,
 ): MemoryExportService =>
-  new MemoryExportService(ltm as never, stm as never, audit as never);
+  new MemoryExportService(
+    ltm as never,
+    stm as never,
+    audit as never,
+    prisma as never,
+  );
 
 // ---- tests ----------------------------------------------------------------
 
@@ -165,6 +200,178 @@ describe('MemoryExportService.export (multi mode)', () => {
     expect(x).not.toContain('[[clGONE'); // dangling ⇒ plain text, no phantom note
     const manifest = JSON.parse(sink.files.get('manifest.json') as string);
     expect(manifest.danglingTargets).toEqual(['clGONE']);
+  });
+});
+
+describe('MemoryExportService MemoryLink seam (SHARED-1)', () => {
+  const links = (sink: InMemorySink, id: string): unknown[] =>
+    parseDocument(sink.files.get(`memories/memory-${id}--${id}.md`) as string)
+      .frontmatter.links;
+
+  it('emits first-class MemoryLink edges (authored ⇒ durable) plus in-set inverses', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' }), ltmMem({ id: 'clbbb2' })]);
+    const prisma = makePrisma([linkRow({ score: 0.7, note: 'authored link' })]);
+    const sink = new InMemorySink();
+    await svc(ltm, undefined, undefined, prisma).export(
+      { userId: 'qp', deterministic: true },
+      sink,
+    );
+
+    expect(links(sink, 'claaa1')).toContainEqual({
+      rel: 'relates-to',
+      target: 'clbbb2',
+      origin: 'durable',
+      score: 0.7,
+      note: 'authored link',
+    });
+    // Inverse on the in-set target (relates-to is its own inverse).
+    expect(links(sink, 'clbbb2')).toContainEqual({
+      rel: 'relates-to',
+      target: 'claaa1',
+      origin: 'durable',
+      score: 0.7,
+    });
+  });
+
+  it('queries both directions, scoped to the exporting user (isolation)', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' }), ltmMem({ id: 'clbbb2' })]);
+    const prisma = makePrisma();
+    const sink = new InMemorySink();
+    await svc(ltm, undefined, undefined, prisma).export(
+      { userId: 'qp', deterministic: true },
+      sink,
+    );
+
+    expect(prisma.memoryLink.findMany).toHaveBeenCalledTimes(1);
+    const args = prisma.memoryLink.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(args.where).toEqual({
+      userId: 'qp',
+      OR: [
+        { sourceMemoryId: { in: ['claaa1', 'clbbb2'] } },
+        { targetMemoryId: { in: ['claaa1', 'clbbb2'] } },
+      ],
+    });
+  });
+
+  it('dedupes a MemoryLink against the same metadata-derived edge, merging annotations', async () => {
+    const ltm = makeLtm([
+      ltmMem({
+        id: 'claaa1',
+        metadata: { duplicateMatches: [{ memoryId: 'clbbb2', score: 0.9 }] },
+      }),
+      ltmMem({ id: 'clbbb2' }),
+    ]);
+    // Same (rel, target) as the metadata edge — e.g. corpus consolidation wrote
+    // a first-class row alongside the legacy annotation.
+    const prisma = makePrisma([
+      linkRow({
+        relType: 'duplicate-of',
+        origin: 'derived',
+        note: 'consolidated',
+      }),
+    ]);
+    const sink = new InMemorySink();
+    await svc(ltm, undefined, undefined, prisma).export(
+      { userId: 'qp', deterministic: true },
+      sink,
+    );
+
+    const duplicateEdges = (
+      links(sink, 'claaa1') as Array<{ rel: string }>
+    ).filter((e) => e.rel === 'duplicate-of');
+    expect(duplicateEdges).toEqual([
+      {
+        rel: 'duplicate-of',
+        target: 'clbbb2',
+        origin: 'derived',
+        score: 0.9, // from the metadata edge
+        note: 'consolidated', // from the MemoryLink row
+      },
+    ]);
+  });
+
+  it('drops out-of-set sources and flags out-of-set targets dangling (locator fallback)', async () => {
+    const ltm = makeLtm([ltmMem({ id: 'claaa1' })]);
+    const prisma = makePrisma([
+      // Source not exported ⇒ nothing to attach the edge to.
+      linkRow({
+        sourceMemoryId: 'clzzz9',
+        targetMemoryId: 'claaa1',
+        targetLocator: 'id:claaa1',
+      }),
+      // Unresolved target (NULL id) ⇒ falls back to the locator, dangling.
+      linkRow({
+        sourceMemoryId: 'claaa1',
+        targetMemoryId: null,
+        targetLocator: 'id:clGONE',
+      }),
+    ]);
+    const sink = new InMemorySink();
+    await svc(ltm, undefined, undefined, prisma).export(
+      { userId: 'qp', deterministic: true },
+      sink,
+    );
+
+    expect(links(sink, 'claaa1')).toEqual([
+      {
+        rel: 'relates-to',
+        target: 'clGONE',
+        origin: 'durable',
+        dangling: true,
+      },
+    ]);
+    const manifest = JSON.parse(sink.files.get('manifest.json') as string);
+    expect(manifest.danglingTargets).toEqual(['clGONE']);
+  });
+
+  it('chunks large id sets and dedupes a row fetched via both directions', async () => {
+    // 250 ids ⇒ two 200-id chunks. The single link's source sorts into chunk 1
+    // and its target into chunk 2, so both queries return the same row.
+    const ids = Array.from(
+      { length: 250 },
+      (_, i) => `clm${String(i).padStart(4, '0')}`,
+    );
+    const ltm = makeLtm(ids.map((id) => ltmMem({ id })));
+    const row = linkRow({
+      sourceMemoryId: ids[0] as string,
+      targetMemoryId: ids[249] as string,
+      targetLocator: `id:${ids[249] as string}`,
+    });
+    const prisma = makePrisma([row]);
+    const sink = new InMemorySink();
+    await svc(ltm, undefined, undefined, prisma).export(
+      { userId: 'qp', deterministic: true },
+      sink,
+    );
+
+    expect(prisma.memoryLink.findMany).toHaveBeenCalledTimes(2);
+    expect(links(sink, ids[0] as string)).toEqual([
+      {
+        rel: 'relates-to',
+        target: ids[249],
+        origin: 'durable',
+      },
+    ]);
+  });
+
+  it('exports metadata edges only when Postgres is not wired (no prisma)', async () => {
+    const ltm = makeLtm([
+      ltmMem({
+        id: 'claaa1',
+        metadata: { duplicateMatches: [{ memoryId: 'clbbb2', score: 0.9 }] },
+      }),
+      ltmMem({ id: 'clbbb2' }),
+    ]);
+    const sink = new InMemorySink();
+    await svc(ltm).export({ userId: 'qp', deterministic: true }, sink);
+    expect(links(sink, 'claaa1')).toContainEqual({
+      rel: 'duplicate-of',
+      target: 'clbbb2',
+      origin: 'derived',
+      score: 0.9,
+    });
   });
 });
 
