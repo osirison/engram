@@ -19,6 +19,7 @@ class VersionConflictError extends Error {
 import { MemoryImportService, type ImportRunInput } from './memory-import.service.js';
 import { ImportSecretPolicyError, SecretScanner } from './secrets/secret-scanner.js';
 import { computeContentHash } from './content-hash.js';
+import { namespaceSourceKey } from './ledger/source-key.js';
 import type { ImportIR, ImportedFact } from './ir/types.js';
 import type { SourceAdapter } from './ir/source-adapter.interface.js';
 
@@ -33,10 +34,10 @@ function fact(over: Partial<ImportedFact> & { sourceKey: string; content: string
   };
 }
 
-function makeIR(facts: ImportedFact[]): ImportIR {
+function makeIR(facts: ImportedFact[], rootPath = '/vault'): ImportIR {
   return {
     sourceTool: 'markdown',
-    rootPath: '/vault',
+    rootPath,
     facts,
     provenance: {
       importedAt: '2026-07-06T00:00:00.000Z',
@@ -45,6 +46,9 @@ function makeIR(facts: ImportedFact[]): ImportIR {
     },
   };
 }
+
+/** Root-namespaced ledger key (#236) for the default test root. */
+const ns = (bareKey: string, rootPath = '/vault'): string => namespaceSourceKey(bareKey, rootPath);
 
 /** Adapter stub returning a fixed IR. */
 function stubAdapter(ir: ImportIR): SourceAdapter {
@@ -91,6 +95,25 @@ function makeLedger(
         return { ...e };
       }
     ),
+    // One-time in-place key rename (#236 legacy-row upgrade).
+    migrateKey: vi.fn(async (_u: string, fromKey: string, toKey: string) => {
+      const r = rows.get(fromKey);
+      if (!r || rows.has(toKey)) return null;
+      rows.delete(fromKey);
+      const moved = { ...r, sourceKey: toKey };
+      rows.set(toKey, moved);
+      return {
+        userId: 'qp',
+        sourceTool: 'markdown',
+        sourcePath: toKey,
+        importBatchId: 'old',
+        importedAt: new Date(),
+        updatedAt: new Date(),
+        id: toKey,
+        lastWrittenVersion: null,
+        ...moved,
+      };
+    }),
   };
 }
 
@@ -109,6 +132,8 @@ function makeLtm() {
       metadata: {},
       version: 2,
     })),
+    // Convergence probe on a CAS miss; null keeps the classic skip behavior.
+    get: vi.fn(async () => null),
   };
 }
 
@@ -405,7 +430,7 @@ describe('MemoryImportService.run', () => {
       expect(updateInput.expectedVersion).toBe(4);
       // The ledger records the version the update produced, arming the next CAS.
       expect(ledger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceKey: 'markdown:a.md', lastWrittenVersion: 5 })
+        expect.objectContaining({ sourceKey: ns('markdown:a.md'), lastWrittenVersion: 5 })
       );
     });
 
@@ -425,7 +450,7 @@ describe('MemoryImportService.run', () => {
       // Ledger hash + version stay stale so the next run retries/re-reports.
       expect(ledger.upsert).toHaveBeenCalledTimes(1);
       expect(ledger.upsert).not.toHaveBeenCalledWith(
-        expect.objectContaining({ sourceKey: 'markdown:a.md' })
+        expect.objectContaining({ sourceKey: ns('markdown:a.md') })
       );
       // The skipped fact is not link-resolved (its content was not imported).
       const batchArg = resolver.resolveBatch.mock.calls[0]?.[0] as {
@@ -443,7 +468,7 @@ describe('MemoryImportService.run', () => {
       expect('expectedVersion' in updateInput).toBe(false);
       // Backfill: the version written by the LWW update is now in the ledger.
       expect(ledger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceKey: 'markdown:a.md', lastWrittenVersion: 9 })
+        expect.objectContaining({ sourceKey: ns('markdown:a.md'), lastWrittenVersion: 9 })
       );
     });
 
@@ -452,7 +477,7 @@ describe('MemoryImportService.run', () => {
       const ir = makeIR([fact({ sourceKey: 'markdown:new.md', content: 'Brand new' })]);
       await build(ir, ledger, ltm, resolver).run(baseInput);
       expect(ledger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceKey: 'markdown:new.md', lastWrittenVersion: 1 })
+        expect.objectContaining({ sourceKey: ns('markdown:new.md'), lastWrittenVersion: 1 })
       );
     });
 
@@ -472,7 +497,7 @@ describe('MemoryImportService.run', () => {
       const summary = await build(ir, ledger, ltm, resolver).run(baseInput);
       expect(summary.mergedIntoExisting).toBe(1);
       expect(ledger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceKey: 'cursor:x.mdc', lastWrittenVersion: 4 })
+        expect.objectContaining({ sourceKey: ns('cursor:x.mdc'), lastWrittenVersion: 4 })
       );
     });
   });
@@ -534,6 +559,10 @@ describe('MemoryImportService.run', () => {
             return { ...row };
           }
         ),
+        get: vi.fn(async (_u: string, id: string) => {
+          const row = store.get(id);
+          return row ? { ...row } : null;
+        }),
         /** Out-of-band ENGRAM edit (simulates an agent's update_memory). */
         agentEdit(id: string, content: string): void {
           const row = store.get(id);
@@ -557,7 +586,7 @@ describe('MemoryImportService.run', () => {
       ).run(baseInput);
       expect(run1.created).toBe(1);
       const memoryId = [...versionedLtm.store.keys()][0]!;
-      expect(ledger.rows.get('markdown:a.md')).toMatchObject({ lastWrittenVersion: 1 });
+      expect(ledger.rows.get(ns('markdown:a.md'))).toMatchObject({ lastWrittenVersion: 1 });
 
       // Out-of-band agent edit inside ENGRAM: version 1 → 2.
       versionedLtm.agentEdit(memoryId, 'Agent-improved fact');
@@ -575,7 +604,7 @@ describe('MemoryImportService.run', () => {
       // The memory keeps the agent's content — never clobbered by the source.
       expect(versionedLtm.store.get(memoryId)?.content).toBe('Agent-improved fact');
       // Ledger still points at the ORIGINAL import (hash + version stale).
-      expect(ledger.rows.get('markdown:a.md')).toMatchObject({
+      expect(ledger.rows.get(ns('markdown:a.md'))).toMatchObject({
         contentHash: computeContentHash('Fact v1 from source'),
         lastWrittenVersion: 1,
       });
@@ -590,6 +619,147 @@ describe('MemoryImportService.run', () => {
       ).run(baseInput);
       expect(run3.skippedConcurrentEdit).toBe(1);
       expect(versionedLtm.store.get(memoryId)?.content).toBe('Agent-improved fact');
+
+      // Run 4 (reconcile): the operator aligns the FILE with the ENGRAM edit →
+      // the CAS still misses, but the contents now converge, so the ledger is
+      // refreshed (hash + current version) and the conflict CLEARS.
+      const run4 = await build(
+        makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Agent-improved fact' })]),
+        ledger,
+        versionedLtm,
+        resolver
+      ).run(baseInput);
+      expect(run4.reconciled).toBe(1);
+      expect(run4.skippedConcurrentEdit).toBe(0);
+      expect(versionedLtm.store.get(memoryId)?.content).toBe('Agent-improved fact');
+      expect(ledger.rows.get(ns('markdown:a.md'))).toMatchObject({
+        contentHash: computeContentHash('Agent-improved fact'),
+        lastWrittenVersion: 2,
+      });
+
+      // Run 5: with the ledger converged, the next run is a plain skip.
+      const run5 = await build(
+        makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Agent-improved fact' })]),
+        ledger,
+        versionedLtm,
+        resolver
+      ).run(baseInput);
+      expect(run5.skipped).toBe(1);
+      expect(run5.reconciled).toBe(0);
+      expect(run5.skippedConcurrentEdit).toBe(0);
+    });
+  });
+
+  describe('multi-root ledger namespacing (#236)', () => {
+    it('two roots sharing a relpath hit DISTINCT ledger rows (no thrash)', async () => {
+      const ledger = makeLedger();
+      const factsA = [fact({ sourceKey: 'markdown:CLAUDE.md', content: 'Repo A rules' })];
+      const factsB = [fact({ sourceKey: 'markdown:CLAUDE.md', content: 'Repo B rules' })];
+
+      // First import of each root creates its own memory + ledger row.
+      const runA1 = await build(makeIR(factsA, '/repo-a'), ledger, ltm, resolver).run({
+        ...baseInput,
+        path: '/repo-a',
+      });
+      const runB1 = await build(makeIR(factsB, '/repo-b'), ledger, ltm, resolver).run({
+        ...baseInput,
+        path: '/repo-b',
+      });
+      expect(runA1.created).toBe(1);
+      expect(runB1.created).toBe(1);
+      const keyA = ns('markdown:CLAUDE.md', '/repo-a');
+      const keyB = ns('markdown:CLAUDE.md', '/repo-b');
+      expect(keyA).not.toBe(keyB);
+      expect(ledger.rows.get(keyA)).toBeDefined();
+      expect(ledger.rows.get(keyB)).toBeDefined();
+      expect(ledger.rows.get(keyA)?.memoryId).not.toBe(ledger.rows.get(keyB)?.memoryId);
+
+      // Alternating unchanged re-imports are pure skips — the old single-row
+      // thrash (each root re-"updating" the other's content) is gone.
+      const runA2 = await build(makeIR(factsA, '/repo-a'), ledger, ltm, resolver).run({
+        ...baseInput,
+        path: '/repo-a',
+      });
+      const runB2 = await build(makeIR(factsB, '/repo-b'), ledger, ltm, resolver).run({
+        ...baseInput,
+        path: '/repo-b',
+      });
+      expect(runA2.skipped).toBe(1);
+      expect(runA2.updated).toBe(0);
+      expect(runB2.skipped).toBe(1);
+      expect(runB2.updated).toBe(0);
+      expect(ltm.update).not.toHaveBeenCalled();
+    });
+
+    it('legacy bare-key row is migrated in place — same memory, no duplicate', async () => {
+      // A pre-namespacing ledger row under the BARE adapter key.
+      const ledger = makeLedger([
+        {
+          sourceKey: 'markdown:a.md',
+          memoryId: 'mem-legacy',
+          contentHash: computeContentHash('Alpha note'),
+          lastWrittenVersion: 3,
+        },
+      ]);
+      const ir = makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Alpha note' })]);
+      const summary = await build(ir, ledger, ltm, resolver).run(baseInput);
+
+      // Unchanged content: idempotent skip through the migrated row.
+      expect(summary.skipped).toBe(1);
+      expect(summary.created).toBe(0);
+      expect(ltm.create).not.toHaveBeenCalled();
+      expect(ledger.migrateKey).toHaveBeenCalledWith('qp', 'markdown:a.md', ns('markdown:a.md'));
+      // Renamed in place: old key gone, new key keeps the memory mapping.
+      expect(ledger.rows.get('markdown:a.md')).toBeUndefined();
+      expect(ledger.rows.get(ns('markdown:a.md'))).toMatchObject({ memoryId: 'mem-legacy' });
+    });
+
+    it('legacy row migration + drift updates the SAME memory under CAS', async () => {
+      const ledger = makeLedger([
+        {
+          sourceKey: 'markdown:a.md',
+          memoryId: 'mem-legacy',
+          contentHash: computeContentHash('Alpha note'),
+          lastWrittenVersion: 3,
+        },
+      ]);
+      ltm.update.mockResolvedValue({ id: 'mem-legacy', content: '', metadata: {}, version: 4 });
+      const ir = makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Alpha note EDITED' })]);
+      const summary = await build(ir, ledger, ltm, resolver).run(baseInput);
+
+      expect(summary.updated).toBe(1);
+      expect(summary.created).toBe(0);
+      // The drift update still CASes on the migrated row's version.
+      const updateInput = ltm.update.mock.calls[0]?.[2] as { expectedVersion?: number };
+      expect(updateInput.expectedVersion).toBe(3);
+      expect(ledger.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKey: ns('markdown:a.md'), lastWrittenVersion: 4 })
+      );
+    });
+
+    it('lost migration race: re-probes the namespaced key the winner wrote', async () => {
+      const ledger = makeLedger([
+        {
+          sourceKey: 'markdown:a.md',
+          memoryId: 'mem-legacy',
+          contentHash: computeContentHash('Alpha note'),
+        },
+      ]);
+      // Simulate a concurrent writer winning the rename: migrateKey reports a
+      // race (null) but the namespaced row exists on re-probe.
+      ledger.migrateKey.mockImplementation(async () => {
+        const row = ledger.rows.get('markdown:a.md');
+        if (row) {
+          ledger.rows.delete('markdown:a.md');
+          ledger.rows.set(ns('markdown:a.md'), { ...row, sourceKey: ns('markdown:a.md') });
+        }
+        return null;
+      });
+      const ir = makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Alpha note' })]);
+      const summary = await build(ir, ledger, ltm, resolver).run(baseInput);
+      expect(summary.skipped).toBe(1);
+      expect(summary.created).toBe(0);
+      expect(ltm.create).not.toHaveBeenCalled();
     });
   });
 });

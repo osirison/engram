@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MemoryLtmService } from '@engram/memory-ltm';
 import { MemoryImportService } from './memory-import.service.js';
 import { ImportLedgerService } from './ledger/import-ledger.service.js';
+import { namespaceSourceKey } from './ledger/source-key.js';
 import { SecretScanner } from './secrets/secret-scanner.js';
 import { computeContentHash } from './content-hash.js';
 import type { ImportIR } from './ir/types.js';
@@ -29,6 +30,8 @@ const describePg = connectionString ? describe : describe.skip;
 // CUID1-shaped so it passes the LTM service's userId validation.
 const USER_ID = 'clg4t3casskip00000000001';
 const SOURCE_KEY = 'markdown:g4t3-cas.md';
+// Ledger rows are keyed by the root-namespaced form of the adapter key (#236).
+const LEDGER_KEY = namespaceSourceKey(SOURCE_KEY, '/vault');
 
 function makeIR(content: string): ImportIR {
   return {
@@ -130,7 +133,7 @@ describePg('G4-T3 import-vs-agent-edit CAS-skip (integration)', () => {
       expect(run1.created).toBe(1);
       expect(run1.skippedConcurrentEdit).toBe(0);
 
-      const entry1 = await ledger.find(USER_ID, SOURCE_KEY);
+      const entry1 = await ledger.find(USER_ID, LEDGER_KEY);
       expect(entry1).not.toBeNull();
       expect(entry1!.lastWrittenVersion).toBe(1);
       const memoryId = entry1!.memoryId;
@@ -154,7 +157,7 @@ describePg('G4-T3 import-vs-agent-edit CAS-skip (integration)', () => {
       expect(memory?.content).toBe('Agent-improved fact');
 
       // Ledger row untouched: stale hash + version → the next run re-reports.
-      const entry2 = await ledger.find(USER_ID, SOURCE_KEY);
+      const entry2 = await ledger.find(USER_ID, LEDGER_KEY);
       expect(entry2!.contentHash).toBe(computeContentHash('Fact v1 from source'));
       expect(entry2!.lastWrittenVersion).toBe(1);
     }

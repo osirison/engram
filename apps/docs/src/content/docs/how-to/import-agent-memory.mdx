@@ -60,7 +60,15 @@ memory/lite profiles (it requires Postgres).
 ## Idempotency
 
 Import is safe to re-run. A per-source **ledger** (`memory_import_sources`,
-unique on `(userId, sourceKey)`) records each imported fact's content hash:
+unique on `(userId, sourceKey)`) records each imported fact's content hash.
+The key is **namespaced per import root** —
+`<tool>@<12-hex-root-fingerprint>:<relpath>[#anchor]`, the fingerprint being
+`sha256(realpath(root))` truncated to 12 hex chars — so two roots that share a
+relative path (two repos each with a `CLAUDE.md`) get distinct ledger rows
+instead of thrashing on one. Rows written before namespacing (bare
+`<tool>:<relpath>` keys) are renamed in place on their first re-import — same
+memory, no duplicates, `(userId, sourceKey)` uniqueness unchanged. Decision per
+hash:
 
 - unchanged hash → **skipped** (no-op);
 - changed hash → **updated** in place (re-embedded);
@@ -82,10 +90,13 @@ Decision 13).
 
 On a skip the ledger row is deliberately left stale (old hash + version), so
 **every following run re-reports the conflict** until you reconcile: either edit
-the memory in ENGRAM to what you want, or align the source file with it (an
-unchanged-hash source is an idempotent skip). This also backstops the watcher's
-whole-run conflict check — even a `--force` sync cannot clobber a concurrently
-edited memory row.
+the memory in ENGRAM to what you want, or align the source file with it. When
+the two sides **converge** (the file's content equals the memory's current
+content), the next re-import detects it on the CAS miss, refreshes the ledger
+without writing the memory, and counts it as `reconciled` in the summary — the
+conflict clears instead of re-reporting forever. This also backstops the
+watcher's whole-run conflict check — even a `--force` sync cannot clobber a
+concurrently edited memory row.
 
 Caveat (NULL backfill): ledger rows written before `lastWrittenVersion` existed
 carry no version, so the **first** re-import of such a source cannot CAS — it is

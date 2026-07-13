@@ -8,6 +8,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { MemoryLtmService, LtmMemoryQuotaExceededError, type LtmMemory } from '@engram/memory-ltm';
 import { ImportLedgerService } from './ledger/import-ledger.service.js';
+import { namespaceSourceKey } from './ledger/source-key.js';
 import { LinkResolver, type ResolverFact } from './links/link-resolver.service.js';
 import { SecretScanner, type SecretPolicy } from './secrets/secret-scanner.js';
 import { estimateEmbeddingCost, type CostEstimate } from './embedding/cost-estimator.js';
@@ -64,6 +65,13 @@ export interface ImportSummary {
    * until the operator reconciles.
    */
   skippedConcurrentEdit: number;
+  /**
+   * CAS-missed re-imports whose file content turned out to EQUAL the memory's
+   * current content — the operator aligned the two sides, so the importer
+   * adopted the memory's version/hash into the ledger (no memory write) and the
+   * conflict is cleared instead of being re-reported forever.
+   */
+  reconciled: number;
   /** New sourceKey whose content merged into an existing memory (multi-source). */
   mergedIntoExisting: number;
   /** Facts dropped by the `skip` secrets policy. */
@@ -82,6 +90,34 @@ interface ProvenanceSource {
   sourceTool: SourceTool;
   sourcePath: string;
   sourceKey: string;
+}
+
+/** Input for a persistence-free sanitized parse (`parseFacts`). */
+export interface ParseFactsInput {
+  source: SourceTool;
+  /** Server-side path the selected adapter parses. */
+  path: string;
+  /** Sanitization policy for the returned contents (default `redact`). */
+  secretsPolicy?: SecretPolicy;
+  splitHeadings?: boolean;
+  includeGlobal?: boolean;
+}
+
+/**
+ * One parsed, SANITIZED fact as the sync bridge sees it (WP5 T11 / #239) —
+ * no database access, nothing persisted.
+ */
+export interface ParsedSyncFact {
+  /** Root-namespaced ledger key (#236) — matches `memory_import_sources.sourceKey`. */
+  ledgerKey: string;
+  /** Bare adapter key (`<tool>:<relpath>[#anchor]`) — matches pre-namespacing rows. */
+  sourceKey: string;
+  sourcePath: string;
+  anchor?: string;
+  /** Sanitized under `secretsPolicy` — safe to persist (never raw file bytes). */
+  content: string;
+  contentHash: string;
+  tags: string[];
 }
 
 @Injectable()
@@ -120,7 +156,7 @@ export class MemoryImportService {
     const summary = this.emptySummary(input, scope, importBatchId, dryRun, ir);
 
     // Secret scan every fact up-front so dry-run and real runs report identically.
-    const scanned = this.scanFacts(ir, secretsPolicy, summary);
+    const scanned = this.scanFacts(ir, secretsPolicy, summary.secrets);
 
     if (dryRun) {
       return this.finishDryRun(summary, scanned, input.model);
@@ -179,6 +215,38 @@ export class MemoryImportService {
     return summary;
   }
 
+  /**
+   * Persistence-free sanitized parse (WP5 T11 / #239). Runs the source adapter
+   * and the secret scan exactly as `run()` would, then returns the facts
+   * WITHOUT touching the database — the sync bridge uses this to obtain the
+   * file's version of a conflicted fact for the `conflict`-tagged review copy.
+   * Facts dropped by the `skip` policy are excluded (never surface a secret).
+   */
+  async parseFacts(input: ParseFactsInput): Promise<ParsedSyncFact[]> {
+    const adapter = this.registry?.get(input.source);
+    if (!adapter) {
+      throw new Error(`No import adapter registered for source '${input.source}'`);
+    }
+    const ir = await adapter.parse(input.path, {
+      importBatchId: `parse-${randomUUID()}`,
+      importedAt: new Date().toISOString(),
+      ...(input.splitHeadings !== undefined ? { splitHeadings: input.splitHeadings } : {}),
+      ...(input.includeGlobal !== undefined ? { includeGlobal: input.includeGlobal } : {}),
+    });
+    const scanned = this.scanFacts(ir, input.secretsPolicy ?? 'redact', []);
+    return scanned
+      .filter((s) => !s.skip)
+      .map((s) => ({
+        ledgerKey: namespaceSourceKey(s.fact.sourceKey, ir.rootPath),
+        sourceKey: s.fact.sourceKey,
+        sourcePath: s.fact.sourcePath,
+        ...(s.fact.anchor !== undefined ? { anchor: s.fact.anchor } : {}),
+        content: s.content,
+        contentHash: computeContentHash(s.content),
+        tags: [...new Set([...s.fact.tags, ...s.extraTags])],
+      }));
+  }
+
   // ── persistence ─────────────────────────────────────────────────────────────
 
   private async persistFact(
@@ -192,7 +260,30 @@ export class MemoryImportService {
     const { fact, content, extraTags } = entry;
     const userId = summary.userId;
     const contentHash = computeContentHash(content);
-    const existing = await this.ledger.find(userId, fact.sourceKey);
+    // #236: the ledger key is the adapter's bare key namespaced with a stable
+    // fingerprint of the import root, so two roots sharing a relpath (two
+    // repos each with a CLAUDE.md) hit distinct ledger rows instead of
+    // thrashing on one shared row. See ledger/source-key.ts for the design.
+    const ledgerKey = namespaceSourceKey(fact.sourceKey, ir.rootPath);
+    let existing = await this.ledger.find(userId, ledgerKey);
+    if (!existing) {
+      // Compat path (#236): rows written before namespacing live under the
+      // bare adapter key. Claim + rename that row in place (one-time upgrade)
+      // so this re-import keeps updating the SAME memory — no duplicate is
+      // created and hash-based idempotency is preserved. If the rename loses
+      // a race, re-probe the namespaced key the winner wrote.
+      const legacy = await this.ledger.find(userId, fact.sourceKey);
+      if (legacy) {
+        existing =
+          (await this.ledger.migrateKey(userId, fact.sourceKey, ledgerKey)) ??
+          (await this.ledger.find(userId, ledgerKey));
+        if (existing) {
+          this.logger.log(
+            `Ledger key migrated to root namespace: '${fact.sourceKey}' → '${ledgerKey}'`
+          );
+        }
+      }
+    }
 
     if (existing && existing.contentHash === contentHash) {
       summary.skipped++;
@@ -202,7 +293,7 @@ export class MemoryImportService {
     const source: ProvenanceSource = {
       sourceTool: ir.sourceTool,
       sourcePath: fact.sourcePath,
-      sourceKey: fact.sourceKey,
+      sourceKey: ledgerKey,
     };
     const tags = [...new Set([...fact.tags, ...extraTags])];
 
@@ -238,12 +329,39 @@ export class MemoryImportService {
         );
       } catch (err) {
         if (isLtmVersionConflict(err)) {
+          // Convergence check (#239 reconciliation): when the file content now
+          // EQUALS the memory's current content, the operator has aligned the
+          // two sides — adopt the memory's version + the file hash into the
+          // ledger (no memory write) so the conflict CLEARS instead of being
+          // re-reported forever. This is the documented "align the source file
+          // with the ENGRAM edit" reconcile path, made effective.
+          const current = await Promise.resolve()
+            .then(() => this.ltm.get(userId, existing.memoryId, summary.organizationId, scope))
+            .catch(() => null);
+          if (current && computeContentHash(current.content) === contentHash) {
+            await this.ledger.upsert({
+              userId,
+              memoryId: existing.memoryId,
+              sourceTool: ir.sourceTool,
+              sourcePath: fact.sourcePath,
+              sourceKey: ledgerKey,
+              contentHash,
+              importBatchId,
+              lastWrittenVersion: current.version,
+            });
+            summary.reconciled++;
+            this.logger.log(
+              `Reconciled ${ledgerKey}: file content matches memory ${existing.memoryId} ` +
+                `(v${current.version}) — ledger refreshed, conflict cleared`
+            );
+            return existing.memoryId;
+          }
           // CAS miss → SKIP: keep the agent's content, count it for the
           // operator, and deliberately leave the ledger row (hash + version)
           // untouched so the next run retries and re-reports the conflict.
           summary.skippedConcurrentEdit++;
           this.logger.warn(
-            `Concurrent ENGRAM edit on memory ${existing.memoryId} (${fact.sourceKey}): ` +
+            `Concurrent ENGRAM edit on memory ${existing.memoryId} (${ledgerKey}): ` +
               `last imported at v${expected ?? '?'}, now v${err.currentVersion ?? '?'} — ` +
               `skipping re-import (CAS-skip); reconcile in ENGRAM or update the source file`
           );
@@ -281,7 +399,7 @@ export class MemoryImportService {
       memoryId,
       sourceTool: ir.sourceTool,
       sourcePath: fact.sourcePath,
-      sourceKey: fact.sourceKey,
+      sourceKey: ledgerKey,
       contentHash,
       importBatchId,
       ...(typeof writtenVersion === 'number' ? { lastWrittenVersion: writtenVersion } : {}),
@@ -330,7 +448,8 @@ export class MemoryImportService {
       provenance: {
         sourceTool: ir.sourceTool,
         sourcePath: fact.sourcePath,
-        sourceKey: fact.sourceKey,
+        // Root-namespaced (#236) — matches the ledger row for this fact.
+        sourceKey: sources[0]?.sourceKey ?? fact.sourceKey,
         importedAt,
         importBatchId,
         contentHash,
@@ -374,7 +493,11 @@ export class MemoryImportService {
 
   // ── secret scanning ───────────────────────────────────────────────────────────
 
-  private scanFacts(ir: ImportIR, policy: SecretPolicy, summary: ImportSummary): ScannedFact[] {
+  private scanFacts(
+    ir: ImportIR,
+    policy: SecretPolicy,
+    secretsOut: Array<{ path: string; patterns: string[] }>
+  ): ScannedFact[] {
     const out: ScannedFact[] = [];
     for (const fact of ir.facts) {
       // `fail` throws ImportSecretPolicyError up to run()'s caller (aborts).
@@ -389,7 +512,7 @@ export class MemoryImportService {
         policy
       );
       if (result.matches.length > 0) {
-        summary.secrets.push({
+        secretsOut.push({
           path: fact.sourcePath,
           patterns: result.matches.map((m) => m.pattern),
         });
@@ -472,6 +595,7 @@ export class MemoryImportService {
       updated: 0,
       skipped: 0,
       skippedConcurrentEdit: 0,
+      reconciled: 0,
       mergedIntoExisting: 0,
       secretsSkipped: 0,
       failed: 0,

@@ -101,6 +101,28 @@ export class ImportLedgerService {
     return toEntry(row);
   }
 
+  /**
+   * One-time in-place key upgrade (#236): rename `fromKey` → `toKey` for a
+   * user, preserving the row (and its memoryId, hash, version) so a re-import
+   * under the new namespaced key updates the same memory instead of creating a
+   * duplicate. Returns the renamed row, or null when the rename lost a race —
+   * `fromKey` is already gone (P2025) or `toKey` already exists (P2002); the
+   * caller should re-probe `toKey`.
+   */
+  async migrateKey(userId: string, fromKey: string, toKey: string): Promise<LedgerEntry | null> {
+    try {
+      const row = await this.prisma.memoryImportSource.update({
+        where: { userId_sourceKey: { userId, sourceKey: fromKey } },
+        data: { sourceKey: toKey },
+      });
+      return toEntry(row);
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (code === 'P2025' || code === 'P2002') return null;
+      throw err;
+    }
+  }
+
   /** All ledger rows for a user whose content matches `contentHash`. */
   async findByContentHash(userId: string, contentHash: string): Promise<LedgerEntry[]> {
     const rows = await this.prisma.memoryImportSource.findMany({

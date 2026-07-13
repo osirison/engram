@@ -52,6 +52,11 @@ export {
   type LedgerEntry,
   type UpsertLedgerInput,
 } from './ledger/import-ledger.service.js';
+export {
+  rootFingerprint,
+  namespaceSourceKey,
+  ROOT_FINGERPRINT_LENGTH,
+} from './ledger/source-key.js';
 
 // ── Secret / PII scan (T4) ──────────────────────────────────────────────────
 export {
@@ -101,6 +106,8 @@ export {
   type ImportRunInput,
   type ImportSummary,
   type ImportLinkSummary,
+  type ParseFactsInput,
+  type ParsedSyncFact,
 } from './memory-import.service.js';
 
 // ── NestJS module ───────────────────────────────────────────────────────────

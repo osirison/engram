@@ -43,9 +43,38 @@ of clobbering — the file change waits for manual reconciliation. Run with
 `--force` to override. (This is one-way: files → ENGRAM. Exporting ENGRAM back to
 files is WP3's job, kept separate.)
 
-> Current scope: a conflict on any one memory defers the whole source's sync
-> until reconciled or forced. Storing the file version as a separate
-> `conflict`-tagged memory for side-by-side review is a planned enhancement.
+### Conflict copies — nothing is lost
+
+When the skip fires and the file has **genuinely diverged** (its content differs
+from both the last import and the memory's current content), the file's version
+is stored as a separate **`conflict`-tagged memory** in the dedicated
+`sync-conflict` scope, linked to the contested memory via
+`metadata.conflict.memoryId` (plus `sourceKey`, `sourcePath`, `contentHash`).
+The contested memory is never touched. Guarantees:
+
+- **One live copy per contested memory** — re-running the sync on the same
+  unresolved conflict is a no-op; a further file edit refreshes the single
+  copy in place (latest file version wins for review), never a second copy.
+- **No copy for noise** — a memory-only edit (file unchanged since import) or a
+  file already matching the ENGRAM edit stores nothing.
+- **Automatic cleanup** — once a later sync actually imports or reconciles the
+  source (the conflict clears), the stale copy is removed.
+
+To reconcile: either update the source file to match the ENGRAM edit, or accept
+the file's version by pasting the copy's content into the contested memory —
+then re-run with `--force`. The importer detects the convergence (file content
+now equals the memory), refreshes the ledger without writing the memory
+(`reconciled` in the run summary), the conflict clears, and the copy is removed.
+
+### Multi-root ledger namespacing
+
+Ledger keys are namespaced per import root
+(`<tool>@<12-hex-root-fingerprint>:<relpath>[#anchor]`), so watching two
+projects that share a relative path (e.g. two repos each with a `CLAUDE.md`) no
+longer collides on one ledger row. Pre-existing rows under the bare
+`<tool>:<relpath>` key are renamed in place on their first re-import — same
+memory, no duplicates. The `(userId, sourceKey)` unique key structure is
+unchanged.
 
 ## Running it
 
