@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { PrismaService } from '@engram/database';
+import { MemoryLtmService } from '@engram/memory-ltm';
 import {
   ImportLedgerService,
   MemoryImportService,
@@ -107,6 +108,7 @@ async function main(): Promise<void> {
     app.get(MemoryImportService),
     app.get(ImportLedgerService),
     app.get(PrismaService),
+    app.get(MemoryLtmService),
   );
 
   const runSync = (spec: SyncSpec): void => {

@@ -141,8 +141,19 @@ export const apiKeyScopeSchema = z.enum(
 // User ID validation
 export const userIdSchema = createCompatibleIdSchema('Invalid user ID format');
 
-// Memory ID validation
-export const memoryIdSchema = createCompatibleIdSchema('Invalid memory ID format');
+// Memory ID validation. Unlike the other id schemas, memory ids come in THREE
+// formats: legacy CUID and CUID2 (LTM rows minted by Prisma) plus UUID — the
+// STM tier mints `randomUUID()` ids (memory-stm.service.ts). Rejecting UUIDs
+// here would make every by-id MCP tool (get/update/delete/promote/reembed)
+// unable to address a short-term memory (found by the #233 e2e prose spec).
+const uuidIdSchema = z.string().uuid();
+export const memoryIdSchema = z.string().refine((value) => {
+  return (
+    cuid1IdSchema.safeParse(value).success ||
+    cuid2IdSchema.safeParse(value).success ||
+    uuidIdSchema.safeParse(value).success
+  );
+}, 'Invalid memory ID format');
 
 // Cursor validation accepts legacy CUID and new CUID2 values.
 export const cursorIdSchema = createCompatibleIdSchema('Invalid cursor ID format');

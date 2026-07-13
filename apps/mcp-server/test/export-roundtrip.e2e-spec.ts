@@ -13,11 +13,13 @@
  * `packages/memory-interchange/src/roundtrip.spec.ts`):
  *  - Compare `durableProjection` SETS keyed by content, IGNORING the volatile
  *    DB id (re-import mints new cuids) and derived edges / volatile fields.
- *  - Durable edges are seeded as METADATA edges (an insight's `sourceMemoryIds`
- *    → `derived-from`/`source-of`, origin `durable`) because the export read
- *    path's `loadMemoryLinks` seam still returns undefined (SHARED-1 not enabled
- *    on export). A NON-VACUITY guard asserts at least one durable edge actually
- *    survives, so a wiring regression cannot let the test pass with zero links.
+ *  - Durable edges are seeded from BOTH sources the collector reads: METADATA
+ *    edges (an insight's `sourceMemoryIds` → `derived-from`/`source-of`, origin
+ *    `durable`) and a first-class `MemoryLink` row (`relates-to`, origin
+ *    `authored` ⇒ durable) now that the `loadMemoryLinks` seam queries
+ *    `memory_links` (SHARED-1, #234). NON-VACUITY guards assert each source
+ *    actually survives, so a wiring regression cannot let the test pass with
+ *    zero links.
  *  - `id:<originalId>` frontmatter links dangle after a clean re-import (the new
  *    tenant has none of the original ids), so the link's `targetLocator` retains
  *    the original id string — which is exactly what makes the (rel, target)
@@ -90,6 +92,7 @@ suite('export → import round-trip (G6) — DB side', () => {
   let srcUserId: string;
   let destUserId: string;
   let vaultDir: string;
+  let companionId: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -143,6 +146,28 @@ suite('export → import round-trip (G6) — DB side', () => {
       },
     });
 
+    // Seed a first-class MemoryLink row (SHARED-1, #234): source --relates-to-->
+    // companion, origin `authored` (⇒ exported as durable). The export seam must
+    // read this row and emit the edge (plus its in-set inverse on the companion).
+    const companion = await ltm.create({
+      userId: srcUserId,
+      content:
+        'G6 companion fact: run pnpm install before building a worktree.',
+      tags: ['convention'],
+      skipDuplicateCheck: true,
+    });
+    companionId = companion.id;
+    await prisma.memoryLink.create({
+      data: {
+        userId: srcUserId,
+        sourceMemoryId: source.id,
+        targetMemoryId: companion.id,
+        targetLocator: `id:${companion.id}`,
+        relType: 'relates-to',
+        origin: 'authored',
+      },
+    });
+
     // Export the source tenant's vault to a temp directory (deterministic).
     vaultDir = mkdtempSync(join(tmpdir(), 'g6-vault-'));
     await exportSvc.export(
@@ -167,8 +192,31 @@ suite('export → import round-trip (G6) — DB side', () => {
     const durableCount = readMemoryDocs(vaultDir)
       .map((c) => durableProjectionOfDocument(parseDocument(c)))
       .reduce((n, p) => n + p.durableLinks.length, 0);
-    // derived-from (on the insight) + source-of (on the source) ⇒ ≥ 2.
-    expect(durableCount).toBeGreaterThanOrEqual(2);
+    // derived-from (insight) + source-of (source) + relates-to × 2 (MemoryLink
+    // row + its in-set inverse) ⇒ ≥ 4.
+    expect(durableCount).toBeGreaterThanOrEqual(4);
+  });
+
+  it('exports the seeded MemoryLink row as a first-class durable edge (SHARED-1, #234)', () => {
+    const projections = readMemoryDocs(vaultDir).map((c) =>
+      durableProjectionOfDocument(parseDocument(c)),
+    );
+    // Direct edge on the source memory…
+    expect(
+      projections.some((p) =>
+        p.durableLinks.some(
+          (l) => l.rel === 'relates-to' && l.target === companionId,
+        ),
+      ),
+    ).toBe(true);
+    // …and its inverse on the in-set companion (relates-to is its own inverse).
+    const companion = projections.find((p) =>
+      p.content.startsWith('G6 companion fact'),
+    );
+    expect(companion).toBeDefined();
+    expect(companion!.durableLinks).toContainEqual(
+      expect.objectContaining({ rel: 'relates-to', origin: 'durable' }),
+    );
   });
 
   it('reproduces the durable projection of every exported memory after a clean re-import', async () => {
@@ -213,8 +261,9 @@ suite('export → import round-trip (G6) — DB side', () => {
       for (const tag of ep.tags) expect(rp!.tags).toContain(tag);
       totalDurable += ep.durableLinks.length;
     }
-    // Non-vacuity: the durable edges genuinely survived the DB round-trip.
-    expect(totalDurable).toBeGreaterThanOrEqual(2);
+    // Non-vacuity: the durable edges — metadata-derived AND MemoryLink-backed —
+    // genuinely survived the DB round-trip.
+    expect(totalDurable).toBeGreaterThanOrEqual(4);
   });
 
   it('is idempotent: a second import adds no memories or links (SHARED-1 unique key)', async () => {

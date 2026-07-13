@@ -24,13 +24,19 @@ describe('ImportLedgerService', () => {
       findUnique: ReturnType<typeof vi.fn>;
       upsert: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
     };
   };
   let service: ImportLedgerService;
 
   beforeEach(() => {
     prisma = {
-      memoryImportSource: { findUnique: vi.fn(), upsert: vi.fn(), findMany: vi.fn() },
+      memoryImportSource: {
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
+      },
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     service = new ImportLedgerService(prisma as any);
@@ -93,6 +99,51 @@ describe('ImportLedgerService', () => {
       importBatchId: 'batch2',
     });
     expect(entry.contentHash).toBe('hash-b');
+  });
+
+  describe('migrateKey() — #236 legacy-row upgrade', () => {
+    it('renames a row in place via the composite unique key', async () => {
+      const renamed = makeRow({
+        sourceKey: 'claude-code@abc123def456:memory/feedback-worktree.md',
+      });
+      prisma.memoryImportSource.update.mockResolvedValue(renamed);
+      const entry = await service.migrateKey(
+        'qp',
+        'claude-code:memory/feedback-worktree.md',
+        'claude-code@abc123def456:memory/feedback-worktree.md'
+      );
+      expect(prisma.memoryImportSource.update).toHaveBeenCalledWith({
+        where: {
+          userId_sourceKey: {
+            userId: 'qp',
+            sourceKey: 'claude-code:memory/feedback-worktree.md',
+          },
+        },
+        data: { sourceKey: 'claude-code@abc123def456:memory/feedback-worktree.md' },
+      });
+      // The row (memoryId, hash, version) survives — only the key changes.
+      expect(entry?.memoryId).toBe('mem1');
+      expect(entry?.sourceKey).toBe('claude-code@abc123def456:memory/feedback-worktree.md');
+    });
+
+    it('returns null when the source row is already gone (P2025 race)', async () => {
+      prisma.memoryImportSource.update.mockRejectedValue(
+        Object.assign(new Error('not found'), { code: 'P2025' })
+      );
+      expect(await service.migrateKey('qp', 'from', 'to')).toBeNull();
+    });
+
+    it('returns null when the target key already exists (P2002 race)', async () => {
+      prisma.memoryImportSource.update.mockRejectedValue(
+        Object.assign(new Error('unique violation'), { code: 'P2002' })
+      );
+      expect(await service.migrateKey('qp', 'from', 'to')).toBeNull();
+    });
+
+    it('rethrows unexpected database errors', async () => {
+      prisma.memoryImportSource.update.mockRejectedValue(new Error('connection lost'));
+      await expect(service.migrateKey('qp', 'from', 'to')).rejects.toThrow('connection lost');
+    });
   });
 
   it('findByContentHash() queries by (userId, contentHash)', async () => {
