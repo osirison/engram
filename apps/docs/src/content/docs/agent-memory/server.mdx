@@ -1,11 +1,14 @@
 ---
 title: ENGRAM Agent Memory Server
-description: Runbook for running one persistent, loopback-bound ENGRAM MCP server that all five AI coding agents share as primary memory
+description: Runbook for running one persistent, loopback-bound ENGRAM MCP server that all five AI coding agents share as primary memory.
+sidebar:
+  order: 2
+  label: Server
 ---
 
-> Also published at [engram.events/docs/agent-memory/server/](https://engram.events/docs/agent-memory/server/). This repository copy is canonical — agents read it at runtime.
-
-# ENGRAM agent memory server
+> The canonical copy of this runbook lives in the repository at
+> [`docs/agent-memory-server.md`](https://github.com/osirison/engram/blob/main/docs/agent-memory-server.md) —
+> agents read it from the repo at runtime. This page is a published mirror.
 
 ## Overview
 
@@ -32,9 +35,9 @@ The server runs as a persistent process configured for shared HTTP access:
   the `/mcp` route. Store, recall, and the rest of the tool surface are MCP
   tools, not HTTP verbs.
 
-The rules every agent follows once connected live in
-[agent-memory-contract.md](agent-memory-contract.md); the per-agent client
-wiring lives in [agent-memory-clients.md](agent-memory-clients.md).
+The rules every agent follows once connected live in the
+[agent memory contract](/docs/agent-memory/contract/); the per-agent client
+wiring lives in [client wiring](/docs/agent-memory/clients/).
 
 ## Why one server
 
@@ -58,8 +61,8 @@ user service or Docker Compose) and how to verify it.
 
 The recommended way to run the persistent server on a single Linux machine is
 the systemd **user** unit that ships with the repository at
-[deploy/systemd/engram-mcp.service](../deploy/systemd/engram-mcp.service). It
-fixes `MCP_TRANSPORT=streamable-http`, `PORT=3000`, and `HOST=127.0.0.1`; sets
+[`deploy/systemd/engram-mcp.service`](https://github.com/osirison/engram/blob/main/deploy/systemd/engram-mcp.service).
+It fixes `MCP_TRANSPORT=streamable-http`, `PORT=3000`, and `HOST=127.0.0.1`; sets
 `WorkingDirectory=%h/Cloud/Projects/engram` and
 `EnvironmentFile=%h/.engram/engram-mcp.env`; and hardens the process with
 `Restart=always`, `NoNewPrivileges=true`, and `PrivateTmp=true`.
@@ -127,7 +130,7 @@ QDRANT_URL=http://127.0.0.1:6333
 # Auth gate — every agent authenticates with a per-agent API key.
 AUTH_REQUIRED=true
 
-# Durability profile: memory | lite | enterprise (see docs/SETUP.md).
+# Durability profile: memory | lite | enterprise (see the getting-started guides).
 DEPLOYMENT_PROFILE=enterprise
 
 # Admin-only operations (reindex, backfill). Not an agent key.
@@ -139,21 +142,25 @@ OPENAI_API_KEY=sk-CHANGE_ME
 ```
 
 Choose `DEPLOYMENT_PROFILE` for your durability and infrastructure needs — the
-profile table and per-profile setup live in [SETUP.md](SETUP.md). A single-user
-machine can run `memory` (no external services, data lost on exit) or `lite`
-(Postgres only, encrypted at rest); the sample above shows the full-stack
-`enterprise` variables. Leaner profiles need fewer of the datastore URLs, so
-delete the ones that profile does not use.
+profile table and per-profile setup live in
+[Getting started](/docs/getting-started/). A single-user machine can run
+`memory` (no external services, data lost on exit) or `lite` (Postgres only,
+encrypted at rest); the sample above shows the full-stack `enterprise`
+variables. Leaner profiles need fewer of the datastore URLs, so delete the ones
+that profile does not use.
 
 Generating and rotating the per-agent API keys (and turning the `AUTH_REQUIRED`
-gate on) is covered in [security/agent-keys.md](security/agent-keys.md).
+gate on) is covered in
+[Provision agent API keys](/docs/how-to/provision-agent-keys/).
 
 ## Docker Compose alternative
 
 To run the server in a container instead of directly on the host, use the
-production image path: [docker-compose.prod.yml](../docker-compose.prod.yml)
+production image path:
+[`docker-compose.prod.yml`](https://github.com/osirison/engram/blob/main/docker-compose.prod.yml)
 (which builds from `apps/mcp-server/Dockerfile`, listening on port `3000`). The
-full container build and release flow is documented in [deploy.md](deploy.md).
+full container build and release flow is documented in
+[Deploy to production](/docs/how-to/deploy-production/).
 
 The container path serves the same shared MCP server, so it must run with the
 same environment as the systemd unit — in particular
@@ -164,8 +171,8 @@ per-machine, matching the `HOST=127.0.0.1` bind described above.
 ## Health and verification
 
 The repository ships a verification script at
-[scripts/verify-engram-server.sh](../scripts/verify-engram-server.sh). It runs
-four checks against a running server:
+[`scripts/verify-engram-server.sh`](https://github.com/osirison/engram/blob/main/scripts/verify-engram-server.sh).
+It runs four checks against a running server:
 
 1. `/health` answers `200`.
 2. The MCP Streamable-HTTP handshake works — an `initialize` request returns an
@@ -204,11 +211,13 @@ port directly. Keep this server on loopback.
 
 ## See also
 
-- [agent-memory-contract.md](agent-memory-contract.md) — the one contract every
+- [Agent memory contract](/docs/agent-memory/contract/) — the one contract every
   agent follows so ENGRAM behaves as shared primary memory.
-- [agent-memory-clients.md](agent-memory-clients.md) — per-agent client wiring
+- [Client wiring](/docs/agent-memory/clients/) — per-agent client wiring
   for Claude Code, Copilot, Cursor, Codex, and Gemini.
-- [security/agent-keys.md](security/agent-keys.md) — per-agent API keys and
-  enabling the `AUTH_REQUIRED` gate.
-- [SETUP.md](SETUP.md) — profiles, local development, and MCP client setup.
-- [deploy.md](deploy.md) — production Docker image build and release flow.
+- [Provision agent API keys](/docs/how-to/provision-agent-keys/) — per-agent API
+  keys and enabling the `AUTH_REQUIRED` gate.
+- [Getting started](/docs/getting-started/) — profiles, local development, and
+  MCP client setup.
+- [Deploy to production](/docs/how-to/deploy-production/) — production Docker
+  image build and release flow.

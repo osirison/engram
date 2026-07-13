@@ -1,11 +1,14 @@
 ---
 title: Agent Memory Contract
-description: The single canonical contract every AI coding agent follows so ENGRAM behaves as one shared, searchable primary memory across Claude Code, Copilot, Cursor, Codex, and Gemini
+description: The single canonical contract every AI coding agent follows so ENGRAM behaves as one shared, searchable primary memory across Claude Code, Copilot, Cursor, Codex, and Gemini.
+sidebar:
+  order: 1
+  label: Contract
 ---
 
-> Also published at [engram.events/docs/agent-memory/contract/](https://engram.events/docs/agent-memory/contract/). This repository copy is canonical — agents read it at runtime.
-
-# Agent Memory Contract
+> The canonical copy of this contract lives in the repository at
+> [`docs/agent-memory-contract.md`](https://github.com/osirison/engram/blob/main/docs/agent-memory-contract.md) —
+> agents read it from the repo at runtime. This page is a published mirror.
 
 This is the **one contract** every AI coding agent (Claude Code, GitHub Copilot,
 Cursor, OpenAI Codex, Gemini) follows so that ENGRAM behaves as a single shared,
@@ -28,8 +31,9 @@ value with a **hyphen or uppercase letter** (e.g. `engram-user`, `qp-global`) is
 live in `userId` — it lives entirely in the tool `scope` field (see below).
 
 Per-agent isolation is provided by **per-agent API keys** (see
-[`security/agent-keys.md`](./security/agent-keys.md)), not by distinct userIds.
-All agents share `userId: "qp"`; the key identifies which agent wrote a memory.
+[Provision agent API keys](/docs/how-to/provision-agent-keys/)), not by distinct
+userIds. All agents share `userId: "qp"`; the key identifies which agent wrote a
+memory.
 
 ## Scope grammar
 
