@@ -105,6 +105,7 @@ Set only to enable integration test suites; never required at runtime.
 | Variable | Description |
 | -------- | ----------- |
 | `E2E_ENABLED` | Enables an integration test suite. |
+| `LTM_CONSOLIDATION_TEST_URL` | Enables an integration test suite. |
 | `LTM_LIFECYCLE_TEST_URL` | Enables an integration test suite. |
 | `LTM_QUOTA_TEST_URL` | Enables an integration test suite. |
 | `LTM_RESTORE_TEST_URL` | Enables an integration test suite. |

@@ -1,11 +1,11 @@
 ---
 title: "consolidate_memories"
-description: "Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage."
+description: "Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage. NOT corpus consolidation — near-duplicate merging is `consolidate_corpus`."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage.
+Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage. NOT corpus consolidation — near-duplicate merging is `consolidate_corpus`.
 
 **Auth mode:** `admin`  
 **Admin tool:** requires `MCP_ADMIN_TOKEN`.  

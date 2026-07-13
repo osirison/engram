@@ -56,11 +56,15 @@ existing vector search, merge/supersede), staleness review (last-recalled-at tra
 and a contradiction policy (latest-wins vs both-kept-flagged). Lands in: new WP7;
 `packages/memory-ltm` + a scheduled job in `apps/mcp-server`.
 
-**Status (2026-07-13): one task remaining (G3-T2 corpus consolidation — batch B5).**
+**Status (2026-07-13): CLOSED — all G3 tasks built.**
 Decay/dedup/staleness shipped earlier; recall excludes superseded (G3-T1, #255),
 lifecycle config boot-validated (G3-T5, #255), lifecycle writes CAS+audited (G3-T3,
 #258), contradiction policy is both-kept-flagged by default with deterministic
-value-swap detection (G3-T4/T6, B4; Decisions 3/8/9).
+value-swap detection (G3-T4/T6, B4; Decisions 3/8/9). Corpus consolidation (G3-T2,
+B5) clusters the [0.85, 0.97) near-duplicate band via `CorpusConsolidationService`
+
+- admin tool `consolidate_corpus` (dryRun defaults TRUE) + scheduler
+  (`MEMORY_CONSOLIDATION_INTERVAL_MS`, default 0 = OFF — review-gated opt-in).
 
 ## G4 — Concurrent-writer safety (high)
 

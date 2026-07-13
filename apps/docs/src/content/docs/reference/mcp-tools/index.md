@@ -5,7 +5,7 @@ description: Every MCP tool the Engram server registers, with its auth mode and 
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Engram registers **27 MCP tools**. Availability is further
+Engram registers **28 MCP tools**. Availability is further
 narrowed by the active deployment profile (the queue/reindex maintenance
 tools require the enterprise profile).
 
@@ -30,7 +30,8 @@ tools require the enterprise profile).
 | [`get_reindex_status`](./get-reindex-status) | `admin` | — | Get status and progress for a queued reindex job (queued/running/completed/failed) |
 | [`cancel_reindex_job`](./cancel-reindex-job) | `admin` | — | Cancel a queued/running reindex job and preserve progress cursor |
 | [`retry_reindex_job`](./retry-reindex-job) | `admin` | — | Retry a failed/cancelled reindex job from its last persisted cursor |
-| [`consolidate_memories`](./consolidate-memories) | `admin` | — | Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage. |
+| [`consolidate_memories`](./consolidate-memories) | `admin` | — | Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage. NOT corpus consolidation — near-duplicate merging is `consolidate_corpus`. |
+| [`consolidate_corpus`](./consolidate-corpus) | `admin` | — | Corpus consolidation (admin): cluster NEAR-duplicate long-term memories in the [MEMORY_CONSOLIDATION_MERGE_THRESHOLD, MEMORY_DUPLICATE_THRESHOLD) similarity band, keep one canonical per cluster (highest importance, most recent on ties), union tags onto it, and mark the rest superseded + linked. NOT `consolidate_memories` (the unrelated STM→LTM promotion pass). Review-gated: dryRun defaults to TRUE and reports would-be merges without mutating — pass dryRun=false explicitly to merge. Idempotent and cursor-resumable. |
 | [`remember`](./remember) | `identity` | `memories:write` | Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata. |
 | [`forget`](./forget) | `identity` | `memories:delete` | Smart delete: find memories by natural-language concept and optionally delete them. Dry-run by default — pass confirm=true to execute deletion. |
 | [`reflect`](./reflect) | `identity` | `memories:read` | Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range. |
