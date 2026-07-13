@@ -1,0 +1,97 @@
+---
+title: Reindex embeddings
+description: Rebuild the vector store from Postgres with the reindex CLI or the admin MCP tools — synchronous, queued, resumable, and recreate modes.
+sidebar:
+  order: 9
+---
+
+Reindexing rebuilds the derived vector index from Postgres, the source of
+truth. Run it after a backend switch, an embedding model change, a vector
+store loss, or a bulk import. Design details (cursor resumability, per-item
+failure isolation): [Reindex & backfill](/docs/architecture/reindex-backfill/).
+
+There are two front doors to the same engine: a **CLI** for operators on the
+server host, and **admin MCP tools** for driving it through an MCP client.
+
+## Option A — CLI (on the server host)
+
+```bash
+pnpm --filter mcp-server reindex
+```
+
+The CLI bootstraps the app context directly, so it needs the server's `.env`
+(`DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`/backend config,
+`DEPLOYMENT_PROFILE`) but **not** `MCP_ADMIN_TOKEN` — shell access to the
+host is the credential.
+
+Flags:
+
+| Flag | Effect |
+| ---- | ------ |
+| `--user <id>` | Reindex one user only (default: all users) |
+| `--batch-size <n>` | Memories per page, 1–1000 (default 100) |
+| `--regenerate` | Call the embeddings provider per memory instead of reusing stored vectors — required after a model/dimension change |
+| `--recreate` | Drop and rebuild the entire index first (clean, orphan-free). Destructive and non-atomic — recall is empty until the rebuild completes. Unscoped runs only: ignored with `--user`, `--cursor`, or `--max` |
+| `--max <n>` | Stop after n memories |
+| `--cursor <id>` | Resume from a previous run's reported cursor |
+
+Exit code is `0` on a clean pass and `1` when any item failed; the summary
+prints `processed / indexed / skipped / failed`.
+
+## Option B — admin MCP tools
+
+All five tools are `auth: 'admin'`: the input carries an `adminToken` that
+must equal `MCP_ADMIN_TOKEN` (constant-time compared). They are available in
+the enterprise profile; `lite` keeps only the synchronous tool, and the
+`memory` profile has none (no vector store) — see
+[deployment profiles](/docs/architecture/deployment-profiles/#the-tool-surface-is-profile-filtered-too).
+
+**Synchronous** — blocks until done, returns the summary. Fine for scoped or
+small corpora:
+
+```json
+{
+  "name": "reindex_memories",
+  "arguments": {
+    "adminToken": "<MCP_ADMIN_TOKEN>",
+    "userId": "qp",
+    "batchSize": 100
+  }
+}
+```
+
+**Queued** — returns a `jobId` immediately; the job persists progress in
+Redis and survives observation:
+
+```json
+{ "name": "queue_reindex_memories", "arguments": { "adminToken": "<MCP_ADMIN_TOKEN>" } }
+```
+
+Then poll and manage:
+
+- `get_reindex_status` — `{ adminToken, jobId }` → state
+  (`queued`/`running`/`completed`/`failed`), progress counts, cursor.
+- `cancel_reindex_job` — stops the job, **preserving its cursor**.
+- `retry_reindex_job` — resumes a failed/cancelled job **from its persisted
+  cursor**, not from scratch.
+
+The queue processes one job at a time by design; queueing a second reindex
+serializes behind the first. Full parameter tables:
+[MCP tools reference](/docs/reference/mcp-tools/).
+
+## Choosing reuse vs regenerate
+
+| Situation | Mode |
+| --------- | ---- |
+| Backend switch (qdrant ⇄ pgvector) | reuse (default) — vectors are valid, no provider cost |
+| Vector store lost/corrupted | reuse (default) |
+| Embedding model or dimension change | **regenerate** |
+| Imported with `EMBEDDING_PROVIDER=local`, upgrading to real vectors | **regenerate** |
+| A few individually stale memories | `reembed_memory` per id instead of a full pass |
+
+## Verify
+
+- Summary shows `failed: 0` (a `partial` pass logs which items failed —
+  they are counted and skipped, never allowed to corrupt Postgres).
+- `recall` returns semantic hits for known memories.
+- Re-running is always safe: upserts by stable id are idempotent.

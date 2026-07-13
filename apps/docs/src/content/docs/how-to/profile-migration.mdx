@@ -13,12 +13,23 @@ data loss before cutover. SLO targets live in the
 If `pnpm` is not on your `PATH`, replace the leading `pnpm` in any command with
 `npm exec --yes pnpm@11.5.0 --`.
 
-> **Note:** the `verify-migration` / `cutover-migration` / `abort-migration`
-> workspace scripts referenced in steps 4–6 are the runbook's documented
-> interface to the migration tooling (`apps/mcp-server/src/migration/` —
-> dual-write coordinator, backfill, verifier, state machine). If your build
-> does not expose them yet, check the `scripts` block of
-> `apps/mcp-server/package.json` for the current entrypoints before cutover.
+:::caution[Steps 4–6 are aspirational — no operator entrypoint ships today]
+The migration tooling itself is real and tested
+(`apps/mcp-server/src/migration/` — dual-write coordinator, backfill service,
+verifier, and the `MigrationCheckpoint` state machine). What does **not**
+exist yet is an operator-facing entrypoint: the `verify-migration` /
+`cutover-migration` / `abort-migration` workspace scripts shown in steps 4–6
+are the *planned* interface and are **not present** in
+`apps/mcp-server/package.json`, nor is there an equivalent CLI, HTTP
+endpoint, or MCP tool.
+
+Today the state transitions are service methods only —
+`VerifierService.verify()`, `MigrationStateService.completeMigration()`, and
+`MigrationStateService.abortMigration()` — reachable solely from code running
+inside the server (for example a one-off bootstrap script that resolves them
+from the Nest application context). Until the scripts land, treat steps 4–6
+as the specification of that procedure, not as copy-pasteable commands.
+:::
 
 ## Prerequisites
 
@@ -75,8 +86,9 @@ duplicates.
 
 ## Step 4 — Verify (count + hash comparison)
 
-Run the verifier to confirm the `profile-lite` source matches the
-`profile-enterprise` shadow before allowing cutover.
+Run the verifier (`VerifierService.verify()`) to confirm the `profile-lite`
+source matches the `profile-enterprise` shadow before allowing cutover. The
+command below is the planned interface (see the caution above):
 
 ```bash
 DEPLOYMENT_PROFILE=enterprise \
@@ -91,7 +103,8 @@ state to `cutting_over`.
 
 ## Step 5 — Cutover
 
-Once verification passes, complete the migration:
+Once verification passes, complete the migration
+(`MigrationStateService.completeMigration()`; planned interface below):
 
 ```bash
 DEPLOYMENT_PROFILE=enterprise \
@@ -104,7 +117,8 @@ during the rollback window.
 
 ## Step 6 — Rollback
 
-If `profile-enterprise` is unhealthy after cutover, abort the migration:
+If `profile-enterprise` is unhealthy after cutover, abort the migration
+(`MigrationStateService.abortMigration()`; planned interface below):
 
 ```bash
 DEPLOYMENT_PROFILE=enterprise \

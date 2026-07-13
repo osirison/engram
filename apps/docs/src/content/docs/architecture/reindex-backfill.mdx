@@ -1,0 +1,85 @@
+---
+title: Reindex & backfill
+description: Why the vector index can always be rebuilt from Postgres — the cursor-resumable algorithm, per-item failure isolation, and the Redis-backed job queue.
+sidebar:
+  order: 7
+---
+
+Because the vector store is a
+[derived index](/docs/architecture/vector-backends/), Engram needs exactly one
+recovery primitive: **rebuild the index from Postgres**. That primitive —
+`MemoryLtmService.reindex()` (`packages/memory-ltm`) — is designed around
+three requirements: it must be *resumable* (corpora are large), *idempotent*
+(operators re-run things), and *non-corrupting* (a bad row must not poison
+the pass).
+
+## The cursor-resumable algorithm
+
+Reindex walks long-term memories in `id` order, in batches
+(`batchSize`, default 100, clamped 1–1000):
+
+1. Fetch the next batch after the cursor (Prisma cursor pagination on `id`).
+2. For each row, obtain a vector — **reuse** the stored `embedding` float
+   array by default, or **regenerate** via the embeddings provider when asked.
+3. Upsert into the vector store (deterministic ids make this idempotent).
+4. Advance the cursor to the last processed id and report progress.
+
+The cursor is the whole resumability story: any interrupted run — crash,
+cancel, deploy — can continue from its last reported cursor with no
+duplicates, because upserts by stable id converge. The same design shows up
+in the decay job and corpus consolidation; "batch + cursor + idempotent
+write" is the house pattern for corpus-scale jobs.
+
+### Per-item failure isolation
+
+A reindex summary counts `processed` / `indexed` / `skipped` / `failed`.
+Failures (a malformed vector, a store hiccup) are logged and **counted, not
+thrown** — Postgres is never touched, and one bad row costs one increment
+instead of the whole pass. `skipped` covers legitimately vector-less rows
+(embedding-excluded imports, empty embeddings with reuse mode). The metrics
+layer surfaces a pass with `failed > 0` as `partial`, so dashboards can
+distinguish clean from lossy runs.
+
+### `recreate`: the destructive variant
+
+An unscoped rebuild can first `reset()` the vector store (drop everything)
+for a clean, orphan-free index. This is deliberately restricted: it is
+CLI-only (`--recreate`), refused when scoped to a user, cursor, or max-count
+(a partial rebuild after a full wipe would leave holes), and non-atomic —
+recall is degraded until the backfill completes.
+
+## Sync vs queued: two front doors, one engine
+
+| Surface | What it is | When |
+| ------- | ---------- | ---- |
+| `pnpm --filter mcp-server reindex` (CLI) | Direct service call in a bootstrapped app context; no MCP token needed; supports `--user`, `--batch-size`, `--regenerate`, `--recreate`, `--max`, `--cursor` | Operator at a shell on the server host |
+| `reindex_memories` (MCP tool) | Synchronous pass, returns the final summary; admin-gated (`adminToken` = `MCP_ADMIN_TOKEN`) | Small/scoped rebuilds from an MCP client |
+| `queue_reindex_memories` + `get_reindex_status` / `cancel_reindex_job` / `retry_reindex_job` | Asynchronous job with persisted state | Large corpora, anything you would not want to block on |
+
+The queue (`apps/mcp-server/src/memory/reindex-queue.service.ts`) persists
+job state in Redis (24 h TTL) and processes jobs on a **single serial
+promise chain** — one reindex at a time, by design: concurrent full-corpus
+rebuilds would contend on the same vector store for zero benefit. Job states
+(`queued → running → completed | failed | cancelled`) and every transition
+are audit-logged; `cancel` preserves the progress cursor, and `retry` resumes
+a failed or cancelled job **from that cursor** rather than starting over.
+
+Profile availability follows capability, not convention: `lite` keeps the
+synchronous tool but hides the queue tools (no Redis worker), `memory` hides
+all of them (no vector store) — see
+[Deployment profiles](/docs/architecture/deployment-profiles/).
+
+## When reindex actually runs
+
+- **Backend switch** (`qdrant` ⇄ `pgvector`) — the new index starts empty;
+  backfill populates it. [Guide](/docs/how-to/change-vector-backend/).
+- **Embedding model/provider change** — vectors must be regenerated
+  (`--regenerate`), not copied. [Guide](/docs/how-to/configure-embeddings/).
+- **Vector store loss** — restore-from-backup or plain rebuild;
+  reindex is the recovery path promised by the
+  [backup runbook](/docs/how-to/backup-and-restore/).
+- **Bulk import** — imports embedded with the `local` provider are upgraded
+  to real embeddings by a regenerating reindex.
+  [Runbook](/docs/agent-memory/migration/).
+
+Operational step-by-step: [Reindex embeddings](/docs/how-to/reindex-embeddings/).

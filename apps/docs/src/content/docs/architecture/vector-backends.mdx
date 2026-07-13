@@ -1,0 +1,100 @@
+---
+title: Vector backends
+description: Why the vector store is a swappable, derived index — Qdrant vs pgvector trade-offs, the shared VectorStore interface, and the in-process hybrid fallback.
+sidebar:
+  order: 5
+---
+
+Semantic recall needs a vector index, but Engram treats that index as
+**derived state**: Postgres holds the truth (including the raw `embedding`
+float array), and the vector store can be dropped and
+[rebuilt](/docs/architecture/reindex-backfill/) at any time. That framing is
+what makes the backend swappable — losing or switching an index is an
+operational task, not a data-loss event.
+
+## One interface, two backends
+
+Both backends implement the same `VectorStore` interface
+(`packages/vector-store`) and are injected through `VECTOR_STORE_TOKEN`;
+`VECTOR_BACKEND` selects the implementation at boot:
+
+```ts
+interface VectorStore {
+  readonly backend: 'qdrant' | 'pgvector';
+  ensureReady(dimensions: number): Promise<void>;
+  upsert(records: VectorRecord[]): Promise<void>;
+  delete(ids: string[]): Promise<void>;
+  reset(): Promise<void>;
+  search(vector: number[], filter: VectorSearchFilter, limit?: number): Promise<VectorSearchResult[]>;
+}
+```
+
+Every search carries a `VectorSearchFilter` with a **required `userId`** —
+tenant isolation is enforced inside the index (payload filter in Qdrant,
+`WHERE` clause in pgvector), never bolted on after the fact. Optional filters
+(`scope`, `tags`, `type`, `organizationId`, created-date range) ride along the
+same way.
+
+### Qdrant (`VECTOR_BACKEND=qdrant`, the default)
+
+`QdrantVectorStore` (`packages/vector-store/src/qdrant.vector-store.ts`)
+stores vectors in a dedicated Qdrant collection (`VECTOR_COLLECTION`, default
+`engram_memories`) with cosine similarity. Memory CUIDs are mapped to
+deterministic UUIDv5 point ids, so upserts are idempotent.
+
+Choose Qdrant when vector search is hot enough to deserve its own service:
+it scales independently of Postgres, and its ANN engine is purpose-built.
+The cost is one more service to run, monitor, back up — and keep consistent
+(it is *eventually* consistent with Postgres between reindex runs).
+
+### pgvector (`VECTOR_BACKEND=pgvector`)
+
+`PgVectorStore` (`packages/vector-store/src/pgvector.vector-store.ts`) uses
+the `embedding_vec vector(1536)` column **on the `memories` table itself**,
+with an HNSW index created at runtime. No extra service; the vector index
+lives in the same transactional boundary as the data, and one `pg_dump`
+covers both.
+
+Tuning is exposed through three optional variables (see the
+[configuration guide](/docs/reference/configuration-guide/#pgvector-hnsw-tuning)):
+`PGVECTOR_HNSW_M` and `PGVECTOR_HNSW_EF_CONSTRUCTION` at index build time,
+`PGVECTOR_HNSW_EF_SEARCH` per query (recall/latency trade-off).
+
+The operational catch: the Postgres image must ship the extension —
+`pgvector/pgvector:pg16` or later. Plain `postgres:*-alpine` images will fail
+at `ensureReady()`.
+
+### Choosing
+
+| Concern | Qdrant | pgvector |
+| ------- | ------ | -------- |
+| Extra service to operate | yes | no |
+| Backup story | separate snapshot | included in `pg_dump` |
+| Scale vector search independently | yes | no (shares Postgres) |
+| Consistency with source of truth | derived, reindex to heal | same database |
+| Docker requirement | `qdrant` image | `pgvector/pgvector:pg16+` |
+
+Both pass the same test suite and the same latency benchmark
+(`pnpm bench:backends`); switching is an env change plus a reindex —
+see [Change vector backend](/docs/how-to/change-vector-backend/).
+
+## The no-backend fallback: hybrid transient retrieval
+
+Under the `memory` and `lite` profiles there is no external vector store at
+all. Recall still works: `HybridTransientRetriever`
+(`packages/memory-ltm/src/retrieval/hybrid-transient-retriever.ts`) builds an
+in-process index over the user's LTM rows — a lexical token-postings index
+plus normalized embedding vectors — and fuses both rankings with Reciprocal
+Rank Fusion (k=60, equal weights), the same fusion recipe as the eval
+harness. Ranking behavior stays consistent from laptop profile to production,
+which is precisely why the recipe is shared rather than reimplemented.
+
+## Where ranking actually happens
+
+The vector store returns raw similarity hits, deliberately over-fetched
+(3× the requested limit, capped at 100). `MemoryLtmService.semanticSearch()`
+then hydrates the rows from Postgres, drops
+[superseded memories](/docs/architecture/consolidation-and-decay/#superseded-and-contradicted-status),
+and re-ranks by blended **similarity + recency + importance** before trimming
+to the requested limit. Keeping ranking in the service layer means backend
+choice never changes recall semantics — the index only proposes candidates.

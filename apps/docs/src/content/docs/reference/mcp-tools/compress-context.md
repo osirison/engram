@@ -1,11 +1,11 @@
 ---
 title: "compress_context"
-description: "Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget."
+description: "Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget. Use it to inject task-specific background under a size limit measured in characters; prompt_context is the token-budgeted variant, and load_context primes a session when there is no query yet."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget.
+Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget. Use it to inject task-specific background under a size limit measured in characters; prompt_context is the token-budgeted variant, and load_context primes a session when there is no query yet.
 
 **Auth mode:** `identity`  
 **Required scope:** `memories:read`  

@@ -1,0 +1,85 @@
+---
+title: Run a load test
+description: Measure write and recall throughput against Postgres + pgvector with scripts/load-test.mjs — flags, prerequisites, and reading the report.
+sidebar:
+  order: 13
+---
+
+`scripts/load-test.mjs` load-tests the memory pipeline's storage path: it
+runs concurrent **write** (memory create) and **recall** (vector search)
+scenarios directly against Postgres + pgvector and reports throughput and
+latency percentiles. It requires **no OpenAI key and no running server** —
+embeddings are deterministic fake vectors, and the script talks to the
+database directly.
+
+The measured baselines and scaling guidance derived from this script live in
+the [capacity reference](/docs/reference/capacity/).
+
+## Prerequisites
+
+- Postgres reachable at `DATABASE_URL`, with the Engram schema migrated and
+  the pgvector extension available (`pgvector/pgvector:pg16+` image).
+- Nothing else — no Redis, no Qdrant, no API keys.
+
+Use a **disposable database**: the test writes real rows (tagged
+`load-test`).
+
+## Run it
+
+```bash
+DATABASE_URL="postgresql://engram:engram@localhost:5432/engram" \
+  pnpm load:test
+```
+
+Or with options:
+
+```bash
+DATABASE_URL=... node scripts/load-test.mjs \
+  --duration-ms 30000 \
+  --concurrency 16 \
+  --output /tmp/load-report.json
+```
+
+| Flag | Default | Meaning |
+| ---- | ------- | ------- |
+| `--duration-ms <ms>` | `10000` | How long each scenario runs |
+| `--concurrency <n>` / `-c` | `8` | Parallel workers per scenario |
+| `--output <path>` / `-o` | — | Also write the report as JSON |
+
+## What it exercises
+
+1. **Write scenario** — concurrent `memory.create` calls with 1536-dim
+   hash-based embeddings and `tags: ['load-test']`.
+2. **Backfill** — populates the `embedding_vec` pgvector column for the
+   created rows (simulating the indexed state).
+3. **Recall scenario** — concurrent cosine-distance searches (`<=>`) over
+   `embedding_vec`, top-10.
+
+## Reading the report
+
+Per scenario, the report (console and optional JSON) contains: operation
+count, ops/sec, latency p50/p95/p99, min/mean/max, and error count. It also
+prints bottleneck heuristics — when p95 exceeds its thresholds, it suggests
+where to look first (connection pooling, index tuning, read replicas).
+
+Compare your numbers against the latency budgets in the
+[capacity reference](/docs/reference/capacity/) and the per-profile SLOs in
+[release gates](/docs/reference/release-gates/).
+
+## Scope: what this does not measure
+
+The script bypasses the MCP transport, auth middleware, rate limiting, and
+the embeddings provider — it isolates storage-layer throughput. For
+per-backend *search* latency comparisons (Qdrant vs pgvector), use
+`pnpm bench:backends` instead
+([Write evaluations](/docs/how-to/write-evaluations/#latency-benchmarking)).
+
+## Cleanup
+
+Rows are tagged for easy removal:
+
+```sql
+DELETE FROM memories WHERE 'load-test' = ANY(tags);
+```
+
+(Or drop the disposable database.)

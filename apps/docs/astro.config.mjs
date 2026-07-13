@@ -85,6 +85,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'getting-started' } }],
         },
         {
+          label: 'Architecture',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'architecture' } }],
+        },
+        {
           label: 'How-to guides',
           collapsed: true,
           items: [{ autogenerate: { directory: 'how-to' } }],
@@ -103,6 +108,10 @@ export default defineConfig({
               items: [{ autogenerate: { directory: 'reference/mcp-tools' } }],
             },
             { label: 'Configuration', slug: 'reference/configuration' },
+            {
+              label: 'Configuration guide',
+              slug: 'reference/configuration-guide',
+            },
             { label: 'Capacity & scaling', slug: 'reference/capacity' },
             { label: 'Concurrency policy', slug: 'reference/concurrency-policy' },
             { label: 'Observability', slug: 'reference/observability' },

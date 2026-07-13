@@ -1,0 +1,78 @@
+---
+title: Configure embeddings
+description: Choose an embedding provider (openai, local, disabled), tune the Redis cache, and change models safely.
+sidebar:
+  order: 8
+---
+
+Embedding configuration is three variables; the design behind them —
+including the "return `null`, never block a write" degradation contract — is
+explained in [Embeddings](/docs/architecture/embeddings/).
+
+## Pick a provider
+
+```bash
+# .env
+EMBEDDING_PROVIDER=openai    # default; needs OPENAI_API_KEY
+# EMBEDDING_PROVIDER=local   # deterministic hash vectors, no network
+# EMBEDDING_PROVIDER=disabled
+```
+
+| Provider | Needs | Recall behavior |
+| -------- | ----- | --------------- |
+| `openai` | `OPENAI_API_KEY` | Full semantic recall (`text-embedding-3-small`, 1536 dims, by default) |
+| `local` | nothing | Deterministic vectors — stable similarity for tests/CI/offline dev, not real semantics |
+| `disabled` | nothing | Writes proceed vector-less; semantic recall returns no vector hits |
+
+Notes:
+
+- With `openai` and **no** `OPENAI_API_KEY`, embedding generation silently
+  disables itself — same runtime behavior as `disabled`. Writes never fail
+  because of embeddings.
+- `local` is the recommended provider for cheap bulk imports: ingest with
+  free vectors, then upgrade to real embeddings with a regenerating reindex
+  (see the [agent-memory migration runbook](/docs/agent-memory/migration/)).
+
+## Cache
+
+Embeddings are cached in Redis keyed by `(text, model)`:
+
+```bash
+EMBEDDING_CACHE_TTL=2592000   # seconds; default 30 days
+```
+
+Repeated recall queries and dedup checks hit the cache instead of the
+provider. Profiles without Redis simply run uncached.
+
+## Change the model (dimension change)
+
+Switching to a model with a different dimensionality (e.g.
+`text-embedding-3-large`, 3072 dims) invalidates every stored vector — the
+index shape changes. The safe sequence:
+
+1. Set the model/provider config and `VECTOR_DIMENSIONS=3072`.
+2. Restart the server (`ensureReady()` validates/creates the index for the
+   new dimensionality).
+3. Reindex with **regeneration** — reusing stored 1536-dim vectors would be
+   rejected or, worse, silently wrong:
+
+   ```bash
+   pnpm --filter mcp-server reindex --regenerate
+   ```
+
+Budget note: `--regenerate` calls the provider once per memory (cache
+notwithstanding). For a large corpus, prefer the queued admin tools so the
+pass is resumable — see [Reindex embeddings](/docs/how-to/reindex-embeddings/).
+
+## Repairing individual memories
+
+If a memory's content was edited while the provider was down, its vector is
+stale (`embeddingStale`). Repair a single memory without a full pass with the
+`reembed_memory` tool — or leave it to the next regenerating reindex.
+
+## Verify
+
+- Store a memory, then `recall` it with a paraphrase — a semantic (not
+  keyword) match confirms embeddings are live.
+- The Prometheus metrics (`/health/metrics`) include embedding cache
+  hit/miss counters — a warm cache shows hits climbing on repeated queries.

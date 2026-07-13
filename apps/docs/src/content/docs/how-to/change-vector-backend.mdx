@@ -1,0 +1,77 @@
+---
+title: Change vector backend
+description: Switch between Qdrant and pgvector with VECTOR_BACKEND, then backfill the new index with a reindex.
+sidebar:
+  order: 7
+---
+
+Engram's vector store is a derived index behind a single interface — see
+[Vector backends](/docs/architecture/vector-backends/) for the trade-offs.
+Switching backends is an environment change plus a backfill: **no memory data
+moves**, because Postgres keeps the raw `embedding` float array either way.
+
+## Prerequisites
+
+- Enterprise profile (the `memory`/`lite` profiles use the in-process
+  retriever and have no external vector backend).
+- For `pgvector`: a Postgres image with the extension —
+  `pgvector/pgvector:pg16` or later. Plain `postgres:*-alpine` images lack
+  it and will fail at startup.
+- For `qdrant`: a reachable Qdrant service and `QDRANT_URL`.
+
+## Step 1 — Set the backend
+
+```bash
+# .env
+VECTOR_BACKEND=pgvector   # or: qdrant (the default)
+```
+
+- `qdrant` requires `QDRANT_URL` (and optionally `QDRANT_API_KEY`,
+  `VECTOR_COLLECTION` — default `engram_memories`).
+- `pgvector` needs no extra service; it uses the `embedding_vec` column on
+  the `memories` table and creates its HNSW index at runtime. Optional
+  tuning: `PGVECTOR_HNSW_M`, `PGVECTOR_HNSW_EF_CONSTRUCTION`,
+  `PGVECTOR_HNSW_EF_SEARCH` (see the
+  [configuration guide](/docs/reference/configuration-guide/#pgvector-hnsw-tuning)).
+
+Restart the server. It will come up healthy — but the new index is **empty**
+(or stale), so semantic recall is degraded until you backfill.
+
+## Step 2 — Backfill the new index
+
+Rebuild from Postgres with the reindex CLI on the server host:
+
+```bash
+pnpm --filter mcp-server reindex
+```
+
+Stored embeddings are reused by default (no provider calls, no cost). For
+large corpora, or to run it from an MCP client instead, use the queued admin
+tools — full options in [Reindex embeddings](/docs/how-to/reindex-embeddings/).
+
+## Step 3 — Verify
+
+- `GET /health/ready` reports the active backend's dependency as up.
+- A `recall` for a known memory returns hits again.
+- Optional: compare latency across backends with the benchmark harness:
+
+```bash
+DATABASE_URL=... QDRANT_URL=... pnpm bench:backends
+```
+
+## Rolling back
+
+Switching back is the same procedure in reverse. If the previous backend's
+index was left intact (you only changed the env var), rollback is just
+restoring `VECTOR_BACKEND` and restarting — the old index is still there,
+minus anything written while you were on the other backend, which the next
+reindex heals.
+
+## Notes
+
+- The old backend's index is not cleaned up automatically. Drop the Qdrant
+  collection (or ignore it) after committing to pgvector; the
+  `embedding_vec` column simply goes unused after moving to Qdrant.
+- Keep `VECTOR_DIMENSIONS` unchanged unless you are also switching embedding
+  models — that is a different procedure
+  ([Configure embeddings](/docs/how-to/configure-embeddings/)).

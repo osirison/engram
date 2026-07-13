@@ -1,0 +1,123 @@
+---
+title: Add an MCP tool
+description: Add a new MCP tool to the Engram server — strict Zod schema, manifest entry, bound handler, tests, and regenerated reference docs.
+sidebar:
+  order: 11
+---
+
+This guide adds a new tool to the Engram MCP server the way the existing 28
+tools are built. The key fact to internalize first:
+`apps/mcp-server/src/memory/tools-manifest.ts` is the **single source of
+truth** for the tool surface — the controller attaches handlers from it, the
+wiring spec asserts against it, and the docs generator reads it. If your tool
+is not in the manifest, it does not exist.
+
+For the contributor-facing conventions (auth modes, testing rules), see
+[Adding MCP tools](/docs/contributing/adding-tools/). This page is the
+operational sequence.
+
+## 1. Write a strict Zod input schema
+
+Create a DTO in `apps/mcp-server/src/memory/dto/` (or
+`packages/core/src/mcp/tools/` for a dependency-free tool):
+
+```ts
+// apps/mcp-server/src/memory/dto/frobnicate.dto.ts
+import { userIdSchema } from '@engram/database';
+import { z } from 'zod';
+
+export const frobnicateToolSchema = z
+  .object({
+    userId: userIdSchema,
+    target: z.string().min(1).max(256).describe('What to frobnicate'),
+    dryRun: z.boolean().optional().default(true),
+  })
+  .strict();
+
+export type FrobnicateToolInput = z.infer<typeof frobnicateToolSchema>;
+```
+
+Rules:
+
+- **`.strict()` is mandatory** — unknown keys are rejected at the boundary.
+- The schema must stay a `ZodObject`; the manifest type and the docs generator
+  both require it (the generator emits the parameter table from its shape).
+- Add `.describe()` to fields — the text lands verbatim in the generated
+  [MCP tools reference](/docs/reference/mcp-tools/).
+
+## 2. Add a manifest entry
+
+Append to `TOOL_MANIFEST` in `apps/mcp-server/src/memory/tools-manifest.ts`:
+
+```ts
+{
+  name: 'frobnicate',
+  description:
+    'One-paragraph, when-to-use description. This is the prose an agent ' +
+    'reads when deciding whether to call the tool, and it becomes the ' +
+    'generated reference page verbatim.',
+  inputSchema: frobnicateToolSchema,
+  requiredScope: 'memories:write', // or memories:read / memories:delete
+  delegable: true,                 // only if an admin key may act cross-tenant
+},
+```
+
+Auth metadata rules (asserted by `tools-manifest.spec.ts`):
+
+- `identity` tools (the default, `auth` omitted) declare a `requiredScope`.
+- `auth: 'admin'` tools carry **no** scope — they gate on an `adminToken`
+  input checked against `MCP_ADMIN_TOKEN` inside the handler.
+
+## 3. Bind the handler
+
+Implement the handler as a controller method and add it to the `handlers` map
+in `MemoryController.getMcpTools()`
+(`apps/mcp-server/src/memory/memory.controller.ts`):
+
+```ts
+frobnicate: this.frobnicate.bind(this) as BoundHandler,
+```
+
+`getMcpTools()` maps every manifest entry to its bound handler and **throws at
+boot** if a manifest entry has no handler — a missing binding cannot ship
+silently. If the tool depends on a service that only exists in some profiles
+(Postgres-only, BullMQ-only), filter it there too: see how
+`export_memories` / `consolidate_corpus` are hidden when their services are
+absent, and `filterToolsByProfile()` for the per-profile exclusion lists.
+
+## 4. Test at both levels
+
+Per the [testing conventions](/docs/contributing/testing-conventions/):
+
+- **Service level** — schema rejects unknown/invalid input; handler behavior
+  and error paths.
+- **Wiring level** — `tools-manifest.spec.ts` already proves the controller
+  registers exactly the manifest (same order, same auth/scope/delegable
+  metadata), so a manifest entry plus handler binding is automatically
+  covered. Add a dedicated wiring spec if your tool has profile-dependent
+  availability (see `corpus-consolidation-tool-wiring.spec.ts`).
+
+```bash
+pnpm --filter mcp-server test
+```
+
+## 5. Regenerate the reference docs
+
+The tool reference is generated from the compiled manifest, so build first:
+
+```bash
+pnpm build          # compiles apps/mcp-server/dist + packages/*/dist
+pnpm docs:generate  # rewrites reference/mcp-tools/ + configuration.md
+```
+
+Commit the regenerated pages together with the code. CI runs the same
+generation and fails on drift (`git diff --exit-code` on the generated
+directories), so a tool change that skips this step cannot merge.
+
+## Checklist
+
+- [ ] Strict `ZodObject` schema with `.describe()` on fields
+- [ ] `TOOL_MANIFEST` entry with accurate `description`, scope/auth metadata
+- [ ] Handler bound in `getMcpTools()` (plus profile filtering if needed)
+- [ ] Service-level + wiring-level tests green
+- [ ] `pnpm build && pnpm docs:generate` run; generated pages committed

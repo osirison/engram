@@ -145,7 +145,7 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'recall',
     description:
-      'Semantically recall the most relevant long-term memories for a natural-language query',
+      'Semantically recall the most relevant long-term memories for a natural-language query — the primary retrieval tool; reach for it before starting any task the user may have stored context on. Embeds the query and searches the vector index (an in-process hybrid lexical+semantic index under the memory/lite profiles), re-ranking hits by blended similarity, recency, and importance. Superseded memories never resurface. Supports scope, tag, and created-date filters; use list_memories instead for exact, non-semantic listing.',
     inputSchema: recallToolSchema,
     delegable: true,
     requiredScope: 'memories:read',
@@ -168,21 +168,21 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'reindex_memories',
     description:
-      'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable',
+      'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable. Run it after switching VECTOR_BACKEND, changing the embedding model/provider (regenerate), or losing/corrupting the vector index. Synchronous — blocks until the pass completes and returns the processed/indexed/skipped/failed summary; prefer queue_reindex_memories for large corpora.',
     inputSchema: reindexToolSchema,
     auth: 'admin',
   },
   {
     name: 'queue_reindex_memories',
     description:
-      'Queue asynchronous vector reindexing with persisted progress and resumability cursor',
+      'Queue an asynchronous vector reindex and return a jobId immediately — the right choice for large corpora or any rebuild you should not block on. Jobs persist progress (with a resume cursor) in Redis and run strictly one at a time. Poll with get_reindex_status; cancel_reindex_job / retry_reindex_job manage the job from its persisted cursor.',
     inputSchema: reindexQueueToolSchema,
     auth: 'admin',
   },
   {
     name: 'get_reindex_status',
     description:
-      'Get status and progress for a queued reindex job (queued/running/completed/failed)',
+      'Get status and progress for a queued reindex job (queued/running/completed/failed). Pass the jobId returned by queue_reindex_memories; the report includes per-item progress counts and the persisted resume cursor.',
     inputSchema: reindexStatusToolSchema,
     auth: 'admin',
   },
@@ -203,7 +203,7 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'consolidate_memories',
     description:
-      'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage. NOT corpus consolidation — near-duplicate merging is `consolidate_corpus`.',
+      'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count and importance thresholds into long-term storage; a scheduled pass already runs every STM_CONSOLIDATION_INTERVAL_MS (default 5 min), so call this only when promotion must happen now — e.g. before an export, migration, or shutdown. Idempotent (already-promoted rows are skipped). NOT corpus consolidation — near-duplicate merging is `consolidate_corpus`.',
     inputSchema: consolidateToolSchema,
     auth: 'admin',
   },
@@ -217,35 +217,35 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'remember',
     description:
-      'Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata.',
+      'Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata. The preferred write path for agents — store durable facts as you learn them; re-storing a known fact is safe (absorbed by dedup). Use create_memory only when you must control the tier explicitly.',
     inputSchema: rememberToolSchema,
     requiredScope: 'memories:write',
   },
   {
     name: 'forget',
     description:
-      'Smart delete: find memories by natural-language concept and optionally delete them. Dry-run by default — pass confirm=true to execute deletion.',
+      'Smart delete: find memories by natural-language concept and optionally delete them. Dry-run by default — review the matches, then pass confirm=true to execute deletion. Use it when the user asks to remove or redact something described conceptually rather than by id; delete_memory removes a single known id.',
     inputSchema: forgetToolSchema,
     requiredScope: 'memories:delete',
   },
   {
     name: 'reflect',
     description:
-      'Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range.',
+      'Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range. Use it for thematic questions ("what do we know about X?") and periodic reviews where a synthesis beats a raw hit list — recall returns the individual memories instead.',
     inputSchema: reflectToolSchema,
     requiredScope: 'memories:read',
   },
   {
     name: 'compress_context',
     description:
-      'Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget.',
+      'Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget. Use it to inject task-specific background under a size limit measured in characters; prompt_context is the token-budgeted variant, and load_context primes a session when there is no query yet.',
     inputSchema: compressContextToolSchema,
     requiredScope: 'memories:read',
   },
   {
     name: 'load_context',
     description:
-      'Load a session-priming context block by blending the most recent memories with the highest-importance memories. Ideal for injecting into a session-opening prompt.',
+      'Load a session-priming context block by blending the most recent memories with the highest-importance memories. Needs no query — call it once at session start, before any task context exists, to inject into the session-opening prompt; switch to recall or compress_context once you have a concrete topic.',
     inputSchema: loadContextToolSchema,
     requiredScope: 'memories:read',
   },
@@ -259,7 +259,7 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'prompt_context',
     description:
-      'Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars). Returns the formatted block plus token accounting metadata.',
+      'Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant.',
     inputSchema: promptContextToolSchema,
     requiredScope: 'memories:read',
   },

@@ -1,0 +1,127 @@
+---
+title: Auth & multi-tenancy
+description: Why the tenant boundary is the credential — the every-NODE_ENV boot fail-safe, per-agent API keys, scopes, admin gating, and audited delegation.
+sidebar:
+  order: 8
+---
+
+Engram's authorization model rests on one principle: **the tenant is the
+token, not the request body**. Without authentication, `userId` is just a
+string the client typed — any process that can reach the port can read,
+write, or delete any tenant's memories by claiming any id. Everything on this
+page exists to close that hole without making the local, single-user case
+miserable.
+
+## Where auth applies
+
+Authentication is enforced on the **streamable-http** transport only. `stdio`
+is a private pipe between one client process and one server process — there
+is no network surface and no second tenant, so `AUTH_REQUIRED` has no effect
+there. The moment memories are served over HTTP to potentially many callers,
+identity becomes load-bearing.
+
+## The boot fail-safe
+
+The dangerous configuration — multi-tenant profile, HTTP transport, no
+auth — is rejected **at boot**, not discovered in production.
+`assertHttpAuthPosture()` (`apps/mcp-server/src/http-auth-posture.ts`)
+refuses to start when all three hold:
+
+1. the active profile is multi-tenant (`enterprise`),
+2. `MCP_TRANSPORT=streamable-http`,
+3. `AUTH_REQUIRED` is false and `ALLOW_UNAUTHENTICATED_HTTP` is not set.
+
+> Refusing to start: multi-tenant streamable-http without AUTH_REQUIRED=true.
+> This would serve all tenants unauthenticated with a client-controlled
+> userId. Set AUTH_REQUIRED=true (recommended), or set
+> ALLOW_UNAUTHENTICATED_HTTP=true to acknowledge a trusted-network deployment.
+
+Deliberately, this applies in **every `NODE_ENV`** — development included.
+The tenant boundary does not depend on an environment label, so running
+unauthenticated must always be an *explicit operator acknowledgement*
+(`ALLOW_UNAUTHENTICATED_HTTP=true`), never an accident of
+`NODE_ENV=development`. Single-tenant profiles are exempt: with one tenant
+there is nothing to cross into.
+
+## Credentials: JWTs and per-agent API keys
+
+With `AUTH_REQUIRED=true` (which requires a ≥32-char `JWT_SECRET`), every
+`/mcp` call passes through `McpAuthMiddleware`, presenting either:
+
+- a **session JWT** (issued via OAuth login; lifetime `JWT_EXPIRES_IN`,
+  default 7 d), or
+- an **API key** — `Authorization: Bearer eng_…` or `X-API-Key`.
+
+API keys are the workhorse for agents. Each key
+(`apps/mcp-server/src/api-keys/`) is 24 random bytes, base64url-encoded,
+prefixed `eng_`; the server stores only a SHA-256 hash plus a display prefix,
+so plaintext is shown exactly once at mint time. Keys carry scopes, optional
+expiry, revocation, and `lastUsedAt` bookkeeping.
+
+The design intent is **one least-privilege key per agent**, all sharing one
+tenant `userId`: the key (not the userId) is the unit of attribution and
+revocation. The `provision-agent-keys` CLI mints a whole fleet in one pass
+and refuses to mint agent keys with the `admin` scope. Operational guide:
+[Provision agent API keys](/docs/how-to/provision-agent-keys/).
+
+A request with an invalid credential is always rejected — never downgraded
+to anonymous. A request with no credential on a protected tool gets a `401`
+JSON-RPC error.
+
+## Three auth modes, per tool
+
+Every tool in the manifest declares a `ToolAuthMode`
+(`packages/core/src/mcp/tools/index.ts`):
+
+| Mode | Contract |
+| ---- | -------- |
+| `identity` (default) | The verified credential's `userId` is **injected over** any client-supplied value; scope checks apply |
+| `admin` | Not gated by user identity — the tool input carries an `adminToken` compared in constant time against `MCP_ADMIN_TOKEN` |
+| `public` | Callable unauthenticated (only `ping`) |
+
+Two separate trust chains is a deliberate choice: tenant-facing tools bind to
+*who you are* (key → userId → your rows), while maintenance tools
+(`reindex_*`, `consolidate_corpus`, `import_agent_memory`, `create_api_key`)
+bind to *possession of the operator secret*. A leaked agent key therefore
+cannot reindex, import, or mint keys; conversely `MCP_ADMIN_TOKEN` never
+belongs in an agent config.
+
+## Scopes
+
+Identity tools declare a `requiredScope` in the tool manifest:
+`memories:read` for reads, `memories:write` for mutations, `memories:delete`
+for deletions; the `admin` scope satisfies any check. Scopes are enforced at
+dispatch, so a read-only key calling `remember` fails before any write. This
+is what makes "delete is opt-in" a policy you can actually enforce per agent
+rather than a convention you hope agents follow.
+
+## Delegation: the audited exception
+
+Sometimes an operator key must act on another tenant (support, migration,
+the web console). `resolveActingUserId()` allows it under three simultaneous
+conditions: the tool is marked `delegable` in the manifest, the caller holds
+the `admin` scope, and an explicit `userId` is passed. Everyone else is
+pinned to their verified `userId` — and every delegated call is recorded as
+such in the audit trail (`MemoryAudit.delegated`, with the acting key as
+`actorId`). Non-delegable tools (credential management above all) pin even
+admins.
+
+## Isolation below the auth layer
+
+Authorization would be fragile if row access were enforced only at the
+boundary, so the storage layers repeat the constraint: every `Memory`,
+`ApiKey`, `MemoryAudit`, `MemoryLink`, and `MemoryImportSource` row carries
+`userId`, every service query filters on it, and the vector store embeds
+`userId` in its
+[search filter](/docs/architecture/vector-backends/#one-interface-two-backends).
+STM keys are namespaced per user (and per org). An optional `organizationId`
+adds a second grouping level for multi-org deployments; the enterprise
+profile's Redis-backed rate limiter buckets by key, user, org, and IP
+(`RATE_LIMIT_*`, see the
+[configuration guide](/docs/reference/configuration-guide/#rate-limits)).
+
+## Turning it on
+
+The operational sequence — generating `JWT_SECRET`, setting the flags,
+minting keys, verifying enforcement — is in
+[Enable authentication](/docs/how-to/enable-auth/).
