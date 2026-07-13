@@ -2,11 +2,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryHaze } from './memory-haze.js';
-import {
-  useTweaks, TweaksPanel, TweakSection,
-  TweakSlider, TweakToggle, TweakSelect,
-} from './tweaks-panel.jsx';
 import './smooth-scroll.js';
+
+// Dev-only tweaks UI. `import.meta.env.DEV` is statically false in production
+// builds, so Rollup drops the dynamic import and the panel never ships to
+// visitors (verify: `grep -c twk-panel dist/assets/*.js` → 0 after build).
+const DevTweaks = import.meta.env.DEV
+  ? React.lazy(() => import('./dev-tweaks.jsx'))
+  : null;
 
 // Illustrative agent memories — these surface on recall/hover.
 const SEED_MEMORIES = [
@@ -104,6 +107,7 @@ function Hero({ haze }) {
             value={value}
             spellCheck="false"
             autoComplete="off"
+            aria-label="Type a memory to remember"
             placeholder={PLACEHOLDERS[ph]}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") remember(); }}
@@ -114,7 +118,7 @@ function Hero({ haze }) {
         </div>
 
         <div className="hero-foot">
-          <div className={"flash" + (flash ? " on" : "")}>
+          <div className={"flash" + (flash ? " on" : "")} role="status">
             {flash ? <span><em>remembered.</em> “{truncate(flash, 52)}”</span> : <span>&nbsp;</span>}
           </div>
           <button className="recall-link" onClick={recall}>
@@ -123,7 +127,7 @@ function Hero({ haze }) {
         </div>
       </div>
 
-      <div className={"surfaced" + (surfaced ? " on" : "")}>
+      <div className={"surfaced" + (surfaced ? " on" : "")} role="status">
         {surfaced && (
           <div className="surfaced-card">
             <span className="surfaced-label">recalled by meaning</span>
@@ -170,7 +174,7 @@ function Verbs() {
   return (
     <section className="section verbs" data-mode="long" data-screen-label="verbs">
       <div className="verbs-inner">
-        <p className="kicker center">four verbs. the whole interface.</p>
+        <p className="kicker center">four verbs. the heart of the interface.</p>
         <ul className="verbs-list">
           {VERBS.map((it) => (
             <li key={it.v} className="verb-row">
@@ -187,7 +191,7 @@ function Verbs() {
 // ---- install / close -------------------------------------------------------
 function Install() {
   const [copied, setCopied] = useState(false);
-  const cmd = "claude mcp add engram";
+  const cmd = "git clone https://github.com/osirison/engram && cd engram";
   const copy = () => {
     navigator.clipboard?.writeText(cmd).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 1600);
@@ -199,7 +203,7 @@ function Install() {
         <h2 className="install-line">One memory layer.<br />Every agent.</h2>
         <p className="install-sub">
           Engram is an MCP server. It plugs into Claude, Cursor, or anything that speaks
-          the protocol, and gives it a mind that persists.
+          the protocol. Clone, run one profile, connect.
         </p>
         <button className="cmd" onClick={copy}>
           <span className="cmd-caret">$</span>
@@ -208,6 +212,8 @@ function Install() {
         </button>
         <div className="install-foot">
           <a href="https://github.com/osirison/engram" target="_blank" rel="noopener">github.com/osirison/engram</a>
+          <span className="chrome-sep">·</span>
+          <a href="https://github.com/osirison/engram#choose-your-profile" target="_blank" rel="noopener">quickstart: choose your profile</a>
           <span className="chrome-sep">·</span>
           <span>open source · MCP-native</span>
         </div>
@@ -235,12 +241,6 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 
 function App() {
   const [haze, setHaze] = useState(null);
-  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-
-  // push tweak values into the haze engine whenever they change
-  useEffect(() => {
-    if (haze) haze.set(t);
-  }, [haze, t]);
 
   useEffect(() => {
     const root = document.getElementById("haze");
@@ -251,7 +251,7 @@ function App() {
     });
     h.set(TWEAK_DEFAULTS);
     h.start();
-    window.__haze = h;
+    if (import.meta.env.DEV) window.__haze = h; // debug handle, dev builds only
     setHaze(h);
 
     // walk the focal plane forward as you scroll: haze -> clarity
@@ -285,56 +285,21 @@ function App() {
         index="02" mode="long" label="long-term"
         kicker="long-term memory"
         line={<>It keeps the<br />meaning.</>}
-        sub="Every memory is embedded and stored by what it means, then recalled by meaning, not by matching words. Search becomes understanding."
+        sub="Memories are embedded and stored by what they mean, then recalled by meaning, not by matching words. Search becomes understanding."
       />
       <Panel
         index="03" mode="dream" label="dream"
         kicker="while idle, it dreams"
         line={<>It sleeps on<br />what it learned.</>}
-        sub="Between sessions, Engram consolidates. It merges duplicates, lets the trivial decay, reconciles contradictions, and wakes up sharper than it went to sleep."
+        sub="On demand, Engram consolidates: short-term memories that keep proving useful become long-term. It deduplicates new memories as they arrive, lets the trivial decay on a schedule, and spots contradictions, flagging both sides for review. It wakes up sharper than it went to sleep."
       />
       <Verbs />
       <Install />
-      <TweaksPanel>
-        <TweakSection label="The field" />
-        <TweakToggle
-          label="Scroll resolves field"
-          value={t.resolveOnScroll}
-          onChange={(v) => setTweak("resolveOnScroll", v)}
-        />
-        <TweakSlider
-          label="Haze / blur" value={t.blur} min={3} max={20} step={1} unit="px"
-          onChange={(v) => setTweak("blur", v)}
-        />
-        <TweakSlider
-          label="Float speed" value={t.floatSpeed} min={0} max={2.5} step={0.1} unit="×"
-          onChange={(v) => setTweak("floatSpeed", v)}
-        />
-        <TweakSection label="Lantern" />
-        <TweakSlider
-          label="Reach" value={t.lanternRadius} min={140} max={520} step={10} unit="px"
-          onChange={(v) => setTweak("lanternRadius", v)}
-        />
-        <TweakSlider
-          label="Strength" value={t.lanternStrength} min={0.4} max={1.6} step={0.05} unit="×"
-          onChange={(v) => setTweak("lanternStrength", v)}
-        />
-        <TweakSection label="Sacred geometry" />
-        <TweakSelect
-          label="Shape" value={t.geoShape}
-          options={["cycle", "flower", "metatron", "sriYantra", "hexagram", "pentagram", "torus"]}
-          onChange={(v) => setTweak("geoShape", v)}
-        />
-        <TweakToggle
-          label="Lantern drifts when idle"
-          value={t.idleDrift}
-          onChange={(v) => setTweak("idleDrift", v)}
-        />
-        <TweakSlider
-          label="Visibility" value={t.geoOpacity} min={0} max={2} step={0.1} unit="×"
-          onChange={(v) => setTweak("geoOpacity", v)}
-        />
-      </TweaksPanel>
+      {import.meta.env.DEV && DevTweaks && (
+        <React.Suspense fallback={null}>
+          <DevTweaks haze={haze} defaults={TWEAK_DEFAULTS} />
+        </React.Suspense>
+      )}
     </React.Fragment>
   );
 }

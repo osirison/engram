@@ -33,10 +33,14 @@ expose.
 | `profile-lite`       | Medium         | Encrypted-at-rest (AES-256-GCM)        | Single-host    | Subset + synchronous reindex                |
 | `profile-enterprise` | Heavy          | Replicated (Postgres + Redis + Qdrant) | Cluster        | Full (sync + queued reindex + cancel/retry) |
 
-All three profiles serve the same 19-tool MCP surface for memory CRUD,
-promotion, hybrid recall, and the `remember`/`forget`/`reflect`/`compress_context`
-helpers. Only the reindex / queue / cancel / retry maintenance tools are
-profile-gated.
+The full MCP surface is 26 tools, defined in
+[apps/mcp-server/src/memory/tools-manifest.ts](apps/mcp-server/src/memory/tools-manifest.ts)
+(the single source of truth for the tool registry). All three profiles share
+the same 19-tool core for memory CRUD, promotion, hybrid recall, and the
+`remember`/`forget`/`reflect`/`compress_context` helpers; the reindex / queue /
+cancel / retry maintenance tools and the Postgres-backed
+`export_memories`/`import_agent_memory` tools are profile-gated per the table
+above.
 
 ### profile-memory — zero-dependency quickstart
 

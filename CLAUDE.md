@@ -13,7 +13,7 @@ ENGRAM is a TypeScript monorepo for an MCP (Model Context Protocol) memory serve
 
 ## Commands
 
-All commands run from the repository root. Use `pnpm <command>` if pnpm is installed globally, otherwise prefix with `npm exec --yes pnpm@11.4.0 --`.
+All commands run from the repository root. Use `pnpm <command>` if pnpm is installed globally, otherwise prefix with `npm exec --yes pnpm@11.5.0 --`.
 
 ### Development Setup (first run)
 
