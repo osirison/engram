@@ -40,14 +40,14 @@ the superset — the executor's record plus the independent-verification section
 
 Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan authored only.
 
-| WP      | Deliverable                                    | Plan | Execution                                                                         | Where                                                   |
-| ------- | ---------------------------------------------- | ---- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| WP      | Deliverable                                    | Plan | Execution                                                                                                                             | Where                                                   |
+| ------- | ---------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ✅ **code done** (B8 #259 + B9 #261; R10 Lighthouse blocked — no Chrome on host, re-run cmd in REPORT); R1/R9 Pages-TLS ops in flight | WRAPUP-PLAN.md B8/B9/BOps                               |
-| **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (T1–T9 + SHARED-2; T3/T6 follow-ups remediated 2026-07-08) | **merged `main` @109e0d8 (PR #222)** + follow-up branch |
-| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)                                 | branch `feat/markdown-export-wp3`                       |
-| WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)                                        | worktree `worktree-wp4-agent-memory-import`             |
-| WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ✅ **shipped** (agent-bridge, per-agent config, recall gate, file-watcher sync)   | merged `main` (PR #227, `1d63dd6`)                      |
-| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | 🟨 **foundation done** (T1,T3,T4,T5,T2,T6)                                        | branch `feat/developer-docs-wp6`                        |
+| **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (T1–T9 + SHARED-2; T3/T6 follow-ups remediated 2026-07-08)                                                     | **merged `main` @109e0d8 (PR #222)** + follow-up branch |
+| WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)                                                                                     | branch `feat/markdown-export-wp3`                       |
+| WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)                                                                                            | worktree `worktree-wp4-agent-memory-import`             |
+| WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ✅ **shipped** (agent-bridge, per-agent config, recall gate, file-watcher sync)                                                       | merged `main` (PR #227, `1d63dd6`)                      |
+| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | 🟨 **wave 1 done** (T1–T6 #243; T7a/T7b/T8/T13 #263); B7 = T9–T12, T14                                                                | WRAPUP-PLAN.md B6/B7                                    |
 
 ¹ WP1 is a findings report (R1–R13 remediation tasks), not shipped code. One adjacent
 marketing-site commit exists on main (`3241bae` — Pages custom-domain guard + TLS runbook)
