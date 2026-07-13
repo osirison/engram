@@ -899,7 +899,7 @@ describe('MemoryService', () => {
       const result = await service.recall('user-1', 'query');
 
       expect(result).toHaveLength(2);
-      expect(result[1].memory.metadata).toEqual(
+      expect(result[1]?.memory.metadata).toEqual(
         expect.objectContaining({
           status: 'contradicted',
           contradictionWith: mockLtmMemory.id,
