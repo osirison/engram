@@ -196,14 +196,30 @@ schedule, on suspected exposure, or when an agent is retired.
 `list_api_keys` and `revoke_api_key` are admin-guarded like `create_api_key`;
 they require the admin credential and act by `userId` (and `keyId` for revoke).
 
-## Manual verification checklist
+## Verification checklist
 
 The automated base checks — health `200`, the MCP `initialize` handshake,
 `tools/list`, and that an **unauthenticated** protected `tools/call` returns
 `401` when `AUTH_REQUIRED=true` — are in
 [`scripts/verify-engram-server.sh`](https://github.com/osirison/engram/blob/main/scripts/verify-engram-server.sh).
-Run that first. Then confirm scope and identity enforcement by hand with a
-freshly minted **read-only** key (scopes `["memories:read"]`):
+Run that first.
+
+The scope and identity checks below are **also automated** by the same script:
+mint a **read-only** key (scopes `["memories:read"]`) and a read+write key,
+then pass them in:
+
+```bash
+ENGRAM_READONLY_KEY=eng_… ENGRAM_WRITE_KEY=eng_… \
+  ./scripts/verify-engram-server.sh
+```
+
+`ENGRAM_READONLY_KEY` drives the read-ok and write-denied checks;
+`ENGRAM_WRITE_KEY` drives the spoofed-`userId` check (it writes one
+short-term probe memory that self-expires after 60 seconds). Without the
+variables the script skips these checks with a notice. A presented key is
+validated and scoped even on an auth-off server, so the scoped checks work
+there too. To verify by hand instead — or to understand exactly what the
+script asserts — the checklist is:
 
 - [ ] **Read-only key can recall.** A `tools/call` for `recall` with the
       read-only key's `Authorization: Bearer` header **succeeds**.

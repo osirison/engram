@@ -124,7 +124,9 @@ Run the scripted checks first:
 scripts/verify-engram-server.sh
 ```
 
-Then confirm by hand:
+The same script also automates the scoped-key checks when you pass it a
+read-only key and a write key (`ENGRAM_READONLY_KEY` / `ENGRAM_WRITE_KEY`).
+With or without the script, what must hold:
 
 - A protected `tools/call` **without** an `Authorization` header returns `401`.
 - The same call with a valid `eng_…` key succeeds.
@@ -132,5 +134,5 @@ Then confirm by hand:
 - A request whose body sets a different `userId` acts on the **key's** tenant,
   not the spoofed one.
 
-The full manual checklist lives in
-[Provision agent API keys](/docs/how-to/provision-agent-keys/#manual-verification-checklist).
+The full checklist (and the automated invocation) lives in
+[Provision agent API keys](/docs/how-to/provision-agent-keys/#verification-checklist).
