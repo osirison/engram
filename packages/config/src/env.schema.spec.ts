@@ -33,6 +33,8 @@ describe('envSchema', () => {
         MEMORY_DECAY_PRUNE_SCORE_THRESHOLD: 0.15,
         MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS: 30,
         MEMORY_DUPLICATE_THRESHOLD: 0.97,
+        MEMORY_CONSOLIDATION_MERGE_THRESHOLD: 0.85,
+        MEMORY_CONSOLIDATION_INTERVAL_MS: 0,
         MEMORY_CONTRADICTION_THRESHOLD: 0.8,
         MEMORY_CONTRADICTION_THRESHOLD_MAX: 0.97,
         MEMORY_CONTRADICTION_POLICY: 'flag',
@@ -351,9 +353,59 @@ describe('envSchema', () => {
       expect(result.MEMORY_DECAY_PRUNE_SCORE_THRESHOLD).toBe(0.15);
       expect(result.MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS).toBe(30);
       expect(result.MEMORY_DUPLICATE_THRESHOLD).toBe(0.97);
+      expect(result.MEMORY_CONSOLIDATION_MERGE_THRESHOLD).toBe(0.85);
       expect(result.MEMORY_CONTRADICTION_THRESHOLD).toBe(0.8);
       expect(result.MEMORY_CONTRADICTION_THRESHOLD_MAX).toBe(0.97);
       expect(result.MEMORY_IMPORTANCE_HALF_LIFE_DAYS).toBe(14);
+    });
+
+    it('defaults the corpus-consolidation scheduler to OFF (review gate — the operator opts in, G3-T2)', () => {
+      expect(envSchema.parse(base).MEMORY_CONSOLIDATION_INTERVAL_MS).toBe(0);
+    });
+
+    it('coerces a custom consolidation band and scheduler interval', () => {
+      const result = envSchema.parse({
+        ...base,
+        MEMORY_CONSOLIDATION_MERGE_THRESHOLD: '0.9',
+        MEMORY_CONSOLIDATION_INTERVAL_MS: '3600000',
+      });
+      expect(result.MEMORY_CONSOLIDATION_MERGE_THRESHOLD).toBe(0.9);
+      expect(result.MEMORY_CONSOLIDATION_INTERVAL_MS).toBe(3_600_000);
+    });
+
+    it('rejects a merge threshold at or above the duplicate threshold (empty/inverted band)', () => {
+      // Equal — the band [merge, duplicate) would be empty.
+      expect(() =>
+        envSchema.parse({ ...base, MEMORY_CONSOLIDATION_MERGE_THRESHOLD: '0.97' })
+      ).toThrow(/must be strictly below MEMORY_DUPLICATE_THRESHOLD/);
+      // Inverted relative to a lowered duplicate threshold.
+      expect(() =>
+        envSchema.parse({
+          ...base,
+          MEMORY_CONSOLIDATION_MERGE_THRESHOLD: '0.9',
+          MEMORY_DUPLICATE_THRESHOLD: '0.88',
+        })
+      ).toThrow(ZodError);
+      // A valid band below a lowered duplicate threshold still parses.
+      expect(
+        envSchema.parse({
+          ...base,
+          MEMORY_CONSOLIDATION_MERGE_THRESHOLD: '0.8',
+          MEMORY_DUPLICATE_THRESHOLD: '0.88',
+        }).MEMORY_CONSOLIDATION_MERGE_THRESHOLD
+      ).toBe(0.8);
+    });
+
+    it('rejects out-of-range consolidation values', () => {
+      expect(() =>
+        envSchema.parse({ ...base, MEMORY_CONSOLIDATION_MERGE_THRESHOLD: '1.5' })
+      ).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, MEMORY_CONSOLIDATION_INTERVAL_MS: '-1' })).toThrow(
+        ZodError
+      );
+      expect(() =>
+        envSchema.parse({ ...base, MEMORY_CONSOLIDATION_INTERVAL_MS: 'hourly' })
+      ).toThrow(ZodError);
     });
 
     it('defaults the contradiction policy to flag (G3-T4 — both rows kept, none hidden)', () => {

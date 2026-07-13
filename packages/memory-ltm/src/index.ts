@@ -9,6 +9,10 @@ export {
   ContradictionDetectionService,
   DEFAULT_CONTRADICTION_POLICY,
 } from './contradiction-detection.service';
+export {
+  CorpusConsolidationService,
+  DEFAULT_CONSOLIDATION_MERGE_THRESHOLD,
+} from './corpus-consolidation.service';
 
 // Stream B0 — Typed Ingest Pipeline
 export { IngestPipelineService } from './ingest/ingest-pipeline.service';
@@ -38,6 +42,9 @@ export type {
   ContradictionPolicy,
   DecayPolicyOptions,
   DecayPolicyResult,
+  CorpusConsolidationOptions,
+  CorpusConsolidationResult,
+  ConsolidationClusterReport,
   CreateLtmMemoryValidated,
   UpdateLtmMemoryValidated,
   LtmQueryOptionsValidated,
@@ -50,6 +57,7 @@ export {
   LtmPromotionError,
   LtmDatabaseError,
   DEFAULT_LTM_CONFIG,
+  MAX_CLUSTER_REPORTS,
 } from './types';
 
 // Export validation functions

@@ -244,6 +244,77 @@ export interface DecayPolicyResult {
   cursor: string | null;
 }
 
+// ── Corpus consolidation (G3-T2) ─────────────────────────────────────────────
+// Near-duplicate clustering over the [MEMORY_CONSOLIDATION_MERGE_THRESHOLD,
+// MEMORY_DUPLICATE_THRESHOLD) similarity band that write-time dedup does NOT
+// collapse. NOT the STM→LTM promotion pass (`consolidate_memories` /
+// ConsolidationService in the app) — this operates purely on the LTM corpus.
+
+export interface CorpusConsolidationOptions {
+  /** Restrict the pass to a single user. Omit to scan every user. */
+  userId?: string;
+  /**
+   * Restrict the pass to a single namespace scope. Omit to scan all scopes —
+   * each seed still only ever clusters within its OWN scope (an unscoped
+   * memory never merges with a scoped one, mirroring write-time dedup).
+   */
+  scope?: string;
+  /** Seed rows loaded per page (cursor-resumable). Defaults to 100, capped at 1000. */
+  batchSize?: number;
+  /** Resume from a previously returned cursor. */
+  cursor?: string;
+  /** Stop after scanning at most this many seed rows (pair with `cursor` for chunked runs). */
+  limit?: number;
+  /**
+   * REVIEW GATE (pinned Decision 3): defaults to TRUE. A dry run reports the
+   * clusters it WOULD merge and mutates absolutely nothing. Only an explicit
+   * `dryRun: false` writes.
+   */
+  dryRun?: boolean;
+}
+
+/** One merged (or would-be-merged, under dry-run) near-duplicate cluster. */
+export interface ConsolidationClusterReport {
+  /** Survivor: highest importance, tie-broken by most recent `createdAt`. */
+  canonicalId: string;
+  /** Members marked superseded by the canonical (would-be under dry-run). */
+  loserIds: string[];
+  /**
+   * Similarity of each loser to the cluster's seed row, index-aligned with
+   * `loserIds`. When the seed itself lost the canonical election, its entry is
+   * its similarity to the canonical (the same pair, read from the other side).
+   */
+  scores: number[];
+  /** Final tag set carried by the canonical after the union. */
+  unionedTags: string[];
+}
+
+export interface CorpusConsolidationResult {
+  /** Seed rows examined (including ineligible rows that were skipped). */
+  scanned: number;
+  /** Near-duplicate clusters found this run. */
+  clusters: number;
+  /** Losers marked superseded (or that WOULD be, under dry-run). */
+  merged: number;
+  /**
+   * Mutations skipped because a concurrent edit moved a row's version twice
+   * (or disqualified it) between read and write — G3-T3: lifecycle writes
+   * never clobber a concurrent user edit. Always 0 under dry-run.
+   */
+  skippedConcurrentEdit: number;
+  /** Cursor to resume from, or null when the corpus slice was exhausted. */
+  cursor: string | null;
+  /** Echo of the effective dry-run flag (defaults to true — review gate). */
+  dryRun: boolean;
+  /** Per-cluster detail, capped at {@link MAX_CLUSTER_REPORTS} entries. */
+  perCluster: ConsolidationClusterReport[];
+  /** True when more clusters formed than fit in `perCluster`; counters above still include them. */
+  perClusterTruncated: boolean;
+}
+
+/** Cap on `perCluster` detail entries so a huge corpus cannot balloon the summary. */
+export const MAX_CLUSTER_REPORTS = 50;
+
 // Zod validation schemas
 
 // Create LTM memory schema

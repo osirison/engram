@@ -21,6 +21,7 @@ import {
   reindexRetryToolSchema,
 } from './dto/reindex-job.dto';
 import { consolidateToolSchema } from './dto/consolidate.dto';
+import { consolidateCorpusToolSchema } from './dto/consolidate-corpus.dto';
 import { rememberToolSchema } from './dto/remember.dto';
 import { forgetToolSchema } from './dto/forget.dto';
 import { reflectToolSchema } from './dto/reflect.dto';
@@ -202,8 +203,15 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'consolidate_memories',
     description:
-      'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage.',
+      'Trigger a synchronous STM→LTM consolidation pass (admin). Promotes short-term memories that meet the access-count threshold into long-term storage. NOT corpus consolidation — near-duplicate merging is `consolidate_corpus`.',
     inputSchema: consolidateToolSchema,
+    auth: 'admin',
+  },
+  {
+    name: 'consolidate_corpus',
+    description:
+      'Corpus consolidation (admin): cluster NEAR-duplicate long-term memories in the [MEMORY_CONSOLIDATION_MERGE_THRESHOLD, MEMORY_DUPLICATE_THRESHOLD) similarity band, keep one canonical per cluster (highest importance, most recent on ties), union tags onto it, and mark the rest superseded + linked. NOT `consolidate_memories` (the unrelated STM→LTM promotion pass). Review-gated: dryRun defaults to TRUE and reports would-be merges without mutating — pass dryRun=false explicitly to merge. Idempotent and cursor-resumable.',
+    inputSchema: consolidateCorpusToolSchema,
     auth: 'admin',
   },
   {
