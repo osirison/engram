@@ -47,7 +47,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan author
 | WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)                                                                                     | branch `feat/markdown-export-wp3`                       |
 | WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)                                                                                            | worktree `worktree-wp4-agent-memory-import`             |
 | WP5     | Engram as primary agent memory (D1–D8, T1–T13) | ✅   | ✅ **shipped** (agent-bridge, per-agent config, recall gate, file-watcher sync)                                                       | merged `main` (PR #227, `1d63dd6`)                      |
-| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | 🟨 **wave 1 done** (T1–T6 #243; T7a/T7b/T8/T13 #263); B7 = T9–T12, T14                                                                | WRAPUP-PLAN.md B6/B7                                    |
+| WP6     | Developer docs app (Starlight, D1–D10, T1–T14) | ✅   | ✅ **done — verified** (T1–T6 #243; T7a/T7b/T8/T13 #263; T9–T12+T14 #264 — 403 pages, T14 acceptance gate green)                      | WRAPUP-PLAN.md B6/B7                                    |
 
 ¹ WP1 is a findings report (R1–R13 remediation tasks), not shipped code. One adjacent
 marketing-site commit exists on main (`3241bae` — Pages custom-domain guard + TLS runbook)

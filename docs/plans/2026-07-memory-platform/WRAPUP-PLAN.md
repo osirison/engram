@@ -78,19 +78,19 @@ Any session (any model) resumes by reading §0 + §1 and picking the first non-�
 
 Legend: ✅ merged · 🟨 in progress · ⬜ not started.
 
-| Batch | Branch                       | Tasks                                           | Status                                   | PR   |
-| ----- | ---------------------------- | ----------------------------------------------- | ---------------------------------------- | ---- |
-| B0    | `docs/wrapup-plan-2026-07`   | this plan + tracker updates                     | ✅                                       | #256 |
-| BH    | (no branch — local ops)      | §H housekeeping items                           | 🟨 1–2 done; 3–5 post-merge              |      |
-| B2    | `feat/gaps-g1-g4-b2`         | G2-T2, G2-T3, G1-T3, G1-T1                      | ✅                                       | #257 |
-| B3    | `feat/gaps-g1-g4-b3`         | G3-T3, G4-T2, G1-T2                             | ✅                                       | #258 |
-| B4    | `feat/gaps-g1-g4-b4`         | G3-T4, G3-T6, G4-T3, G4-T4 deferral note        | ✅                                       | #260 |
-| B5    | `feat/gaps-g1-g4-b5`         | G3-T2 (corpus consolidation, L)                 | ✅                                       | #262 |
-| B6    | `feat/wp6-docs-content-1`    | WP6 T7a, T7b, T8, T13                           | ✅                                       | #263 |
-| B7    | `feat/wp6-docs-content-2`    | WP6 T9, T10, T11, T12, T14                      | ⬜                                       |      |
-| B8    | `fix/wp1-marketing-b8`       | R2, R3, R7, R5, R6, R13, R4, R11, R1-CNAME      | ✅                                       | #259 |
-| B9    | `fix/wp1-marketing-b9`       | R8, R12, R10 (best-effort — blocked: no Chrome) | ✅                                       | #261 |
-| BOps  | (no branch — GitHub/DNS ops) | R1/R9 Pages TLS + HTTPS enforce                 | 🟨 domain re-added 07-13; cert poller up |      |
+| Batch | Branch                       | Tasks                                           | Status                                                       | PR   |
+| ----- | ---------------------------- | ----------------------------------------------- | ------------------------------------------------------------ | ---- |
+| B0    | `docs/wrapup-plan-2026-07`   | this plan + tracker updates                     | ✅                                                           | #256 |
+| BH    | (no branch — local ops)      | §H housekeeping items                           | 🟨 1–4 done (local redeploy verified 07-13); 5 = final sweep |      |
+| B2    | `feat/gaps-g1-g4-b2`         | G2-T2, G2-T3, G1-T3, G1-T1                      | ✅                                                           | #257 |
+| B3    | `feat/gaps-g1-g4-b3`         | G3-T3, G4-T2, G1-T2                             | ✅                                                           | #258 |
+| B4    | `feat/gaps-g1-g4-b4`         | G3-T4, G3-T6, G4-T3, G4-T4 deferral note        | ✅                                                           | #260 |
+| B5    | `feat/gaps-g1-g4-b5`         | G3-T2 (corpus consolidation, L)                 | ✅                                                           | #262 |
+| B6    | `feat/wp6-docs-content-1`    | WP6 T7a, T7b, T8, T13                           | ✅                                                           | #263 |
+| B7    | `feat/wp6-docs-content-2`    | WP6 T9, T10, T11, T12, T14                      | ✅                                                           | #264 |
+| B8    | `fix/wp1-marketing-b8`       | R2, R3, R7, R5, R6, R13, R4, R11, R1-CNAME      | ✅                                                           | #259 |
+| B9    | `fix/wp1-marketing-b9`       | R8, R12, R10 (best-effort — blocked: no Chrome) | ✅                                                           | #261 |
+| BOps  | (no branch — GitHub/DNS ops) | R1/R9 Pages TLS + HTTPS enforce                 | 🟨 domain re-added 07-13; cert poller up                     |      |
 
 ## 2. Batch details — G1–G4 (B2–B5)
 
