@@ -35,6 +35,7 @@ codebase.
 | `MEMORY_DUPLICATE_THRESHOLD` | number | `0.97` | no | all | Cosine similarity at/above which a new write collapses into an existing row. Defaults to 0.97. |
 | `MEMORY_CONTRADICTION_THRESHOLD` | number | `0.8` | no | all | Lower bound of the contradiction similarity band. Defaults to 0.8. |
 | `MEMORY_CONTRADICTION_THRESHOLD_MAX` | number | `0.97` | no | all | Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. |
+| `MEMORY_CONTRADICTION_POLICY` | `supersede` \| `flag` | `flag` | no | all | What happens when a new write contradicts an existing memory: `flag` keeps BOTH rows visible in recall and marks them `contradicted` for review; `supersede` hides the older row from default recall (latest-wins). Defaults to `flag` (conservative — no data is hidden without review). |
 | `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` | number | `14` | no | all | Half-life in days for the recency component of importance scoring. Defaults to 14. |
 | `IMPORT_ALLOWED_ROOT` | string | — | no | all | Absolute directory the `import_agent_memory` server-side path must resolve into (symlinks resolved). Defaults to the server process home directory when unset. |
 | `PGVECTOR_HNSW_M` | number | — | no | all | Optional pgvector HNSW build-time `m` (max connections per layer). |
@@ -105,6 +106,7 @@ Set only to enable integration test suites; never required at runtime.
 | `LTM_LIFECYCLE_TEST_URL` | Enables an integration test suite. |
 | `LTM_QUOTA_TEST_URL` | Enables an integration test suite. |
 | `LTM_RESTORE_TEST_URL` | Enables an integration test suite. |
+| `MEMORY_IMPORT_CAS_TEST_URL` | Enables an integration test suite. |
 | `MEMORY_LINK_TEST_URL` | Enables an integration test suite. |
 | `MEMORY_VERSION_TEST_URL` | Enables an integration test suite. |
 | `PGVECTOR_TEST_URL` | Enables an integration test suite. |

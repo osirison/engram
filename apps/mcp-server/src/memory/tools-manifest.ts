@@ -160,7 +160,7 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'import_agent_memory',
     description:
-      'Import agent memory files (Claude/Copilot/Cursor/Codex/Gemini/markdown) from a server-side path into long-term memory, preserving inter-memory links. Admin-gated; idempotent; supports dryRun and a secrets policy.',
+      'Import agent memory files (Claude/Copilot/Cursor/Codex/Gemini/markdown) from a server-side path into long-term memory, preserving inter-memory links. Admin-gated; idempotent; supports dryRun and a secrets policy. Never overwrites a memory edited inside ENGRAM since its last import: such facts are skipped and counted as skippedConcurrentEdit in the summary (CAS-skip).',
     inputSchema: importAgentMemoryToolSchema,
     auth: 'admin',
   },

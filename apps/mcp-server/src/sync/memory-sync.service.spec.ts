@@ -11,6 +11,7 @@ const SUMMARY = {
   created: 1,
   updated: 0,
   skipped: 0,
+  skippedConcurrentEdit: 0,
   mergedIntoExisting: 0,
 } as unknown as ImportSummary;
 
@@ -26,6 +27,7 @@ function ledgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
     importBatchId: 'batch',
     importedAt: new Date('2026-07-01T00:00:00.000Z'),
     updatedAt: new Date('2026-07-01T00:00:00.000Z'),
+    lastWrittenVersion: null,
     ...overrides,
   };
 }

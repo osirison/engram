@@ -91,8 +91,17 @@ export class MemorySyncService {
     const summary = await this.importService.run(input);
     this.logger.log(
       `synced ${spec.source} from ${spec.root}: created=${summary.created} updated=${summary.updated} ` +
-        `skipped=${summary.skipped} merged=${summary.mergedIntoExisting}`,
+        `skipped=${summary.skipped} merged=${summary.mergedIntoExisting} ` +
+        `skippedConcurrentEdit=${summary.skippedConcurrentEdit}`,
     );
+    if (summary.skippedConcurrentEdit > 0) {
+      // Per-row CAS backstop (G4-T3): even a forced sync cannot clobber a
+      // memory edited in ENGRAM after its last import — those rows are skipped.
+      this.logger.warn(
+        `${summary.skippedConcurrentEdit} fact(s) kept their ENGRAM edit (CAS-skip) — ` +
+          `reconcile in the UI or update the source file`,
+      );
+    }
     return {
       source: spec.source,
       root: spec.root,

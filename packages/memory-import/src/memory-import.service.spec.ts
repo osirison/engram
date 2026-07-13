@@ -1,5 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LtmMemoryQuotaExceededError } from '@engram/memory-ltm';
+
+/**
+ * Stand-in for memory-ltm's `LtmVersionConflictError` (not re-exported from the
+ * package index). The import service matches the error by NAME — same contract
+ * as memory.controller's `CONFLICT:` mapping — so a name-faithful double is the
+ * honest way to drive the CAS-miss path.
+ */
+class VersionConflictError extends Error {
+  constructor(
+    memoryId: string,
+    readonly currentVersion: number
+  ) {
+    super(`Long-term memory ${memoryId} was modified (currentVersion=${currentVersion})`);
+    this.name = 'LtmVersionConflictError';
+  }
+}
 import { MemoryImportService, type ImportRunInput } from './memory-import.service.js';
 import { ImportSecretPolicyError, SecretScanner } from './secrets/secret-scanner.js';
 import { computeContentHash } from './content-hash.js';
@@ -37,7 +53,12 @@ function stubAdapter(ir: ImportIR): SourceAdapter {
 
 /** In-memory ledger double. */
 function makeLedger(
-  seed: Array<{ sourceKey: string; memoryId: string; contentHash: string }> = []
+  seed: Array<{
+    sourceKey: string;
+    memoryId: string;
+    contentHash: string;
+    lastWrittenVersion?: number | null;
+  }> = []
 ) {
   const rows = new Map(seed.map((s) => [s.sourceKey, s]));
   return {
@@ -46,7 +67,6 @@ function makeLedger(
       const r = rows.get(k);
       return r
         ? {
-            ...r,
             userId: 'qp',
             sourceTool: 'markdown',
             sourcePath: k,
@@ -54,14 +74,23 @@ function makeLedger(
             importedAt: new Date(),
             updatedAt: new Date(),
             id: k,
+            lastWrittenVersion: null,
+            ...r,
           }
         : null;
     }),
     findByContentHash: vi.fn(async () => [] as unknown[]),
-    upsert: vi.fn(async (e: { sourceKey: string; memoryId: string; contentHash: string }) => {
-      rows.set(e.sourceKey, e);
-      return { ...e };
-    }),
+    upsert: vi.fn(
+      async (e: {
+        sourceKey: string;
+        memoryId: string;
+        contentHash: string;
+        lastWrittenVersion?: number;
+      }) => {
+        rows.set(e.sourceKey, { lastWrittenVersion: null, ...e });
+        return { ...e };
+      }
+    ),
   };
 }
 
@@ -72,8 +101,14 @@ function makeLtm() {
       id: `mem-${++n}`,
       content: input.content,
       metadata: {},
+      version: 1,
     })),
-    update: vi.fn(async (_u: string, id: string) => ({ id, content: '', metadata: {} })),
+    update: vi.fn(async (_u: string, id: string) => ({
+      id,
+      content: '',
+      metadata: {},
+      version: 2,
+    })),
   };
 }
 
@@ -346,6 +381,215 @@ describe('MemoryImportService.run', () => {
       expect(dry.secretsSkipped).toBe(real.secretsSkipped);
       expect(dry.secrets).toEqual(real.secrets);
       expect(dry.embeddingCostEstimate).toEqual(real.embeddingCostEstimate);
+    });
+  });
+
+  describe('import-vs-agent-edit CAS-skip (G4-T3 / Decision 13)', () => {
+    const seeded = (lastWrittenVersion?: number | null) => [
+      {
+        sourceKey: 'markdown:a.md',
+        memoryId: 'mem-1',
+        contentHash: computeContentHash('Alpha note'),
+        ...(lastWrittenVersion !== undefined ? { lastWrittenVersion } : {}),
+      },
+    ];
+    const driftedIR = () => makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Alpha EDITED' })]);
+
+    it('passes the ledger lastWrittenVersion as expectedVersion on a drift update', async () => {
+      const ledger = makeLedger(seeded(4));
+      ltm.update.mockResolvedValue({ id: 'mem-1', content: '', metadata: {}, version: 5 });
+      const summary = await build(driftedIR(), ledger, ltm, resolver).run(baseInput);
+      expect(summary.updated).toBe(1);
+      expect(summary.skippedConcurrentEdit).toBe(0);
+      const updateInput = ltm.update.mock.calls[0]?.[2] as { expectedVersion?: number };
+      expect(updateInput.expectedVersion).toBe(4);
+      // The ledger records the version the update produced, arming the next CAS.
+      expect(ledger.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKey: 'markdown:a.md', lastWrittenVersion: 5 })
+      );
+    });
+
+    it('CAS miss → skippedConcurrentEdit, ledger row untouched, run continues', async () => {
+      const ir = makeIR([
+        fact({ sourceKey: 'markdown:a.md', content: 'Alpha EDITED' }),
+        fact({ sourceKey: 'markdown:b.md', content: 'Beta note' }),
+      ]);
+      const ledger = makeLedger(seeded(4));
+      ltm.update.mockRejectedValue(new VersionConflictError('mem-1', 6));
+      const summary = await build(ir, ledger, ltm, resolver).run(baseInput);
+
+      expect(summary.skippedConcurrentEdit).toBe(1);
+      expect(summary.updated).toBe(0);
+      expect(summary.failed).toBe(0); // a CAS skip is NOT a failure
+      expect(summary.created).toBe(1); // the run continued with the other fact
+      // Ledger hash + version stay stale so the next run retries/re-reports.
+      expect(ledger.upsert).toHaveBeenCalledTimes(1);
+      expect(ledger.upsert).not.toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKey: 'markdown:a.md' })
+      );
+      // The skipped fact is not link-resolved (its content was not imported).
+      const batchArg = resolver.resolveBatch.mock.calls[0]?.[0] as {
+        facts: Array<{ memoryId: string }>;
+      };
+      expect(batchArg.facts).toHaveLength(1);
+    });
+
+    it('NULL ledger version (pre-upgrade row) → no expectedVersion, one last LWW, backfills', async () => {
+      const ledger = makeLedger(seeded(null));
+      ltm.update.mockResolvedValue({ id: 'mem-1', content: '', metadata: {}, version: 9 });
+      const summary = await build(driftedIR(), ledger, ltm, resolver).run(baseInput);
+      expect(summary.updated).toBe(1);
+      const updateInput = ltm.update.mock.calls[0]?.[2] as Record<string, unknown>;
+      expect('expectedVersion' in updateInput).toBe(false);
+      // Backfill: the version written by the LWW update is now in the ledger.
+      expect(ledger.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKey: 'markdown:a.md', lastWrittenVersion: 9 })
+      );
+    });
+
+    it('create path records the created row version in the ledger', async () => {
+      const ledger = makeLedger();
+      const ir = makeIR([fact({ sourceKey: 'markdown:new.md', content: 'Brand new' })]);
+      await build(ir, ledger, ltm, resolver).run(baseInput);
+      expect(ledger.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKey: 'markdown:new.md', lastWrittenVersion: 1 })
+      );
+    });
+
+    it('merge path records the post-provenance-append version in the ledger', async () => {
+      const ir = makeIR([fact({ sourceKey: 'cursor:x.mdc', content: 'Shared rule' })]);
+      const ledger = makeLedger();
+      ledger.findByContentHash.mockResolvedValue([
+        { memoryId: 'mem-existing', sourceKey: 'claude-code:memory/x.md' },
+      ]);
+      ltm.create.mockResolvedValue({
+        id: 'mem-existing',
+        content: 'Shared rule',
+        metadata: { provenance: { sources: [{ sourceKey: 'claude-code:memory/x.md' }] } },
+        version: 3,
+      });
+      ltm.update.mockResolvedValue({ id: 'mem-existing', content: '', metadata: {}, version: 4 });
+      const summary = await build(ir, ledger, ltm, resolver).run(baseInput);
+      expect(summary.mergedIntoExisting).toBe(1);
+      expect(ledger.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceKey: 'cursor:x.mdc', lastWrittenVersion: 4 })
+      );
+    });
+  });
+
+  describe('acceptance (plan G4-T3): agent edit between imports wins', () => {
+    /** Stateful LTM fake enforcing the real version-CAS contract of update(). */
+    function makeVersionedLtm() {
+      const store = new Map<
+        string,
+        {
+          id: string;
+          content: string;
+          tags: string[];
+          metadata: Record<string, unknown>;
+          version: number;
+        }
+      >();
+      let n = 0;
+      return {
+        store,
+        create: vi.fn(
+          async (input: {
+            content: string;
+            tags?: string[];
+            metadata?: Record<string, unknown>;
+          }) => {
+            const row = {
+              id: `mem-${++n}`,
+              content: input.content,
+              tags: input.tags ?? [],
+              metadata: input.metadata ?? {},
+              version: 1,
+            };
+            store.set(row.id, row);
+            return { ...row };
+          }
+        ),
+        update: vi.fn(
+          async (
+            _u: string,
+            id: string,
+            input: {
+              content?: string;
+              tags?: string[];
+              metadataMerge?: Record<string, unknown>;
+              expectedVersion?: number;
+            }
+          ) => {
+            const row = store.get(id);
+            if (!row) throw new Error(`not found: ${id}`);
+            if (input.expectedVersion !== undefined && input.expectedVersion !== row.version) {
+              throw new VersionConflictError(id, row.version);
+            }
+            if (input.content !== undefined) row.content = input.content;
+            if (input.tags !== undefined) row.tags = input.tags;
+            if (input.metadataMerge !== undefined)
+              row.metadata = { ...row.metadata, ...input.metadataMerge };
+            row.version += 1;
+            return { ...row };
+          }
+        ),
+        /** Out-of-band ENGRAM edit (simulates an agent's update_memory). */
+        agentEdit(id: string, content: string): void {
+          const row = store.get(id);
+          if (!row) throw new Error(`not found: ${id}`);
+          row.content = content;
+          row.version += 1;
+        },
+      };
+    }
+
+    it('seeds via import, bumps version out-of-band, re-imports → agent content kept, skippedConcurrentEdit=1', async () => {
+      const versionedLtm = makeVersionedLtm();
+      const ledger = makeLedger();
+
+      // Run 1: first import of the source file.
+      const run1 = await build(
+        makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Fact v1 from source' })]),
+        ledger,
+        versionedLtm,
+        resolver
+      ).run(baseInput);
+      expect(run1.created).toBe(1);
+      const memoryId = [...versionedLtm.store.keys()][0]!;
+      expect(ledger.rows.get('markdown:a.md')).toMatchObject({ lastWrittenVersion: 1 });
+
+      // Out-of-band agent edit inside ENGRAM: version 1 → 2.
+      versionedLtm.agentEdit(memoryId, 'Agent-improved fact');
+
+      // Run 2: the source file changed too → drift update → CAS miss → skip.
+      const run2 = await build(
+        makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Fact v2 from source' })]),
+        ledger,
+        versionedLtm,
+        resolver
+      ).run(baseInput);
+      expect(run2.skippedConcurrentEdit).toBe(1);
+      expect(run2.updated).toBe(0);
+      expect(run2.failed).toBe(0);
+      // The memory keeps the agent's content — never clobbered by the source.
+      expect(versionedLtm.store.get(memoryId)?.content).toBe('Agent-improved fact');
+      // Ledger still points at the ORIGINAL import (hash + version stale).
+      expect(ledger.rows.get('markdown:a.md')).toMatchObject({
+        contentHash: computeContentHash('Fact v1 from source'),
+        lastWrittenVersion: 1,
+      });
+
+      // Run 3: same changed source again → still skips (persistent until the
+      // operator reconciles — documented behavior, not a transient miss).
+      const run3 = await build(
+        makeIR([fact({ sourceKey: 'markdown:a.md', content: 'Fact v2 from source' })]),
+        ledger,
+        versionedLtm,
+        resolver
+      ).run(baseInput);
+      expect(run3.skippedConcurrentEdit).toBe(1);
+      expect(versionedLtm.store.get(memoryId)?.content).toBe('Agent-improved fact');
     });
   });
 });

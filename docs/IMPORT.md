@@ -66,6 +66,27 @@ unique on `(userId, sourceKey)`) records each imported fact's content hash:
 Dedup is `scope`-bound (default `import`); link resolution is `userId`-scoped, so
 a Claude fact can link a Cursor rule.
 
+## Concurrent edits (CAS-skip, closes G4-T3)
+
+A re-import never overwrites a memory that was edited **inside ENGRAM** after
+its last import. The ledger stores the `Memory.version` the importer last wrote
+(`lastWrittenVersion`) and passes it as `expectedVersion` on the drift update; a
+version mismatch (agent edit in between) makes the update **skip** that fact and
+count it as `skippedConcurrentEdit` in the summary — the ENGRAM edit always wins
+(see [`concurrency-policy.md`](./concurrency-policy.md), Decision 13).
+
+On a skip the ledger row is deliberately left stale (old hash + version), so
+**every following run re-reports the conflict** until you reconcile: either edit
+the memory in ENGRAM to what you want, or align the source file with it (an
+unchanged-hash source is an idempotent skip). This also backstops the watcher's
+whole-run conflict check — even a `--force` sync cannot clobber a concurrently
+edited memory row.
+
+Caveat (NULL backfill): ledger rows written before `lastWrittenVersion` existed
+carry no version, so the **first** re-import of such a source cannot CAS — it is
+one last last-writer-wins update, and the version it writes backfills the
+ledger; every later re-import is CAS-guarded.
+
 ## Links & deferred resolution
 
 Wikilinks and relative markdown links become first-class `memory_links` rows. A

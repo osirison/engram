@@ -210,12 +210,24 @@ export class MemoryLtmService {
         }
       }
 
-      const metadata = this.annotateImportance(contradictionAnnotatedMeta, {
+      let metadata = this.annotateImportance(contradictionAnnotatedMeta, {
         content: processedContent,
         metadata: contradictionAnnotatedMeta,
         tags: processedTags,
         accessCount: 0,
       });
+
+      // G3-T4 (policy `flag`, the default): the NEW row is also marked
+      // `contradicted` with review fields pointing at the existing row.
+      // Applied AFTER annotateImportance, which rewrites `status`; the durable
+      // marker is `contradictionWith` (see annotateContradicted).
+      if (contradiction && contradiction.action === 'flagged') {
+        metadata = this.contradictionDetectionService!.annotateContradicted(
+          metadata,
+          contradiction.memoryId,
+          contradiction.reason
+        );
+      }
 
       // ── Step 7: PostgresWrite (atomic quota + insert) ──────────────────
       const memory = await this.createRowWithQuota(validatedInput.userId, {
@@ -233,19 +245,49 @@ export class MemoryLtmService {
       this.logger.debug(`LTM memory created: ${memory.id}`);
       const ltmMemory = this.mapToLtmMemory(memory);
 
-      // ── Step B1 (post-write): mark superseded memory (non-fatal) ───────
+      // ── Step B1 (post-write): apply the contradiction policy (non-fatal) ──
+      // `supersede` → latest-wins, the older row is hidden from default recall
+      //   (pre-G3-T4 behaviour, unchanged).
+      // `flagged` (policy `flag`, the default) → BOTH rows are kept visible:
+      //   the existing row gets the `contradicted` review metadata via the
+      //   G3-T3 CAS path and the pair is linked with a `contradicts` MemoryLink.
       if (contradiction) {
-        await this.markSuperseded(
-          contradiction.memoryId,
-          ltmMemory.id,
-          contradiction.reason,
-          validatedInput.userId,
-          validatedInput.organizationId
-        ).catch((err: unknown) =>
-          this.logger.warn(
-            `Failed to mark memory ${contradiction.memoryId} as superseded: ${err instanceof Error ? err.message : String(err)}`
-          )
-        );
+        if (contradiction.action === 'flagged') {
+          await this.markContradicted(
+            contradiction.memoryId,
+            ltmMemory.id,
+            contradiction.reason,
+            validatedInput.userId,
+            validatedInput.organizationId
+          ).catch((err: unknown) =>
+            this.logger.warn(
+              `Failed to flag memory ${contradiction.memoryId} as contradicted: ${err instanceof Error ? err.message : String(err)}`
+            )
+          );
+          await this.linkContradiction(
+            ltmMemory.id,
+            contradiction.memoryId,
+            contradiction,
+            validatedInput.userId,
+            validatedInput.organizationId
+          ).catch((err: unknown) =>
+            this.logger.warn(
+              `Failed to link contradicted pair ${ltmMemory.id} ↔ ${contradiction.memoryId}: ${err instanceof Error ? err.message : String(err)}`
+            )
+          );
+        } else {
+          await this.markSuperseded(
+            contradiction.memoryId,
+            ltmMemory.id,
+            contradiction.reason,
+            validatedInput.userId,
+            validatedInput.organizationId
+          ).catch((err: unknown) =>
+            this.logger.warn(
+              `Failed to mark memory ${contradiction.memoryId} as superseded: ${err instanceof Error ? err.message : String(err)}`
+            )
+          );
+        }
       }
 
       // ── Step 12: SearchIndexUpdate (non-fatal) ─────────────────────────
@@ -2104,6 +2146,105 @@ export class MemoryLtmService {
     this.logger.debug(
       `Skipping supersede for memory ${memoryId}: version conflicted twice (concurrent edits win)`
     );
+  }
+
+  /**
+   * Mark an existing memory as contradicted-but-kept (G3-T4, policy `flag`).
+   *
+   * Version-checked exactly like {@link markSuperseded} (G3-T3): the review
+   * metadata is CAS'd against the row version we read, retried ONCE against a
+   * fresh read so it merges into a concurrent edit's metadata instead of
+   * overwriting it, and skipped after a second conflict.
+   *
+   * Deliberately does NOT emit a lifecycle audit row: unlike supersede (which
+   * hides the row from recall and is therefore a user-visible mutation),
+   * flagging only ADDS review metadata — both rows remain fully visible in
+   * default recall, so there is no hidden state for an audit trail to recover.
+   */
+  private async markContradicted(
+    memoryId: string,
+    counterpartId: string,
+    reason: string,
+    userId: string,
+    organizationId: string | undefined
+  ): Promise<void> {
+    let existing = await this.findRawMemory(userId, memoryId, organizationId);
+    if (!existing) return;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const updatedMeta = this.contradictionDetectionService!.annotateContradicted(
+        existing.metadata as Record<string, unknown> | null,
+        counterpartId,
+        reason
+      );
+      const updated = await this.casMetadataUpdate(
+        memoryId,
+        userId,
+        organizationId,
+        existing.version,
+        {
+          metadata: updatedMeta,
+        }
+      );
+      if (updated) {
+        this.logger.debug(`Memory ${memoryId} flagged as contradicted by ${counterpartId}`);
+        return;
+      }
+      if (attempt === 1) {
+        break; // second CAS miss — skip below, don't re-read again
+      }
+      // CAS missed: re-read and retry once so the review fields merge into the
+      // concurrent edit's metadata instead of overwriting it.
+      const fresh = await this.findRawMemory(userId, memoryId, organizationId);
+      if (!fresh) return; // row deleted concurrently — nothing left to flag
+      existing = fresh;
+    }
+    this.logger.debug(
+      `Skipping contradiction flag for memory ${memoryId}: version conflicted twice (concurrent edits win)`
+    );
+  }
+
+  /**
+   * Link a contradicted pair with a `contradicts` MemoryLink (G3-T4, policy
+   * `flag`). `contradicts` comes from the closed EDGE_TYPES vocabulary
+   * (@engram/memory-interchange) and is its own inverse, so a single row —
+   * written source=new, target=existing by convention — captures the relation
+   * in both directions. `origin: 'derived'` because the edge is reproducible
+   * by re-running detection (WP3 §4.3). Idempotent via the
+   * (sourceMemoryId, targetLocator, relType) unique key, mirroring the WP4
+   * link-resolver upsert. Best-effort: callers `.catch()` this — a lost link
+   * never fails the create that already happened.
+   */
+  private async linkContradiction(
+    sourceMemoryId: string,
+    targetMemoryId: string,
+    match: ContradictionMatch,
+    userId: string,
+    organizationId: string | undefined
+  ): Promise<void> {
+    const targetLocator = `id:${targetMemoryId}`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (this.prisma as any).memoryLink.upsert({
+      where: {
+        sourceMemoryId_targetLocator_relType: {
+          sourceMemoryId,
+          targetLocator,
+          relType: 'contradicts',
+        },
+      },
+      create: {
+        userId,
+        organizationId: organizationId ?? null,
+        sourceMemoryId,
+        targetMemoryId,
+        targetLocator,
+        relType: 'contradicts',
+        origin: 'derived',
+        score: match.score,
+        note: match.reason,
+      },
+      update: { targetMemoryId, score: match.score, note: match.reason },
+    });
   }
 
   /**

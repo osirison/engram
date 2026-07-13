@@ -202,6 +202,12 @@ model MemoryImportSource {
   importBatchId String
   importedAt    DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  /// `Memory.version` as of the importer's last successful write (G4-T3 CAS-skip).
+  /// Passed as `expectedVersion` on the next re-import update so a concurrent
+  /// agent edit is skipped, never clobbered. NULL for rows written before this
+  /// column existed: the first re-import after upgrade cannot CAS (one last
+  /// LWW write) and backfills the version it wrote.
+  lastWrittenVersion Int?
 
   @@unique([userId, sourceKey]) // indexed idempotency point-lookup
   @@index([userId, contentHash])

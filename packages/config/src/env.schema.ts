@@ -89,6 +89,8 @@ export const baseSchema = z.object({
   MEMORY_CONTRADICTION_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.8),
   /** Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. */
   MEMORY_CONTRADICTION_THRESHOLD_MAX: z.coerce.number().min(0).max(1).optional().default(0.97),
+  /** What happens when a new write contradicts an existing memory: `flag` keeps BOTH rows visible in recall and marks them `contradicted` for review; `supersede` hides the older row from default recall (latest-wins). Defaults to `flag` (conservative — no data is hidden without review). */
+  MEMORY_CONTRADICTION_POLICY: z.enum(['supersede', 'flag']).optional().default('flag'),
   /** Half-life in days for the recency component of importance scoring. Defaults to 14. */
   MEMORY_IMPORTANCE_HALF_LIFE_DAYS: z.coerce.number().positive().optional().default(14),
   /** Absolute directory the `import_agent_memory` server-side path must resolve into (symlinks resolved). Defaults to the server process home directory when unset. */
@@ -347,6 +349,7 @@ export type Env = {
   MEMORY_DUPLICATE_THRESHOLD: number;
   MEMORY_CONTRADICTION_THRESHOLD: number;
   MEMORY_CONTRADICTION_THRESHOLD_MAX: number;
+  MEMORY_CONTRADICTION_POLICY: 'supersede' | 'flag';
   MEMORY_IMPORTANCE_HALF_LIFE_DAYS: number;
   IMPORT_ALLOWED_ROOT?: string;
   PGVECTOR_HNSW_M?: number;

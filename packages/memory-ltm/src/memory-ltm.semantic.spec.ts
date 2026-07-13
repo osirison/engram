@@ -375,5 +375,70 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
         expect(results).toEqual([]);
       });
     });
+
+    describe('contradicted rows keep surfacing (G3-T4, policy flag)', () => {
+      const activeId = 'cldx4k8xp000308l85d6e0x4s';
+      const contradictedId = 'cldx4k8xp000508l87f8g2z6u';
+
+      it('default recall returns BOTH rows of a flagged pair, review fields intact', async () => {
+        // Unlike supersede, a contradiction flag hides nothing: the G3-T1
+        // filter keys on supersededBy / status='superseded' only, so a
+        // status='contradicted' row (no supersededBy marker) must pass it.
+        vectorStore.search.mockResolvedValue([
+          { id: activeId, score: 0.9 },
+          { id: contradictedId, score: 0.85 },
+        ]);
+        prisma.memory.findMany.mockResolvedValue([
+          buildMemory({
+            id: activeId,
+            metadata: {
+              status: 'contradicted',
+              contradictionWith: contradictedId,
+              contradictionReason: 'negation asymmetry',
+              contradictedAt: '2025-01-02T00:00:00.000Z',
+            },
+          }),
+          buildMemory({
+            id: contradictedId,
+            metadata: {
+              status: 'contradicted',
+              contradictionWith: activeId,
+              contradictionReason: 'negation asymmetry',
+              contradictedAt: '2025-01-02T00:00:00.000Z',
+            },
+          }),
+        ]);
+
+        const results = await service.semanticSearch(mockUserId, 'query');
+
+        expect(results.map((r) => r.memory.id).sort()).toEqual([activeId, contradictedId].sort());
+        // The flag stays visible to callers through the result's metadata.
+        const contradicted = results.find((r) => r.memory.id === contradictedId);
+        expect(contradicted?.memory.metadata).toEqual(
+          expect.objectContaining({
+            status: 'contradicted',
+            contradictionWith: activeId,
+            contradictionReason: 'negation asymmetry',
+            contradictedAt: expect.any(String),
+          })
+        );
+      });
+
+      it('still surfaces a contradicted row after decay rewrote its status', async () => {
+        // `contradictionWith` is the durable marker; a decay pass may rewrite
+        // status to active/stale, and the row must keep surfacing either way.
+        vectorStore.search.mockResolvedValue([{ id: contradictedId, score: 0.9 }]);
+        prisma.memory.findMany.mockResolvedValue([
+          buildMemory({
+            id: contradictedId,
+            metadata: { status: 'stale', contradictionWith: activeId },
+          }),
+        ]);
+
+        const results = await service.semanticSearch(mockUserId, 'query');
+
+        expect(results.map((r) => r.memory.id)).toEqual([contradictedId]);
+      });
+    });
   });
 });

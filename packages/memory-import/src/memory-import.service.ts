@@ -56,6 +56,14 @@ export interface ImportSummary {
   updated: number;
   /** Idempotent no-ops (ledger hit, content hash unchanged). */
   skipped: number;
+  /**
+   * Re-imports skipped because the memory was edited inside ENGRAM since the
+   * last import (version CAS miss — G4-T3 CAS-skip, ADR
+   * `docs/concurrency-policy.md` Decision 13). The agent edit is kept; the
+   * ledger hash is left stale so every following run re-reports the conflict
+   * until the operator reconciles.
+   */
+  skippedConcurrentEdit: number;
   /** New sourceKey whose content merged into an existing memory (multi-source). */
   mergedIntoExisting: number;
   /** Facts dropped by the `skip` secrets policy. */
@@ -199,17 +207,52 @@ export class MemoryImportService {
     const tags = [...new Set([...fact.tags, ...extraTags])];
 
     let memoryId: string;
+    /** `Memory.version` after this import's write — recorded in the ledger (G4-T3). */
+    let writtenVersion: number | undefined;
     if (existing) {
-      // Ledger hit, hash changed → update the mapped memory (re-embeds, merges meta).
+      // Ledger hit, hash changed → update the mapped memory (re-embeds, merges
+      // meta) under the CAS-skip policy (G4-T3 / Decision 13, ADR
+      // docs/concurrency-policy.md): pass the version this importer last wrote
+      // as expectedVersion so a concurrent ENGRAM edit makes the CAS miss and
+      // the source file NEVER clobbers the agent's edit.
+      //
+      // NULL fallback: ledger rows written before `lastWrittenVersion` existed
+      // carry NULL — no CAS is possible for that first re-import, so it is one
+      // last last-writer-wins update, and the version it writes backfills the
+      // ledger; every later re-import CASes normally.
+      const expected = existing.lastWrittenVersion;
       const meta = this.buildMetadata(entry, importBatchId, importedAt, ir, contentHash, [source]);
-      const updated = await this.ltm.update(
-        userId,
-        existing.memoryId,
-        { content, tags, metadataMerge: meta },
-        summary.organizationId,
-        scope
-      );
+      let updated: LtmMemory;
+      try {
+        updated = await this.ltm.update(
+          userId,
+          existing.memoryId,
+          {
+            content,
+            tags,
+            metadataMerge: meta,
+            ...(typeof expected === 'number' ? { expectedVersion: expected } : {}),
+          },
+          summary.organizationId,
+          scope
+        );
+      } catch (err) {
+        if (isLtmVersionConflict(err)) {
+          // CAS miss → SKIP: keep the agent's content, count it for the
+          // operator, and deliberately leave the ledger row (hash + version)
+          // untouched so the next run retries and re-reports the conflict.
+          summary.skippedConcurrentEdit++;
+          this.logger.warn(
+            `Concurrent ENGRAM edit on memory ${existing.memoryId} (${fact.sourceKey}): ` +
+              `last imported at v${expected ?? '?'}, now v${err.currentVersion ?? '?'} — ` +
+              `skipping re-import (CAS-skip); reconcile in ENGRAM or update the source file`
+          );
+          return null;
+        }
+        throw err;
+      }
       memoryId = updated.id;
+      writtenVersion = updated.version;
       summary.updated++;
     } else {
       // Ledger miss → create(); exact-content dedup may return an existing row.
@@ -225,9 +268,11 @@ export class MemoryImportService {
       memoryId = created.id;
       if (priorSameContent.length > 0) {
         summary.mergedIntoExisting++;
-        await this.appendProvenanceSource(created, source, scope, summary);
+        // The provenance append bumps the version — record the post-append one.
+        writtenVersion = await this.appendProvenanceSource(created, source, scope, summary);
       } else {
         summary.created++;
+        writtenVersion = created.version;
       }
     }
 
@@ -239,31 +284,37 @@ export class MemoryImportService {
       sourceKey: fact.sourceKey,
       contentHash,
       importBatchId,
+      ...(typeof writtenVersion === 'number' ? { lastWrittenVersion: writtenVersion } : {}),
     });
     return memoryId;
   }
 
-  /** Append this source to a merged memory's `provenance.sources[]` (D1). */
+  /**
+   * Append this source to a merged memory's `provenance.sources[]` (D1).
+   * Returns the memory's `version` after the append (the append is a version
+   * bump) — the value the ledger must record as `lastWrittenVersion` (G4-T3).
+   */
   private async appendProvenanceSource(
     memory: LtmMemory,
     source: ProvenanceSource,
     scope: string,
     summary: ImportSummary
-  ): Promise<void> {
+  ): Promise<number> {
     const meta = (memory.metadata ?? {}) as Record<string, unknown>;
     const prov = (meta['provenance'] ?? {}) as Record<string, unknown>;
     const existingSources = Array.isArray(prov['sources'])
       ? (prov['sources'] as ProvenanceSource[])
       : [];
-    if (existingSources.some((s) => s.sourceKey === source.sourceKey)) return;
+    if (existingSources.some((s) => s.sourceKey === source.sourceKey)) return memory.version;
     const sources = [...existingSources, source];
-    await this.ltm.update(
+    const updated = await this.ltm.update(
       summary.userId,
       memory.id,
       { metadataMerge: { provenance: { ...prov, sources } } },
       summary.organizationId,
       scope
     );
+    return updated.version;
   }
 
   private buildMetadata(
@@ -420,6 +471,7 @@ export class MemoryImportService {
       created: 0,
       updated: 0,
       skipped: 0,
+      skippedConcurrentEdit: 0,
       mergedIntoExisting: 0,
       secretsSkipped: 0,
       failed: 0,
@@ -445,4 +497,14 @@ interface ScannedFact {
   skip: boolean;
   embeddingExcluded: boolean;
   extraTags: string[];
+}
+
+/**
+ * `LtmVersionConflictError` matched by NAME, mirroring the `CONFLICT:` mapping
+ * in `memory.controller.ts` — avoids coupling to the class identity across the
+ * package's src/dist module copies (an `instanceof` against a second copy of
+ * the class silently never matches).
+ */
+function isLtmVersionConflict(err: unknown): err is Error & { currentVersion?: number } {
+  return err instanceof Error && err.name === 'LtmVersionConflictError';
 }

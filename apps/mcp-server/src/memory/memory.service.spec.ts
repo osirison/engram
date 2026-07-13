@@ -872,6 +872,41 @@ describe('MemoryService', () => {
         expect.not.objectContaining({ includeSuperseded: true }),
       );
     });
+
+    it('surfaces contradicted-but-kept rows with their review metadata intact (G3-T4)', async () => {
+      // Policy `flag` (the default) keeps BOTH rows of a contradicted pair in
+      // recall; only `supersededBy` hides a row. The wiring must pass the
+      // flagged row through unchanged so callers can see status + review fields.
+      const contradicted = {
+        memory: {
+          ...mockLtmMemory,
+          id: 'ltm-contradicted',
+          metadata: {
+            status: 'contradicted',
+            contradictionWith: mockLtmMemory.id,
+            contradictionReason: 'negation asymmetry',
+            contradictedAt: '2026-07-13T00:00:00.000Z',
+          },
+        },
+        score: 0.82,
+      };
+      const semanticResult = [
+        { memory: mockLtmMemory, score: 0.87 },
+        contradicted,
+      ];
+      ltmService.semanticSearch.mockResolvedValue(semanticResult);
+
+      const result = await service.recall('user-1', 'query');
+
+      expect(result).toHaveLength(2);
+      expect(result[1]?.memory.metadata).toEqual(
+        expect.objectContaining({
+          status: 'contradicted',
+          contradictionWith: mockLtmMemory.id,
+          contradictionReason: 'negation asymmetry',
+        }),
+      );
+    });
   });
 
   describe('reindex', () => {
