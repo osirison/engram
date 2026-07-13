@@ -60,6 +60,24 @@
     g.stroke();
   }
 
+  // Pre-rendered mote sprites: one blurred disc per tone, drawn once at init.
+  // Replaces per-mote ctx.shadowBlur in the frame loop (canvas shadow
+  // rendering is notoriously slow); _render just drawImage-scales these.
+  const MOTE_SPRITE = { size: 64, core: 16, glow: 16 };
+  function makeMoteSprite(rgb) {
+    const c = document.createElement("canvas");
+    c.width = c.height = MOTE_SPRITE.size;
+    const g = c.getContext("2d");
+    const col = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},1)`;
+    g.shadowColor = col;
+    g.shadowBlur = MOTE_SPRITE.glow;
+    g.fillStyle = col;
+    g.beginPath();
+    g.arc(MOTE_SPRITE.size / 2, MOTE_SPRITE.size / 2, MOTE_SPRITE.core, 0, TAU);
+    g.fill();
+    return c;
+  }
+
   const GEO_SHAPES = [
     { name: "flower", draw(g, R) {
       const r = R / 4, N = 3, span = r * (N + 0.5);
@@ -161,11 +179,20 @@
       this.fragCount = opts.fragments || 26;
       this.moteCount = opts.motes || 90;
 
-      // foreground text whose footprint must stay clear of readable memories
+      // foreground text whose footprint must stay clear of readable memories.
+      // Rect reads force layout, so they are gated (see _updateExclusions):
+      // _exclRects caches viewport rects + the scroll offset they were read at.
       this.exclSel = opts.exclude || null;
       this._exclNodes = null;
       this._exclTick = 0;
+      this._exclRects = null;
+      this._exclScrollX = 0;
+      this._exclScrollY = 0;
+      this._exclDirty = true;
       this.excl = null;
+
+      this.moteSprites = {};
+      for (const tone in TONES) this.moteSprites[tone] = makeMoteSprite(TONES[tone]);
 
       this.focal = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.42, tx: 0, ty: 0 };
       this.focal.tx = this.focal.x; this.focal.ty = this.focal.y;
@@ -184,12 +211,24 @@
         this.lastPointerT = this.t;
       }, { passive: true });
 
+      // pause the rAF loop entirely while the tab is hidden (background-tab
+      // throttling still ticks ~1/s; this drops it to zero)
+      this._onVisibility = () => {
+        if (document.hidden) {
+          if (this._raf) { cancelAnimationFrame(this._raf); this._raf = 0; }
+        } else if (this.running && !this.reduced && !this._raf) {
+          this._raf = requestAnimationFrame(this._frame);
+        }
+      };
+      document.addEventListener("visibilitychange", this._onVisibility);
+
       this._resize();
       this._seed();
     }
 
     _resize() {
       this.w = window.innerWidth; this.h = window.innerHeight;
+      this._exclDirty = true; // cached exclusion rects are stale after reflow
       for (const c of [this.canvas, this.geo]) {
         c.width = Math.floor(this.w * this.dpr);
         c.height = Math.floor(this.h * this.dpr);
@@ -275,7 +314,7 @@
     setProgress(p) { this.progress = clamp(p, 0, 1); this.Ftarget = lerp(0.14, 1.0, this.progress); }
 
     // merge runtime tweak values
-    set(params) { Object.assign(this.tweak, params || {}); }
+    set(params) { Object.assign(this.tweak, params || {}); this._dirty = true; }
 
     // how much a point sits over foreground text (0 = clear, 1 = fully covered).
     // feathered so memories fade out as they drift toward the words, never popping.
@@ -298,16 +337,37 @@
       return hide;
     }
 
-    // refresh the rects of foreground text near the viewport (cached, cheap to re-read)
+    // refresh the rects of foreground text near the viewport.
+    // getBoundingClientRect() forces a synchronous reflow after the previous
+    // frame's style writes, so the layout reads are gated to every 30th frame
+    // (plus resize, via _exclDirty). Between refreshes the cached rects are
+    // shifted by the scroll delta — pure arithmetic, no layout access.
     _updateExclusions() {
       if (!this.exclSel) return;
-      if (!this._exclNodes || (this._exclTick++ % 30 === 0)) {
+      if (this._exclDirty || !this._exclRects || (this._exclTick++ % 30 === 0)) {
+        this._exclDirty = false;
         this._exclNodes = Array.prototype.slice.call(document.querySelectorAll(this.exclSel));
+        const rects = [];
+        for (let i = 0; i < this._exclNodes.length; i++) {
+          const r = this._exclNodes[i].getBoundingClientRect();
+          if (r.width > 1 && r.height > 1) {
+            rects.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+          }
+        }
+        this._exclRects = rects;
+        this._exclScrollX = window.scrollX;
+        this._exclScrollY = window.scrollY;
       }
+      // scroll-adjust the cached rects; viewport filter runs on the cheap copies
+      const dx = this._exclScrollX - window.scrollX;
+      const dy = this._exclScrollY - window.scrollY;
       const arr = [];
-      for (let i = 0; i < this._exclNodes.length; i++) {
-        const r = this._exclNodes[i].getBoundingClientRect();
-        if (r.width > 1 && r.height > 1 && r.bottom > -160 && r.top < this.h + 160) arr.push(r);
+      for (let i = 0; i < this._exclRects.length; i++) {
+        const r = this._exclRects[i];
+        const top = r.top + dy, bottom = r.bottom + dy;
+        if (bottom > -160 && top < this.h + 160) {
+          arr.push({ left: r.left + dx, right: r.right + dx, top, bottom });
+        }
       }
       this.excl = arr;
     }
@@ -336,6 +396,7 @@
         const dead = this.frags.shift();
         dead.el.remove();
       }
+      this._dirty = true;
       return f;
     }
 
@@ -348,7 +409,7 @@
         const score = -d + (f.tone !== "neutral" ? 120 : 0) + Math.random() * 80;
         if (score > bestScore) { bestScore = score; best = f; }
       }
-      if (best) { best.recallPull = 1; best.clarity = 1; }
+      if (best) { best.recallPull = 1; best.clarity = 1; this._dirty = true; }
       return best;
     }
 
@@ -358,16 +419,28 @@
       if (this.reduced) { this.F = this.Ftarget; this._render(); return; }
       this._raf = requestAnimationFrame(this._frame);
     }
-    stop() { this.running = false; if (this._raf) cancelAnimationFrame(this._raf); }
+    stop() { this.running = false; if (this._raf) { cancelAnimationFrame(this._raf); this._raf = 0; } }
 
     // rAF driver — note: rAF passes a timestamp arg, so the loop body must NOT
     // treat its first argument as a "render once" flag (that was the original bug).
     _frame() {
-      this._render();
+      if (!this._settled()) this._render();
       if (this.running) this._raf = requestAnimationFrame(this._frame);
     }
 
+    // With idle drift off there is nothing left to animate once the lantern
+    // easing lands: skip the whole render (no layout reads, no style writes,
+    // no canvas) until an input moves a target or _dirty is set (set(),
+    // addMemory(), recall()). With idleDrift on (the default) never skip.
+    _settled() {
+      if (this.tweak.idleDrift || this._dirty) return false;
+      return Math.abs(this.focal.tx - this.focal.x) < 0.1 &&
+             Math.abs(this.focal.ty - this.focal.y) < 0.1 &&
+             Math.abs(this.Ftarget - this.F) < 0.0005;
+    }
+
     _render() {
+      this._dirty = false;
       this.t += 1 / 60;
 
       // Idle: before the user moves (or after ~2.4s still), the lantern drifts
@@ -466,7 +539,8 @@
       const ctx = this.ctx;
       ctx.clearRect(0, 0, this.w, this.h);
 
-      // motes
+      // motes — pre-blurred per-tone sprites, scaled per mote (no per-draw
+      // shadowBlur; the baked glow stands in for the old (1-clar)*4 halo)
       for (const m of this.motes) {
         m.ph += 0.006 * m.sp;
         const travel = (prog * 0.9) * (0.3 + m.z);
@@ -479,15 +553,13 @@
         const clar = clamp(Math.max(depthClar, curClar), 0, 1);
         const r = (0.5 + m.z * 1.6) * (0.7 + clar);
         const a = (0.05 + clar * 0.5) * (1 - this._hideAt(mx, my));
-        const col = TONES[m.tone];
         m.sx = mx; m.sy = my; m.clar = clar;
-        const blurFar = (1 - clar) * 4;
-        ctx.shadowBlur = blurFar;
-        ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},${a})`;
-        ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${a})`;
-        ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI * 2); ctx.fill();
+        if (a < 0.004) continue; // fully hidden behind foreground text
+        const s = (r / MOTE_SPRITE.core) * MOTE_SPRITE.size;
+        ctx.globalAlpha = a;
+        ctx.drawImage(this.moteSprites[m.tone], mx - s / 2, my - s / 2, s, s);
       }
-      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
 
       // connective lines between fragments that are near & in focus (familiar, connected)
       ctx.lineWidth = 1;

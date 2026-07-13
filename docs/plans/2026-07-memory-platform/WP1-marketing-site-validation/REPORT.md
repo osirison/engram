@@ -228,3 +228,32 @@ Independent tasks, each executable in parallel with no other context. Where two 
 - **Exact steps:** (1) `CLAUDE.md:16` says `pnpm@11.4.0`; root `package.json:60` pins `packageManager: pnpm@11.5.0` and root `README.md:16,19` say 11.5.0 — update CLAUDE.md to 11.5.0. (2) Root `README.md:36` says "19-tool MCP surface"; the controller implements 20 (`apps/mcp-server/src/memory/memory.controller.ts:74-96`) — recount and fix (20 memory tools; 21 including the public `ping` from `packages/core/src/mcp/tools/index.ts:160`). Decide the canonical count and state it with the same basis in both places.
 - **Acceptance criteria:** No occurrence of `11.4.0` in CLAUDE.md; the tool count in README matches a comment-referenced source of truth; `pnpm docs:check` passes.
 - **Size:** S. **Depends-on:** none. (Out of marketing-site scope but blocks honest tool-count copy in R7's optional footnote.)
+
+## R10 results (2026-07-13)
+
+Measured during WP1 batch B9 (R8 + R12) in the `fix/wp1-marketing-b9` worktree.
+
+**Lighthouse: BLOCKED.** No Chrome/Chromium binary exists on the measurement host (`which chromium chromium-browser google-chrome` → nothing; only Firefox is installed) and Lighthouse cannot drive Firefox, so `lighthouse.json` was not produced and LCP/TBT/CLS/perf-score remain unmeasured. Re-run in a Chrome-capable environment: `cd apps/marketing-site && npm ci && npm run build && npm run preview -- --port 4173 &` then `npx --yes lighthouse http://localhost:4173 --output=json --output-path=docs/plans/2026-07-memory-platform/WP1-marketing-site-validation/lighthouse.json --chrome-flags="--headless"`. Everything measurable without Chrome follows.
+
+### Page weight (fresh builds, gzip via `gzip -c | wc -c`)
+
+| Asset                          | Before B9 (post-B8) raw / gzip | After B9 (R8+R12) raw / gzip | Delta raw / gzip                                            |
+| ------------------------------ | ------------------------------ | ---------------------------- | ----------------------------------------------------------- |
+| `dist/index.html`              | 13,409 / 3,826                 | 17,864 / 5,242               | +4,455 / +1,416 — prerendered `#root` markup (R12)          |
+| `dist/assets/index-*.js`       | 164,529 / 53,869               | 165,882 / 54,280             | +1,353 / +411 — hydrate path + haze sprite/rect-cache code  |
+| **Total first-load (HTML+JS)** | **177,938 / 57,695**           | **183,746 / 59,522**         | **+5,808 / +1,827**                                          |
+
+The +1.8 kB gzip buys content-before-JS: all hero/panel/verbs/install copy is now in the static HTML, so first paint of real content no longer waits on 165 kB of JS, and non-JS crawlers index the page.
+
+### Google Fonts transfer size (curl with a Chrome UA; Lighthouse network items unavailable)
+
+| Fonts URL                                  | CSS     | woff2 inventory (all unicode-range subsets) |
+| ------------------------------------------ | ------- | ------------------------------------------- |
+| Before — JetBrains Mono `300;400;500`      | 8,635 B | 153,392 B                                   |
+| After (R8) — JetBrains Mono `400;500`      | 6,764 B | 133,440 B                                   |
+
+Dropping the unused 300 weight removes 19,952 B of woff2 inventory + 1,871 B of CSS. A browser fetches only the subsets it needs, so real per-visit savings are the latin/latin-ext 300-weight files (~20 kB at most, less on latin-only pages).
+
+### Runtime smoke (headless Firefox, 1440×900 — FPS profiling still needs Chrome)
+
+After R8 (tick-gated `getBoundingClientRect`, per-tone pre-blurred mote sprites replacing per-draw `shadowBlur`, visibilitychange pause, settled-skip when `idleDrift` is off): `npm run preview` (hydrated prerender) and `npm run dev` (createRoot fallback) both render hero, sacred-geometry backdrop, motes, lantern glow, and lantern-revealed fragments; dev server output clean. Frame-cost/long-task before/after numbers require a Chrome DevTools trace — carried as the same blocker as Lighthouse above.

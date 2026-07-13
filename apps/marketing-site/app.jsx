@@ -1,8 +1,10 @@
-/* app.jsx — Engram marketing site */
+/* app.jsx — Engram marketing site.
+ * Exports <App/> with no module-level side effects so it can render in two
+ * places: the browser (main.jsx) and the build-time prerender (entry-server.jsx
+ * via prerender.mjs). Everything browser-only (MemoryHaze, scroll listeners,
+ * dev tweaks) stays effect-scoped and never runs during renderToString. */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createRoot } from 'react-dom/client';
 import { MemoryHaze } from './memory-haze.js';
-import './smooth-scroll.js';
 
 // Dev-only tweaks UI. `import.meta.env.DEV` is statically false in production
 // builds, so Rollup drops the dynamic import and the panel never ships to
@@ -304,5 +306,5 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+export default App;
 

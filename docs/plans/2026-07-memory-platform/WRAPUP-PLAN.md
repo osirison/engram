@@ -89,7 +89,7 @@ Legend: ✅ merged · 🟨 in progress · ⬜ not started.
 | B6    | `feat/wp6-docs-content-1`    | WP6 T7a, T7b, T8, T13                      | ⬜                          |      |
 | B7    | `feat/wp6-docs-content-2`    | WP6 T9, T10, T11, T12, T14                 | ⬜                          |      |
 | B8    | `fix/wp1-marketing-b8`       | R2, R3, R7, R5, R6, R13, R4, R11, R1-CNAME | ✅                          | #259 |
-| B9    | `fix/wp1-marketing-b9`       | R8, R12, R10 (best-effort)                 | ⬜                          |      |
+| B9    | `fix/wp1-marketing-b9`       | R8, R12, R10 (best-effort)                 | ✅ (R10 blocked: no Chrome) | #261 |
 | BOps  | (no branch — GitHub/DNS ops) | R1/R9 Pages TLS + HTTPS enforce            | 🟨 domain re-added 07-13; cert poller up |      |
 
 ## 2. Batch details — G1–G4 (B2–B5)
