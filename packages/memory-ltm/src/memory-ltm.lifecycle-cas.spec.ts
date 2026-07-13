@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MemoryLtmService } from './memory-ltm.service';
 import { MemoryType } from '@engram/database';
 import { ImportanceScoringService } from './importance.service';
@@ -65,6 +65,9 @@ describe('MemoryLtmService lifecycle CAS + audit (G3-T3)', () => {
       },
       memoryAudit: {
         create: vi.fn().mockResolvedValue({ id: 'audit-row' }),
+      },
+      memoryLink: {
+        upsert: vi.fn().mockResolvedValue({ id: 'link-row' }),
       },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $transaction: vi.fn(),
@@ -317,6 +320,15 @@ describe('MemoryLtmService lifecycle CAS + audit (G3-T3)', () => {
   });
 
   describe('markSuperseded (contradiction supersede via create)', () => {
+    // Supersede is an explicit opt-in since G3-T4 (default policy is `flag`);
+    // the policy is read from the environment at service construction time.
+    beforeEach(() => {
+      process.env.MEMORY_CONTRADICTION_POLICY = 'supersede';
+    });
+    afterEach(() => {
+      delete process.env.MEMORY_CONTRADICTION_POLICY;
+    });
+
     const oldMemoryId = 'cldx4k8xp000308l84b5c9x4s';
     const oldRow = (version: number, metadata: Record<string, unknown> = { importance: 0.5 }) => ({
       ...baseMemory,
@@ -435,6 +447,119 @@ describe('MemoryLtmService lifecycle CAS + audit (G3-T3)', () => {
       prisma.memory.update.mockRejectedValue(p2025());
 
       // The create itself still succeeds — supersede stays non-fatal.
+      const created = await svc.create({ userId, content: "I don't like Python" });
+      expect(created.id).toBe(newMemory.id);
+
+      // Exactly retry-once, then give up; nothing audited.
+      expect(prisma.memory.update).toHaveBeenCalledTimes(2);
+      expect(prisma.memoryAudit.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markContradicted (contradiction flag via create, G3-T4 default policy)', () => {
+    const oldMemoryId = 'cldx4k8xp000308l84b5c9x4s';
+    const oldRow = (version: number, metadata: Record<string, unknown> = { importance: 0.5 }) => ({
+      ...baseMemory,
+      id: oldMemoryId,
+      content: 'I like Python',
+      metadata,
+      version,
+    });
+    const newMemory = { ...baseMemory, content: "I don't like Python" };
+
+    beforeEach(() => {
+      // Flag IS the default: prove it by deleting (not setting) the policy var.
+      delete process.env.MEMORY_CONTRADICTION_POLICY;
+    });
+
+    const buildService = () => {
+      const vectorStore = {
+        backend: 'qdrant' as const,
+        upsert: vi.fn(),
+        delete: vi.fn(),
+        ensureReady: vi.fn(),
+        search: vi.fn().mockResolvedValue([{ id: oldMemoryId, score: 0.85 }]),
+      };
+      const embeddingsService = {
+        generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      };
+      prisma.memory.count.mockResolvedValue(0);
+      prisma.memory.findMany.mockResolvedValue([{ id: oldMemoryId, content: 'I like Python' }]);
+      prisma.memory.create.mockResolvedValue(newMemory);
+      return new MemoryLtmService(
+        prisma as never,
+        undefined,
+        embeddingsService as never,
+        vectorStore as never,
+        new ImportanceScoringService() as never,
+        new DuplicateDetectionService() as never,
+        undefined,
+        new ContradictionDetectionService() as never
+      );
+    };
+
+    it('merges the review fields into the FRESH row on retry, bumping the version', async () => {
+      const svc = buildService();
+      prisma.memory.findFirst
+        // exact-content dedup miss
+        .mockResolvedValueOnce(null)
+        // annotateContradictor read
+        .mockResolvedValueOnce(oldRow(1))
+        // markContradicted initial read (v1)
+        .mockResolvedValueOnce(oldRow(1))
+        // retry read after CAS miss: concurrent edit landed (v3, new metadata)
+        .mockResolvedValueOnce(oldRow(3, { userNote: 'kept' }));
+      prisma.memory.update
+        .mockRejectedValueOnce(p2025())
+        .mockImplementationOnce(async (args: { data: unknown }) => ({
+          ...oldRow(3),
+          ...(args.data as Record<string, unknown>),
+          version: 4,
+        }));
+
+      await svc.create({ userId, content: "I don't like Python" });
+
+      expect(prisma.memory.update).toHaveBeenCalledTimes(2);
+      const first = prisma.memory.update.mock.calls[0][0];
+      expect(first.where).toEqual({
+        id: oldMemoryId,
+        userId,
+        type: MemoryType.LONG_TERM,
+        version: 1,
+      });
+      expect(first.data.version).toEqual({ increment: 1 });
+
+      const second = prisma.memory.update.mock.calls[1][0];
+      expect(second.where.version).toBe(3);
+      expect(second.data.version).toEqual({ increment: 1 });
+      // Review fields merged into the CONCURRENT edit's metadata, not the stale copy.
+      expect(second.data.metadata).toEqual(
+        expect.objectContaining({
+          userNote: 'kept',
+          status: 'contradicted',
+          contradictionWith: newMemory.id,
+          contradictionReason: 'negation asymmetry',
+        })
+      );
+      expect(second.data.metadata).not.toHaveProperty('supersededBy');
+
+      // Flagging hides nothing from recall (both rows stay visible), so unlike
+      // supersede there is no user-visible mutation to audit.
+      expect(prisma.memoryAudit.create).not.toHaveBeenCalled();
+      // The pair is linked for review.
+      expect(prisma.memoryLink.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the flag without clobbering after two conflicts; create still succeeds', async () => {
+      const svc = buildService();
+      prisma.memory.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(oldRow(1))
+        .mockResolvedValueOnce(oldRow(1))
+        .mockResolvedValueOnce(oldRow(3, { userNote: 'kept' }));
+      prisma.memory.update.mockRejectedValue(p2025());
+
+      // The create itself still succeeds — flagging stays non-fatal.
       const created = await svc.create({ userId, content: "I don't like Python" });
       expect(created.id).toBe(newMemory.id);
 

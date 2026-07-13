@@ -194,6 +194,17 @@ export interface DuplicateDetectionMatch {
 
 export type ContradictionAction = 'superseded' | 'flagged';
 
+/**
+ * Boot-configured handling for a detected contradiction (G3-T4,
+ * `MEMORY_CONTRADICTION_POLICY`):
+ *  - `flag` (default) — keep BOTH rows visible in recall; each is marked
+ *    `status: 'contradicted'` with review metadata pointing at the other,
+ *    and the pair is linked with a `contradicts` MemoryLink.
+ *  - `supersede` — latest-wins: the older row is hidden from default recall
+ *    via the `supersededBy` marker (pre-G3-T4 behaviour).
+ */
+export type ContradictionPolicy = 'supersede' | 'flag';
+
 export interface ContradictionMatch {
   memoryId: string;
   score: number;

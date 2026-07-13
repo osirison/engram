@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MemoryLtmService, LTM_QUOTA_LOCK_NAMESPACE } from './memory-ltm.service';
 import {
   LtmMemoryNotFoundError,
@@ -63,6 +63,9 @@ describe('MemoryLtmService', () => {
       },
       memoryAudit: {
         create: vi.fn().mockResolvedValue({ id: 'audit-row' }),
+      },
+      memoryLink: {
+        upsert: vi.fn().mockResolvedValue({ id: 'link-row' }),
       },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $transaction: vi.fn(),
@@ -1334,7 +1337,7 @@ describe('MemoryLtmService', () => {
       expect(stmService.delete).toHaveBeenCalledWith(mockUserId, mockMemoryId, undefined);
     });
 
-    describe('contradiction detection in create()', () => {
+    describe('contradiction detection in create() — policy=supersede (explicit opt-in)', () => {
       const oldMemoryId = 'cldx4k8xp000308l84b5c9x4s';
       const oldMemory = {
         ...mockMemory,
@@ -1343,6 +1346,16 @@ describe('MemoryLtmService', () => {
         metadata: { importance: 0.5 },
       };
       const newMemory = { ...mockMemory, content: "I don't like Python" };
+
+      // These specs cover the latest-wins supersede path, which since G3-T4 is
+      // no longer the default — pin it explicitly (policy is read at service
+      // construction time).
+      beforeEach(() => {
+        process.env.MEMORY_CONTRADICTION_POLICY = 'supersede';
+      });
+      afterEach(() => {
+        delete process.env.MEMORY_CONTRADICTION_POLICY;
+      });
 
       function buildContradictionService(): MemoryLtmService {
         const importanceService = new ImportanceScoringService();
@@ -1428,6 +1441,8 @@ describe('MemoryLtmService', () => {
             }),
           })
         );
+        // Supersede is latest-wins only — the flag-policy pair link is never written.
+        expect(prismaService.memoryLink.upsert).not.toHaveBeenCalled();
       });
 
       it('creates memory normally when no contradiction is found', async () => {
@@ -1513,6 +1528,157 @@ describe('MemoryLtmService', () => {
 
         expect(prismaService.memory.findMany).not.toHaveBeenCalled();
         expect(prismaService.memory.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('contradiction policy=flag in create() (default, G3-T4 — both rows kept)', () => {
+      const oldMemoryId = 'cldx4k8xp000308l84b5c9x4s';
+      const oldMemory = {
+        ...mockMemory,
+        id: oldMemoryId,
+        content: 'I like Python',
+        metadata: { importance: 0.5 },
+      };
+      const newMemory = { ...mockMemory, content: "I don't like Python" };
+
+      beforeEach(() => {
+        // Flag IS the default — deleting (not setting) the var proves it.
+        delete process.env.MEMORY_CONTRADICTION_POLICY;
+      });
+
+      function buildFlagService(): MemoryLtmService {
+        const importanceService = new ImportanceScoringService();
+        const duplicateService = new DuplicateDetectionService();
+        const contradictionService = new ContradictionDetectionService();
+        const vectorStore = {
+          backend: 'qdrant' as const,
+          upsert: vi.fn(),
+          delete: vi.fn(),
+          ensureReady: vi.fn(),
+          // Duplicate check: 0.85 < 0.97 → no duplicate; contradiction check: in band.
+          search: vi.fn().mockResolvedValue([{ id: oldMemoryId, score: 0.85 }]),
+        };
+        const embeddingsService = {
+          generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+        };
+        prismaService.memory.count.mockResolvedValue(0);
+        prismaService.memory.findFirst
+          // exact-dup check → miss
+          .mockResolvedValueOnce(null)
+          // findRawMemory for annotateContradictor
+          .mockResolvedValueOnce(oldMemory)
+          // findRawMemory inside markContradicted
+          .mockResolvedValueOnce(oldMemory);
+        prismaService.memory.findMany.mockResolvedValue([
+          { id: oldMemoryId, content: oldMemory.content },
+        ]);
+        prismaService.memory.create.mockResolvedValue(newMemory);
+        prismaService.memory.update.mockResolvedValue(oldMemory);
+
+        return new MemoryLtmService(
+          prismaService as never,
+          stmService as never,
+          embeddingsService as never,
+          vectorStore as never,
+          importanceService as never,
+          duplicateService as never,
+          undefined,
+          contradictionService as never
+        );
+      }
+
+      it('flags the OLD row contradicted via the CAS path instead of superseding it', async () => {
+        const svc = buildFlagService();
+        await svc.create({ userId: mockUserId, content: "I don't like Python" });
+
+        expect(prismaService.memory.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            // Same CAS shape as every G3-T3 lifecycle write: version-keyed
+            // where + version bump, so a concurrent edit is never clobbered.
+            where: expect.objectContaining({ id: oldMemoryId, version: oldMemory.version }),
+            data: expect.objectContaining({
+              metadata: expect.objectContaining({
+                status: 'contradicted',
+                contradictionWith: newMemory.id,
+                contradictionReason: 'negation asymmetry',
+                contradictedAt: expect.any(String),
+              }),
+              version: { increment: 1 },
+            }),
+          })
+        );
+        // Both rows are KEPT: no supersede marker lands on the old row.
+        const updateData = prismaService.memory.update.mock.calls[0][0].data;
+        expect(updateData.metadata).not.toHaveProperty('supersededBy');
+        expect(updateData.metadata.status).not.toBe('superseded');
+      });
+
+      it('writes the NEW row with contradicted status + review fields at create time', async () => {
+        const svc = buildFlagService();
+        await svc.create({ userId: mockUserId, content: "I don't like Python" });
+
+        const created = prismaService.memory.create.mock.calls[0][0].data;
+        expect(created.metadata).toEqual(
+          expect.objectContaining({
+            status: 'contradicted',
+            contradictionWith: oldMemoryId,
+            contradictionReason: 'negation asymmetry',
+            contradictedAt: expect.any(String),
+          })
+        );
+        // The match annotation records the policy-driven action.
+        expect(created.metadata.contradictionMatches).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ memoryId: oldMemoryId, action: 'flagged' }),
+          ])
+        );
+      });
+
+      it('links the pair with a derived `contradicts` MemoryLink (idempotent upsert)', async () => {
+        const svc = buildFlagService();
+        await svc.create({ userId: mockUserId, content: "I don't like Python" });
+
+        expect(prismaService.memoryLink.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              sourceMemoryId_targetLocator_relType: {
+                sourceMemoryId: newMemory.id,
+                targetLocator: `id:${oldMemoryId}`,
+                relType: 'contradicts',
+              },
+            },
+            create: expect.objectContaining({
+              userId: mockUserId,
+              organizationId: null,
+              sourceMemoryId: newMemory.id,
+              targetMemoryId: oldMemoryId,
+              targetLocator: `id:${oldMemoryId}`,
+              relType: 'contradicts',
+              origin: 'derived',
+              score: 0.85,
+              note: 'negation asymmetry',
+            }),
+          })
+        );
+      });
+
+      it('does NOT emit a lifecycle audit row for the flag', async () => {
+        // Flagging hides nothing — both rows stay in default recall — so
+        // unlike supersede there is no user-visible mutation to audit.
+        const svc = buildFlagService();
+        await svc.create({ userId: mockUserId, content: "I don't like Python" });
+
+        expect(prismaService.memoryAudit.create).not.toHaveBeenCalled();
+      });
+
+      it('flag bookkeeping is non-fatal: create succeeds when CAS and link writes fail', async () => {
+        const svc = buildFlagService();
+        prismaService.memory.update.mockRejectedValue(new Error('DB down'));
+        prismaService.memoryLink.upsert.mockRejectedValue(new Error('link table down'));
+
+        await expect(
+          svc.create({ userId: mockUserId, content: "I don't like Python" })
+        ).resolves.toMatchObject({ id: newMemory.id });
       });
     });
   });

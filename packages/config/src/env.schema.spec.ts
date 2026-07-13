@@ -35,6 +35,7 @@ describe('envSchema', () => {
         MEMORY_DUPLICATE_THRESHOLD: 0.97,
         MEMORY_CONTRADICTION_THRESHOLD: 0.8,
         MEMORY_CONTRADICTION_THRESHOLD_MAX: 0.97,
+        MEMORY_CONTRADICTION_POLICY: 'flag',
         MEMORY_IMPORTANCE_HALF_LIFE_DAYS: 14,
         JWT_EXPIRES_IN: '7d',
         AUTH_REQUIRED: false,
@@ -353,6 +354,30 @@ describe('envSchema', () => {
       expect(result.MEMORY_CONTRADICTION_THRESHOLD).toBe(0.8);
       expect(result.MEMORY_CONTRADICTION_THRESHOLD_MAX).toBe(0.97);
       expect(result.MEMORY_IMPORTANCE_HALF_LIFE_DAYS).toBe(14);
+    });
+
+    it('defaults the contradiction policy to flag (G3-T4 — both rows kept, none hidden)', () => {
+      expect(envSchema.parse(base).MEMORY_CONTRADICTION_POLICY).toBe('flag');
+    });
+
+    it('accepts the supersede contradiction policy (latest-wins opt-in)', () => {
+      expect(
+        envSchema.parse({ ...base, MEMORY_CONTRADICTION_POLICY: 'supersede' })
+          .MEMORY_CONTRADICTION_POLICY
+      ).toBe('supersede');
+      expect(
+        envSchema.parse({ ...base, MEMORY_CONTRADICTION_POLICY: 'flag' })
+          .MEMORY_CONTRADICTION_POLICY
+      ).toBe('flag');
+    });
+
+    it('rejects an unknown contradiction policy', () => {
+      expect(() => envSchema.parse({ ...base, MEMORY_CONTRADICTION_POLICY: 'llm' })).toThrow(
+        ZodError
+      );
+      expect(() => envSchema.parse({ ...base, MEMORY_CONTRADICTION_POLICY: 'FLAG' })).toThrow(
+        ZodError
+      );
     });
 
     it('coerces string values and allows disabling the decay scheduler with 0', () => {

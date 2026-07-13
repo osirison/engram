@@ -5,7 +5,10 @@ export { InMemoryLtmAdapter } from './adapters/inmemory-ltm.adapter';
 export { HybridTransientRetriever } from './retrieval/hybrid-transient-retriever';
 export { ImportanceScoringService } from './importance.service';
 export { DuplicateDetectionService } from './duplicate-detection.service';
-export { ContradictionDetectionService } from './contradiction-detection.service';
+export {
+  ContradictionDetectionService,
+  DEFAULT_CONTRADICTION_POLICY,
+} from './contradiction-detection.service';
 
 // Stream B0 — Typed Ingest Pipeline
 export { IngestPipelineService } from './ingest/ingest-pipeline.service';
@@ -32,6 +35,7 @@ export type {
   ContradictionMatch,
   ContradictionCandidate,
   ContradictionAction,
+  ContradictionPolicy,
   DecayPolicyOptions,
   DecayPolicyResult,
   CreateLtmMemoryValidated,
