@@ -1,0 +1,117 @@
+---
+title: Adding MCP tools
+description: The end-to-end pattern for adding a new MCP tool — strict Zod schema, typed handler, tool definition, registration, and docs regeneration.
+sidebar:
+  order: 3
+---
+
+Every MCP tool in Engram follows one pattern: a **strict Zod input schema**, a
+**typed handler**, and a **tool definition object** that ties them together.
+Shared, dependency-free tools live in `packages/core/src/mcp/tools/`;
+app-level tools that need NestJS services (Prisma, Redis, embeddings) are built
+in `apps/mcp-server` and registered at boot.
+
+## 1. Define the schema, handler, and definition
+
+Create `packages/core/src/mcp/tools/<name>.tool.ts`. The `ping` tool is the
+minimal reference implementation:
+
+```ts
+import { z } from 'zod';
+
+/** Input schema — always .strict() so unknown keys are rejected. */
+export const pingInputSchema = z.object({}).strict();
+
+export interface PingOutput {
+  status: string;
+  timestamp: string;
+}
+
+export async function pingHandler(): Promise<PingOutput> {
+  return {
+    status: 'pong',
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export const pingTool = {
+  name: 'ping',
+  description: 'Test connectivity to ENGRAM server',
+  inputSchema: pingInputSchema,
+  handler: pingHandler,
+  // Connectivity check — callable without authentication.
+  auth: 'public' as const,
+};
+```
+
+Rules that apply to every tool:
+
+- **`.strict()` on all object schemas** — unknown keys must be rejected.
+- Validate everything at the boundary; the handler receives parsed input only.
+- No `any` without justification (TypeScript strict mode).
+
+## 2. Pick the auth mode
+
+The `auth` field declares how an authenticated identity maps onto the tool
+(`ToolAuthMode` in `packages/core/src/mcp/tools/index.ts`):
+
+| Mode       | Meaning                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `identity` | Default. The verified `userId` is injected into the input, overriding any client-supplied value — a forged tenant cannot read another's data.    |
+| `admin`    | `userId` is an operator-chosen parameter; the tool carries its own `adminToken` gate (checked against `MCP_ADMIN_TOKEN`).                        |
+| `public`   | Callable without authentication (e.g. `ping`).                                                                                                    |
+
+Two optional refinements for `identity` tools:
+
+- `requiredScope` — a scope the principal must hold (e.g. `memories:write`);
+  the `admin` scope satisfies any requirement.
+- `delegable: true` — allows an `admin`-scoped key to act on another tenant by
+  passing an explicit `userId` (audited). Leave destructive credential tools
+  pinned.
+
+Handlers that need to attribute the call receive an optional second argument,
+`ToolCallContext`, carrying the verified `actorUserId`, `apiKeyId`, `scopes`,
+and `delegated` — built from the transport's auth info, never from tool input.
+
+## 3. Register the tool
+
+- **Core tool**: add it to the `builtInTools` array in
+  `packages/core/src/mcp/tools/index.ts`.
+- **App-level tool** (needs injected services): build the `Tool` object in
+  `apps/mcp-server` (see `memory.controller.ts` for the pattern) and register
+  it via `McpHandler.registerAdditionalTools([...])` before the server
+  initializes.
+
+## 4. Test at both levels
+
+Every tool needs tests at the service level **and** the wiring level — see
+[testing conventions](/docs/contributing/testing-conventions/):
+
+- `<name>.tool.spec.ts` next to the tool: schema rejects unknown/invalid
+  input, handler behavior, error paths.
+- A wiring-level test asserting the tool is actually registered and reachable
+  through dispatch (including its auth mode — `dispatch-auth.spec.ts` and
+  `tools-list-schema.spec.ts` show the pattern).
+
+## 5. Regenerate the tool reference
+
+The [MCP tools reference](/docs/reference/mcp-tools/) is generated from the
+Zod schemas and committed. After adding or changing a tool:
+
+```bash
+pnpm docs:generate
+```
+
+CI fails on stale generated docs (`git diff --exit-code` drift gate), so commit
+the regenerated pages with the tool.
+
+## Checklist
+
+- [ ] Strict Zod schema, exported
+- [ ] Typed handler, exported
+- [ ] Tool definition with `name`, `description`, `inputSchema`, `handler`,
+      and an explicit `auth` mode (plus `requiredScope`/`delegable` where
+      relevant)
+- [ ] Registered (core `builtInTools` or `registerAdditionalTools`)
+- [ ] Service-level and wiring-level tests
+- [ ] `pnpm docs:generate` run and output committed

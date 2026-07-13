@@ -1,0 +1,73 @@
+---
+title: Quick start
+description: Run the Engram MCP server with the memory profile — no external services, three commands.
+sidebar:
+  order: 2
+---
+
+The `memory` profile boots with **no external services**. Short-term and
+long-term memory are in-process; embeddings degrade to lexical-only when no
+provider is configured. Data is lost on process exit — use it for demos, CI
+smoke tests, and exploring the MCP tool surface.
+
+## 1. Install, build, run
+
+From a fresh clone of the repository:
+
+```bash
+pnpm install
+DEPLOYMENT_PROFILE=memory pnpm build
+DEPLOYMENT_PROFILE=memory pnpm --filter mcp-server dev
+```
+
+No `pnpm` on your `PATH`? Replace the leading `pnpm` with
+`npm exec --yes pnpm@11.5.0 --`:
+
+```bash
+npm exec --yes pnpm@11.5.0 -- install
+DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- build
+DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
+```
+
+## 2. Verify the server is up
+
+In a second terminal:
+
+```bash
+curl http://localhost:3000/health
+```
+
+The health response reports `ok` with only the process-level `memory-store`
+indicator. Postgres, Redis, and Qdrant indicators are not present in this
+profile.
+
+## 3. Optional: deterministic local embeddings
+
+Enable the deterministic hash embedding provider for hybrid recall without an
+API key:
+
+```bash
+DEPLOYMENT_PROFILE=memory \
+EMBEDDING_PROVIDER=local \
+  pnpm --filter mcp-server dev
+```
+
+## Recovery
+
+There is nothing to recover — the process owns its data. Stop the process and
+restart to wipe the in-memory state. There is no on-disk persistence and no
+checkpoint.
+
+> `DEPLOYMENT_PROFILE` is read at module-load time. If the server exits
+> immediately, confirm the variable is set in the same shell that runs the
+> install / build / dev commands — changing it after the process boots has no
+> effect.
+
+## Next steps
+
+- [Store your first memory](/docs/getting-started/first-memory/) — a
+  `create_memory` → `recall` → `get_memory` round trip.
+- [MCP client setup](/docs/getting-started/mcp-client-setup/) — point Claude
+  Desktop or Claude Code at the server.
+- [Installation](/docs/getting-started/installation/) — move up to the `lite`
+  or `enterprise` profile when you need persistence.

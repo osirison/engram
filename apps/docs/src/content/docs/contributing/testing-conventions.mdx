@@ -1,0 +1,74 @@
+---
+title: Testing conventions
+description: Engram's two-level testing rule — service level and wiring level — plus coverage thresholds and integration-test requirements.
+sidebar:
+  order: 4
+---
+
+Every feature needs tests at **two levels**:
+
+1. **Service level** — the unit under test in isolation: a tool handler, a
+   NestJS service method, a parser. Mock its collaborators.
+2. **Wiring level** — the parent service or module actually uses the unit: the
+   tool is registered and dispatchable, the module provides the service, the
+   controller folds the new field into the query. A perfect unit that is never
+   wired in is a silent no-op; wiring tests catch that class of bug.
+
+Examples of the split in the repo:
+
+- `packages/core/src/mcp/tools/ping.tool.spec.ts` (service level) vs
+  `packages/core/src/mcp/tools/index.spec.ts` and `dispatch-auth.spec.ts`
+  (wiring level — registration, auth enforcement, userId injection).
+- `apps/mcp-server/src/memory/*.spec.ts` service tests vs the
+  `*-wiring.spec.ts` files (e.g. `mcp-delegation-wiring.spec.ts`,
+  `export-tool-wiring.spec.ts`) that assert the controller exposes the
+  behavior end-to-end.
+
+## Coverage thresholds
+
+The MCP server enforces global coverage minimums in its Jest config
+(`apps/mcp-server/package.json`):
+
+| Metric     | Minimum |
+| ---------- | ------- |
+| Statements | 80%     |
+| Branches   | 75%     |
+| Functions  | 80%     |
+| Lines      | 80%     |
+
+CLI entrypoints (`main.ts`, `*.cli.ts`) and `*.module.ts` files are excluded
+from collection.
+
+## Running tests
+
+```bash
+pnpm test                                  # everything, via Turborepo
+pnpm --filter @engram/memory-ltm test      # one package
+pnpm --filter mcp-server test:e2e:docker   # e2e against real services
+pnpm --filter @engram/vector-store test    # set PGVECTOR_TEST_URL for pgvector integration tests
+```
+
+## Integration-test requirements
+
+- **pgvector tests need the right image**: `pgvector/pgvector:pg16+`. Plain
+  `postgres:*-alpine` images lack the extension. Set `PGVECTOR_TEST_URL` to
+  enable them (they skip otherwise).
+- **Postgres is the source of truth** — tests around reindex/backfill assert
+  that per-item failures are counted and skipped without corrupting Postgres;
+  keep that invariant in new tests.
+- Contract tests may pin cross-file wiring (e.g.
+  `apps/mcp-server/src/__tests__/release-workflow.spec.ts` asserts that
+  `.github/workflows/release.yml`, `docker-compose.prod.yml`, and
+  `docs/deploy.md` agree on the published image). If you change one side of
+  such a contract, update the others in the same PR.
+
+## Conventions
+
+- Name test files `<unit>.spec.ts`, colocated with the code under test.
+- Use Jest with `testEnvironment: node`; NestJS units are tested through
+  `Test.createTestingModule` with injected mocks (`@Optional()` collaborators
+  get explicit `null`/mock providers).
+- Zod schemas get negative tests: unknown keys, out-of-range values, missing
+  required fields.
+- Never weaken or bypass a failing gate to merge (no `--no-verify`, no
+  lowering thresholds); fix the test or the code.

@@ -1,0 +1,65 @@
+---
+title: Commit style
+description: Conventional commits, commitlint-enforced limits, and branch naming for Engram.
+sidebar:
+  order: 5
+---
+
+Engram uses [Conventional Commits](https://www.conventionalcommits.org/),
+enforced by commitlint (`commitlint.config.js` extends
+`@commitlint/config-conventional`) via a git hook. Do not bypass a failing
+hook with `--no-verify` — fix the message.
+
+## Format
+
+```text
+type(scope): summary (#issue)
+```
+
+Examples from the repo history:
+
+```text
+feat(mcp-tools): add queue_reindex_memories tool (#124)
+fix(health): drop qdrant probe under pgvector backend (#193)
+docs(setup): document lite profile recovery
+```
+
+## Enforced rules
+
+| Rule            | Limit                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| Type            | One of `feat`, `fix`, `refactor`, `perf`, `style`, `test`, `docs`, `build`, `ops`, `chore`         |
+| Subject         | Starts lowercase (no sentence-case/PascalCase/UPPERCASE), no trailing period, **≤ 100 characters** |
+| Body            | **≤ 300 characters** — and that budget includes trailers such as `Co-Authored-By`                  |
+| Footer          | Each footer line ≤ 100 characters                                                                  |
+
+Notes:
+
+- The `ops` type is a project-specific addition to the conventional set — use
+  it for operational changes (workflows, runbooks, deploy wiring).
+- Keep the body genuinely short. Trailers that are not parsed as a footer
+  count toward the 300-character body budget, so a long body plus a
+  `Co-Authored-By` line is a common lint failure.
+- Reference the issue in the summary (`(#124)`) and/or close it from the PR
+  body with `Closes #124`.
+
+## Branch names
+
+Branch from `main`; never commit to `main` directly. Patterns used in the
+repo:
+
+```text
+docs/simplify-onboarding-docs
+feat/mcp-tools-#24
+fix/health-qdrant-timeout-#19
+```
+
+`type/short-kebab-description-#issue` — the issue suffix is included whenever
+an issue exists.
+
+## Pull requests
+
+- Open PRs against `main`.
+- Link the issue with `Closes #<issue>` in the PR body when one exists.
+- All quality gates (`build`, `lint`, `typecheck`, `test`, `docs:check`) must
+  pass — see [development setup](/docs/contributing/development-setup/).

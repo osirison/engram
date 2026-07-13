@@ -44,7 +44,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/qp/engram',
+          href: 'https://github.com/osirison/engram',
         },
       ],
       plugins: [
@@ -85,6 +85,16 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'getting-started' } }],
         },
         {
+          label: 'How-to guides',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'how-to' } }],
+        },
+        {
+          label: 'Agent memory',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'agent-memory' } }],
+        },
+        {
           label: 'Reference',
           items: [
             { label: 'Overview', slug: 'reference' },
@@ -93,8 +103,27 @@ export default defineConfig({
               items: [{ autogenerate: { directory: 'reference/mcp-tools' } }],
             },
             { label: 'Configuration', slug: 'reference/configuration' },
+            { label: 'Capacity & scaling', slug: 'reference/capacity' },
+            { label: 'Concurrency policy', slug: 'reference/concurrency-policy' },
+            { label: 'Observability', slug: 'reference/observability' },
+            { label: 'Release gates', slug: 'reference/release-gates' },
+            {
+              label: 'Security',
+              items: [
+                { label: 'OWASP checklist', slug: 'reference/security' },
+                {
+                  label: 'Review 2026-07-02',
+                  slug: 'reference/security-reviews/2026-07-02',
+                },
+              ],
+            },
             typeDocSidebarGroup,
           ],
+        },
+        {
+          label: 'Contributing',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'contributing' } }],
         },
       ],
     }),
