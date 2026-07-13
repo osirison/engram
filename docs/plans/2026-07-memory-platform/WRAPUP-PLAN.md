@@ -84,7 +84,7 @@ Legend: ✅ merged · 🟨 in progress · ⬜ not started.
 | BH    | (no branch — local ops)      | §H housekeeping items                      | 🟨 1–2 done; 3–5 post-merge |      |
 | B2    | `feat/gaps-g1-g4-b2`         | G2-T2, G2-T3, G1-T3, G1-T1                 | ✅                          | #257 |
 | B3    | `feat/gaps-g1-g4-b3`         | G3-T3, G4-T2, G1-T2                        | ✅                          | #258 |
-| B4    | `feat/gaps-g1-g4-b4`         | G3-T4, G3-T6, G4-T3, G4-T4 deferral note   | ⬜                          |      |
+| B4    | `feat/gaps-g1-g4-b4`         | G3-T4, G3-T6, G4-T3, G4-T4 deferral note   | ✅                          | #260 |
 | B5    | `feat/gaps-g1-g4-b5`         | G3-T2 (corpus consolidation, L)            | ⬜                          |      |
 | B6    | `feat/wp6-docs-content-1`    | WP6 T7a, T7b, T8, T13                      | ⬜                          |      |
 | B7    | `feat/wp6-docs-content-2`    | WP6 T9, T10, T11, T12, T14                 | ⬜                          |      |

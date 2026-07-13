@@ -106,6 +106,7 @@ Set only to enable integration test suites; never required at runtime.
 | `LTM_LIFECYCLE_TEST_URL` | Enables an integration test suite. |
 | `LTM_QUOTA_TEST_URL` | Enables an integration test suite. |
 | `LTM_RESTORE_TEST_URL` | Enables an integration test suite. |
+| `MEMORY_IMPORT_CAS_TEST_URL` | Enables an integration test suite. |
 | `MEMORY_LINK_TEST_URL` | Enables an integration test suite. |
 | `MEMORY_VERSION_TEST_URL` | Enables an integration test suite. |
 | `PGVECTOR_TEST_URL` | Enables an integration test suite. |

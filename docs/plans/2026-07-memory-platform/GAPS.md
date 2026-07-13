@@ -26,6 +26,13 @@ spoofable free-for-all. Needs: per-agent/per-user API keys or OAuth on the MCP
 transport, scopes (read vs write vs admin), and authz checks in every tool handler.
 Lands in: prerequisite for WP2 + WP5; fold into both plans' schema/prereq sections.
 
+**Status (2026-07-13): CLOSED — engage-ready (auth not flipped on by default, per
+qp Decision 1).** Full key/OAuth/scope/delegation stack was shipped by WP2/WP5; the
+remainder closed in B2/B3: boot fail-safe fires in EVERY env without explicit
+`ALLOW_UNAUTHENTICATED_HTTP` (G1-T1), `provision-agent-keys` CLI mints distinct
+per-agent keys under one userId (G1-T2, Decision 7), `import_agent_memory` path is
+allowlisted via `IMPORT_ALLOWED_ROOT` (G1-T3/A18).
+
 ## G2 — Secret and PII scanning on import (high)
 
 Instruction files being imported by WP4 (CLAUDE.md, .cursor/rules, copilot-instructions)
@@ -33,6 +40,12 @@ routinely contain API keys, internal hostnames, and personal data. Importing the
 server-side store (and embedding them via OpenAI!) is an exfiltration hazard. Needs: a
 redaction/secret-scan pass in the import IR pipeline, an `EMBEDDING` exclusion flag per
 memory, and a documented policy. Lands in: WP4 pipeline stage + WP5 write-policy rubric.
+
+**Status (2026-07-13): CLOSED.** WP4 shipped the scanner/policy; the remainder closed
+in #255/B2: `embeddingExcluded` enforced at create AND reindex (G2-T1), frontmatter +
+title scanned under the same policy with redact-in-place (G2-T2, Decisions 3/6),
+IMPORT.md claims corrected (G2-T3). Residual (recorded in STATE-G1-G4 row 5):
+adapter-derived tags/link locators are computed pre-scan.
 
 ## G3 — Memory lifecycle: dedup, consolidation, decay, contradiction (high)
 
@@ -43,6 +56,12 @@ existing vector search, merge/supersede), staleness review (last-recalled-at tra
 and a contradiction policy (latest-wins vs both-kept-flagged). Lands in: new WP7;
 `packages/memory-ltm` + a scheduled job in `apps/mcp-server`.
 
+**Status (2026-07-13): one task remaining (G3-T2 corpus consolidation — batch B5).**
+Decay/dedup/staleness shipped earlier; recall excludes superseded (G3-T1, #255),
+lifecycle config boot-validated (G3-T5, #255), lifecycle writes CAS+audited (G3-T3,
+#258), contradiction policy is both-kept-flagged by default with deterministic
+value-swap detection (G3-T4/T6, B4; Decisions 3/8/9).
+
 ## G4 — Concurrent-writer safety (high)
 
 qp runs multiple agents simultaneously (per stored memory). Two agents editing/importing
@@ -50,12 +69,13 @@ the same memory concurrently (or UI edit racing an agent update) has no defined 
 Needs: optimistic concurrency (version column checked on update), and idempotency keys on
 import. Lands in: SHARED schema task consumed by WP2 and WP4.
 
-**Status (2026-07-10): mechanism shipped; enforcement + policy in progress on
-`feat/gaps-critical-g1-g4`.** `Memory.version` CAS (SHARED-2) + import idempotency
-(`MemoryImportSource`) already exist; the gap was that version-checking is opt-in. The
-concurrent-writer policy is now pinned in [`docs/concurrency-policy.md`](../../concurrency-policy.md)
-(G4-T1): web requires `expectedVersion` (done, WP2), agent `update_memory` rejects blind
-updates (G4-T2), import is CAS-skip (G4-T3), STM atomic Lua CAS deferred (G4-T4).
+**Status (2026-07-13): CLOSED — one deliberate deferral (G4-T4).** Policy pinned in
+[`docs/concurrency-policy.md`](../../concurrency-policy.md) (G4-T1) and fully enforced:
+web requires `expectedVersion` (WP2), agent `update_memory` rejects blind updates
+(G4-T2, #258), import + sync are CAS-skip via the ledger's `lastWrittenVersion`
+(G4-T3, B4 — `--force` can no longer clobber an ENGRAM-edited memory), lifecycle jobs
+are version-guarded (G3-T3, #258). STM atomic Lua CAS stays DEFERRED (G4-T4,
+Decision 14 — ms window on TTL-bounded data accepted).
 
 ## G5 — Edit history / soft delete (medium)
 
