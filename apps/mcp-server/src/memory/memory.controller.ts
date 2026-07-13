@@ -64,6 +64,10 @@ import {
   consolidateToolSchema,
   ConsolidateToolInput,
 } from './dto/consolidate.dto';
+import {
+  consolidateCorpusToolSchema,
+  ConsolidateCorpusToolInput,
+} from './dto/consolidate-corpus.dto';
 import { rememberToolSchema, RememberToolInput } from './dto/remember.dto';
 import { forgetToolSchema, ForgetToolInput } from './dto/forget.dto';
 import { reflectToolSchema, ReflectToolInput } from './dto/reflect.dto';
@@ -88,6 +92,7 @@ import { assertImportPathAllowed } from './import-path-guard';
 import { TOOL_MANIFEST } from './tools-manifest';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
+import { CorpusConsolidationService } from '@engram/memory-ltm';
 import {
   MemoryAuditService,
   type MemorySnapshot,
@@ -128,6 +133,7 @@ import {
  * 11. cancel_reindex_job     - Request cancellation for a queued/running job
  * 12. retry_reindex_job      - Retry a failed/cancelled job from its last cursor
  * 13. consolidate_memories   - Trigger STM→LTM consolidation pass (admin)
+ * 13a. consolidate_corpus    - Merge near-duplicate LTM rows (admin, dry-run default — G3-T2)
  * 14. remember               - Smart create: auto-detects type, deduplicates
  * 15. forget                 - Smart delete: find + optionally delete by concept
  * 16. reflect                - Synthesise structured insights across memories
@@ -166,6 +172,11 @@ export class MemoryController {
     @Optional()
     @Inject(MetricsService)
     private readonly metrics: MetricsService | null = null,
+    // Corpus consolidation (G3-T2): Postgres-only, so optional — absent under
+    // the memory profile, where the tool is simply not registered.
+    @Optional()
+    @Inject(CorpusConsolidationService)
+    private readonly corpusConsolidation: CorpusConsolidationService | null = null,
   ) {
     this.activeProfile = coerceDeploymentProfile(
       process.env['DEPLOYMENT_PROFILE'],
@@ -1203,6 +1214,47 @@ export class MemoryController {
     }
   }
 
+  /**
+   * MCP Tool: consolidate_corpus (admin — G3-T2)
+   * Cluster near-duplicate LTM memories in the
+   * [MEMORY_CONSOLIDATION_MERGE_THRESHOLD, MEMORY_DUPLICATE_THRESHOLD) band
+   * and collapse each cluster onto one canonical row. NOT the STM→LTM
+   * promotion pass (`consolidate_memories`). Review-gated: `dryRun` defaults
+   * to TRUE (report-only); merging requires an explicit `dryRun: false`.
+   */
+  async consolidateCorpus(
+    input: unknown,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    try {
+      this.logger.debug('consolidate_corpus tool called');
+      const validatedInput: ConsolidateCorpusToolInput =
+        consolidateCorpusToolSchema.parse(input);
+      this.assertAdminAuthorized(
+        validatedInput.adminToken,
+        'consolidate_corpus',
+        validatedInput.userId ?? 'all-users',
+      );
+      if (!this.corpusConsolidation) {
+        throw new ClientFacingError(
+          'Corpus consolidation is unavailable in this deployment profile (requires Postgres)',
+        );
+      }
+
+      const summary = await this.corpusConsolidation.run({
+        userId: validatedInput.userId,
+        scope: validatedInput.scope,
+        dryRun: validatedInput.dryRun,
+        limit: validatedInput.limit,
+        cursor: validatedInput.cursor,
+      });
+
+      return this.jsonContent(summary);
+    } catch (error) {
+      this.logger.error('Error in consolidate_corpus tool:', error);
+      throw toClientError(error, 'Failed to consolidate corpus');
+    }
+  }
+
   // ─── C1: High-Level Agent UX Tools ──────────────────────────────────────────
 
   /**
@@ -1689,6 +1741,7 @@ export class MemoryController {
       cancel_reindex_job: this.cancelReindexJob.bind(this) as BoundHandler,
       retry_reindex_job: this.retryReindexJob.bind(this) as BoundHandler,
       consolidate_memories: this.consolidateMemories.bind(this) as BoundHandler,
+      consolidate_corpus: this.consolidateCorpus.bind(this) as BoundHandler,
       remember: this.remember.bind(this) as BoundHandler,
       forget: this.forget.bind(this) as BoundHandler,
       reflect: this.reflect.bind(this) as BoundHandler,
@@ -1717,6 +1770,12 @@ export class MemoryController {
         (tool) => tool.name !== 'import_agent_memory',
       );
     }
+    // Corpus consolidation (G3-T2) is Postgres-only for the same reason.
+    if (!this.corpusConsolidation) {
+      available = available.filter(
+        (tool) => tool.name !== 'consolidate_corpus',
+      );
+    }
 
     return this.filterToolsByProfile(available);
   }
@@ -1725,9 +1784,9 @@ export class MemoryController {
    * Filter the full tool list by the active deployment profile.
    *
    *   - profile=memory: hide `reindex_memories`, `queue_reindex_memories`,
-   *     `get_reindex_status`, `cancel_reindex_job`, `retry_reindex_job`.
-   *     All reindex and queue maintenance tools are excluded (in-process
-   *     LTM has no vector store to backfill).
+   *     `get_reindex_status`, `cancel_reindex_job`, `retry_reindex_job`,
+   *     `consolidate_corpus`. All reindex/queue maintenance and vector-driven
+   *     consolidation tools are excluded (in-process LTM has no vector store).
    *   - profile=lite: hide `queue_reindex_memories`, `get_reindex_status`,
    *     `cancel_reindex_job`, `retry_reindex_job` (they require a BullMQ
    *     worker). Keep `reindex_memories` as a synchronous in-process
@@ -1744,6 +1803,7 @@ export class MemoryController {
       exclude.add('get_reindex_status');
       exclude.add('cancel_reindex_job');
       exclude.add('retry_reindex_job');
+      exclude.add('consolidate_corpus');
     } else if (capabilities.profile === DeploymentProfile.LITE) {
       exclude.add('queue_reindex_memories');
       exclude.add('get_reindex_status');

@@ -15,6 +15,7 @@ import { RedisModule } from '@engram/redis';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
+import { CorpusConsolidationSchedulerService } from './corpus-consolidation-scheduler.service';
 import { InsightExtractionService } from './insight-extraction.service';
 import { MemoryExportService } from './export/memory-export.service';
 import {
@@ -49,6 +50,11 @@ export class MemoryModule {
       MemoryService,
       ConsolidationService,
       DecayService,
+      // Corpus-consolidation scheduler (G3-T2): registered unconditionally
+      // like DecayService, but doubly gated — MEMORY_CONSOLIDATION_INTERVAL_MS
+      // defaults to 0 (OFF, review gate) and the underlying Postgres-only
+      // CorpusConsolidationService is injected @Optional().
+      CorpusConsolidationSchedulerService,
       InsightExtractionService,
     ];
 
@@ -62,6 +68,7 @@ export class MemoryModule {
       MemoryService,
       ConsolidationService,
       DecayService,
+      CorpusConsolidationSchedulerService,
       InsightExtractionService,
     ];
     if (capabilities.requiresDatabase) {

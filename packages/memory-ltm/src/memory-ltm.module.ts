@@ -5,6 +5,7 @@ import { VectorStoreModule } from '@engram/vector-store';
 import type { ProfileCapabilities } from '@engram/config';
 import { MemoryStmModule } from '@engram/memory-stm';
 import { MemoryLtmService } from './memory-ltm.service.js';
+import { CorpusConsolidationService } from './corpus-consolidation.service.js';
 import { ImportanceScoringService } from './importance.service.js';
 import { DuplicateDetectionService } from './duplicate-detection.service.js';
 import { ContradictionDetectionService } from './contradiction-detection.service.js';
@@ -73,6 +74,10 @@ export class MemoryLtmModule {
             IngestPipelineService,
             PrivacyFilterStep,
             TopicDetectorStep,
+            // Corpus consolidation (G3-T2) is Postgres-backed, so it exists
+            // only in this branch; consumers inject it @Optional() and hide
+            // the admin tool when it is absent (profile-memory).
+            CorpusConsolidationService,
             {
               provide: LTM_PROVIDER,
               useExisting: MemoryLtmService,
@@ -80,7 +85,7 @@ export class MemoryLtmModule {
           ],
       exports: useInProcess
         ? [LTM_PROVIDER, MemoryLtmService, InMemoryLtmAdapter, HybridTransientRetriever]
-        : [LTM_PROVIDER, MemoryLtmService],
+        : [LTM_PROVIDER, MemoryLtmService, CorpusConsolidationService],
     };
   }
 }

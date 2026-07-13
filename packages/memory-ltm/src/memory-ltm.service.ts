@@ -1784,8 +1784,13 @@ export class MemoryLtmService {
    * Returns `null` when the CAS missed (version moved or row gone — Prisma
    * P2025); callers decide whether to re-read + retry once or skip. Non-P2025
    * errors are rethrown unchanged.
+   *
+   * Public-but-internal: exposed (not `private`) ONLY so
+   * `CorpusConsolidationService` (G3-T2) can route its supersede/tag-union
+   * writes through the exact same G3-T3 CAS protocol instead of duplicating
+   * it. Not part of the app-facing API — application code must use `update()`.
    */
-  private async casMetadataUpdate(
+  async casMetadataUpdate(
     memoryId: string,
     userId: string,
     // `null` (from a mapped LtmMemory, where it is already coerced to
@@ -1870,14 +1875,18 @@ export class MemoryLtmService {
    * verified API-key principal exists inside a background job. Best-effort:
    * NEVER throws — a lost audit row must not fail the lifecycle mutation that
    * already happened.
+   *
+   * Public-but-internal (same rationale as {@link casMetadataUpdate}): shared
+   * with `CorpusConsolidationService` (G3-T2, actor `corpus_consolidation`)
+   * so there is exactly ONE lifecycle-audit writer.
    */
-  private async recordLifecycleAudit(entry: {
+  async recordLifecycleAudit(entry: {
     memoryId: string;
     userId: string;
     organizationId: string | null;
     scope: string | null;
     action: 'delete' | 'supersede';
-    actorId: 'ltm_decay' | 'dedup_supersede';
+    actorId: 'ltm_decay' | 'dedup_supersede' | 'corpus_consolidation';
     before: Record<string, unknown>;
     after: Record<string, unknown>;
   }): Promise<void> {

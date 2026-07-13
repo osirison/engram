@@ -33,6 +33,8 @@ codebase.
 | `MEMORY_DECAY_PRUNE_SCORE_THRESHOLD` | number | `0.15` | no | all | Importance score below which an old, unpinned memory is pruned. Defaults to 0.15. |
 | `MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS` | number | `30` | no | all | Minimum age in days before a low-importance memory becomes prune-eligible. Defaults to 30. |
 | `MEMORY_DUPLICATE_THRESHOLD` | number | `0.97` | no | all | Cosine similarity at/above which a new write collapses into an existing row. Defaults to 0.97. |
+| `MEMORY_CONSOLIDATION_MERGE_THRESHOLD` | number | `0.85` | no | all | Lower bound (inclusive) of the corpus-consolidation near-duplicate merge band `[merge, duplicate)`. Must stay strictly below `MEMORY_DUPLICATE_THRESHOLD` (enforced at boot). Defaults to 0.85. |
+| `MEMORY_CONSOLIDATION_INTERVAL_MS` | number | `0` | no | all | How often the corpus-consolidation job (near-duplicate clustering, `consolidate_corpus`) runs, in milliseconds. Defaults to 0 = DISABLED — a scheduled pass merges without review, so the operator must opt in explicitly after inspecting a dry run. |
 | `MEMORY_CONTRADICTION_THRESHOLD` | number | `0.8` | no | all | Lower bound of the contradiction similarity band. Defaults to 0.8. |
 | `MEMORY_CONTRADICTION_THRESHOLD_MAX` | number | `0.97` | no | all | Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. |
 | `MEMORY_CONTRADICTION_POLICY` | `supersede` \| `flag` | `flag` | no | all | What happens when a new write contradicts an existing memory: `flag` keeps BOTH rows visible in recall and marks them `contradicted` for review; `supersede` hides the older row from default recall (latest-wins). Defaults to `flag` (conservative — no data is hidden without review). |

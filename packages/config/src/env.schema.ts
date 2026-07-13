@@ -85,6 +85,10 @@ export const baseSchema = z.object({
   MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS: z.coerce.number().min(0).optional().default(30),
   /** Cosine similarity at/above which a new write collapses into an existing row. Defaults to 0.97. */
   MEMORY_DUPLICATE_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.97),
+  /** Lower bound (inclusive) of the corpus-consolidation near-duplicate merge band `[merge, duplicate)`. Must stay strictly below `MEMORY_DUPLICATE_THRESHOLD` (enforced at boot). Defaults to 0.85. */
+  MEMORY_CONSOLIDATION_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.85),
+  /** How often the corpus-consolidation job (near-duplicate clustering, `consolidate_corpus`) runs, in milliseconds. Defaults to 0 = DISABLED — a scheduled pass merges without review, so the operator must opt in explicitly after inspecting a dry run. */
+  MEMORY_CONSOLIDATION_INTERVAL_MS: z.coerce.number().int().min(0).optional().default(0),
   /** Lower bound of the contradiction similarity band. Defaults to 0.8. */
   MEMORY_CONTRADICTION_THRESHOLD: z.coerce.number().min(0).max(1).optional().default(0.8),
   /** Upper bound (exclusive) of the contradiction band, below the duplicate zone. Defaults to 0.97. */
@@ -267,6 +271,18 @@ export const envSchema: z.ZodType<Env> = baseSchema.transform((value, ctx) => {
     return z.NEVER;
   }
 
+  // The consolidation merge band is [merge, duplicate): an empty or inverted
+  // band would either do nothing or swallow the exact-duplicate zone, so an
+  // out-of-order pair is a misconfiguration — reject it at boot (G3-T2).
+  if (value.MEMORY_CONSOLIDATION_MERGE_THRESHOLD >= value.MEMORY_DUPLICATE_THRESHOLD) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MEMORY_CONSOLIDATION_MERGE_THRESHOLD'],
+      message: `MEMORY_CONSOLIDATION_MERGE_THRESHOLD (${value.MEMORY_CONSOLIDATION_MERGE_THRESHOLD}) must be strictly below MEMORY_DUPLICATE_THRESHOLD (${value.MEMORY_DUPLICATE_THRESHOLD})`,
+    });
+    return z.NEVER;
+  }
+
   // When auth enforcement is on, a real JWT secret is mandatory.
   if (value.AUTH_REQUIRED) {
     if (typeof value.JWT_SECRET !== 'string' || value.JWT_SECRET.length < 32) {
@@ -347,6 +363,8 @@ export type Env = {
   MEMORY_DECAY_PRUNE_SCORE_THRESHOLD: number;
   MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS: number;
   MEMORY_DUPLICATE_THRESHOLD: number;
+  MEMORY_CONSOLIDATION_MERGE_THRESHOLD: number;
+  MEMORY_CONSOLIDATION_INTERVAL_MS: number;
   MEMORY_CONTRADICTION_THRESHOLD: number;
   MEMORY_CONTRADICTION_THRESHOLD_MAX: number;
   MEMORY_CONTRADICTION_POLICY: 'supersede' | 'flag';

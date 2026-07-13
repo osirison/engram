@@ -14,6 +14,7 @@ import type { Provider } from '@nestjs/common';
 import { z } from 'zod';
 import type { Tool } from '@engram/core';
 import { MemoryImportService } from '@engram/memory-import';
+import { CorpusConsolidationService } from '@engram/memory-ltm';
 import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
 import { ReindexQueueService } from './reindex-queue.service';
@@ -33,10 +34,12 @@ describe('TOOL_MANIFEST ↔ MemoryController.getMcpTools', () => {
       { provide: MemoryService, useValue: {} },
       { provide: ReindexQueueService, useValue: {} },
       { provide: ConsolidationService, useValue: {} },
-      // Provide export + import so their tools are advertised (they are only
-      // filtered out when the Postgres-only services are absent).
+      // Provide export + import + corpus consolidation so their tools are
+      // advertised (they are only filtered out when the Postgres-only services
+      // are absent).
       { provide: MemoryExportService, useValue: {} },
       { provide: MemoryImportService, useValue: {} },
+      { provide: CorpusConsolidationService, useValue: {} },
     ];
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MemoryController],
