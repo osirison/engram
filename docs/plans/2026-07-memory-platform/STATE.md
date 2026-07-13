@@ -42,7 +42,7 @@ Legend: ✅ done+verified · 🟨 partial · ⬜ not started · 📄 plan author
 
 | WP      | Deliverable                                    | Plan | Execution                                                                         | Where                                                   |
 | ------- | ---------------------------------------------- | ---- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| WP1     | Marketing-site validation + R1–R13 remediation | ✅   | ⬜ not started¹                                                                   | report in this worktree                                 |
+| WP1     | Marketing-site validation + R1–R13 remediation | ✅   | 🟨 **B8 done** (R2–R7, R11, R13, R1-CNAME — PR #259); B9 = R8/R12/R10; R1/R9 ops in flight | WRAPUP-PLAN.md B8/B9/BOps                               |
 | **WP2** | **Memory management UI (SHARED-2 + T1–T9)**    | ✅   | ✅ **done — verified** (T1–T9 + SHARED-2; T3/T6 follow-ups remediated 2026-07-08) | **merged `main` @109e0d8 (PR #222)** + follow-up branch |
 | WP3     | Rich markdown export (SHARED-1 + T1–T9)        | ✅   | ✅ **done — verified** (T1–T9; SHARED-1 deferred)                                 | branch `feat/markdown-export-wp3`                       |
 | WP4     | Agentic memory import (SHARED-1 + T1–T16)      | ✅   | ✅ **done — verified** (SHARED-1 + T1–T16)                                        | worktree `worktree-wp4-agent-memory-import`             |
