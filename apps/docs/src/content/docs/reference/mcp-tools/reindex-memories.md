@@ -1,11 +1,11 @@
 ---
 title: "reindex_memories"
-description: "Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable"
+description: "Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable. Run it after switching VECTOR_BACKEND, changing the embedding model/provider (regenerate), or losing/corrupting the vector index. Synchronous — blocks until the pass completes and returns the processed/indexed/skipped/failed summary; prefer queue_reindex_memories for large corpora."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable
+Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable. Run it after switching VECTOR_BACKEND, changing the embedding model/provider (regenerate), or losing/corrupting the vector index. Synchronous — blocks until the pass completes and returns the processed/indexed/skipped/failed summary; prefer queue_reindex_memories for large corpora.
 
 **Auth mode:** `admin`  
 **Admin tool:** requires `MCP_ADMIN_TOKEN`.  

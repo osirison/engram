@@ -1,11 +1,11 @@
 ---
 title: "remember"
-description: "Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata."
+description: "Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata. The preferred write path for agents — store durable facts as you learn them; re-storing a known fact is safe (absorbed by dedup). Use create_memory only when you must control the tier explicitly."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata.
+Smart create: auto-detects short-term vs long-term storage from content heuristics, deduplicates against existing memories, and returns the stored memory with routing metadata. The preferred write path for agents — store durable facts as you learn them; re-storing a known fact is safe (absorbed by dedup). Use create_memory only when you must control the tier explicitly.
 
 **Auth mode:** `identity`  
 **Required scope:** `memories:write`  

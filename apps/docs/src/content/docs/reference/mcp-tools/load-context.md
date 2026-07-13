@@ -1,11 +1,11 @@
 ---
 title: "load_context"
-description: "Load a session-priming context block by blending the most recent memories with the highest-importance memories. Ideal for injecting into a session-opening prompt."
+description: "Load a session-priming context block by blending the most recent memories with the highest-importance memories. Needs no query — call it once at session start, before any task context exists, to inject into the session-opening prompt; switch to recall or compress_context once you have a concrete topic."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Load a session-priming context block by blending the most recent memories with the highest-importance memories. Ideal for injecting into a session-opening prompt.
+Load a session-priming context block by blending the most recent memories with the highest-importance memories. Needs no query — call it once at session start, before any task context exists, to inject into the session-opening prompt; switch to recall or compress_context once you have a concrete topic.
 
 **Auth mode:** `identity`  
 **Required scope:** `memories:read`  
