@@ -1,0 +1,90 @@
+---
+title: Memory tiers
+description: Why Engram splits memory into a TTL-bound short-term tier and a durable long-term tier, and how access counting drives promotion between them.
+sidebar:
+  order: 3
+---
+
+Engram models memory the way agents actually use it: most facts are only
+relevant for minutes or hours, a few deserve to persist. Two tiers encode
+that:
+
+- **STM (short-term)** — cheap to write, expires on its own, no embedding
+  required. The default landing zone for observations.
+- **LTM (long-term)** — durable, embedded, semantically searchable, subject
+  to lifecycle jobs (decay, dedup, consolidation).
+
+The split is behavioral, not structural — both tiers share the
+[same `Memory` model](/docs/architecture/memory-model/). What differs is
+where rows live, how long they live, and which jobs touch them.
+
+## STM: expiry as a feature
+
+`MemoryStmService` (`packages/memory-stm`) stores short-term memories in
+Redis under namespaced keys built by `StmKeyBuilder`:
+
+```
+memory:stm:{userId}:{memoryId}
+memory:stm:{organizationId}:{userId}:{memoryId}   # org-scoped
+```
+
+Every STM write carries a TTL — **default 86 400 s (24 h)**, clamped to
+[60 s, 7 d] — and Redis expiry is the deletion mechanism. Nothing has to
+garbage-collect stale session facts; they evaporate. This is why transient
+state belongs in STM: forgetting is free.
+
+Two details matter for the rest of the system:
+
+- **Access counting.** Every STM read increments the memory's `accessCount`.
+  That counter is the promotion signal: a "transient" fact an agent keeps
+  re-reading is evidently not transient. See
+  [Consolidation & decay](/docs/architecture/consolidation-and-decay/) for the
+  promotion pass (`STM_CONSOLIDATION_ACCESS_THRESHOLD`, default 3).
+- **No Redis, no problem.** Under the `memory` profile there is no Redis;
+  `InMemoryStmAdapter` provides the same interface over an in-process map
+  with timer-based expiry. Same semantics, zero services — see
+  [Deployment profiles](/docs/architecture/deployment-profiles/).
+
+## LTM: durability plus lifecycle
+
+`MemoryLtmService` (`packages/memory-ltm`) persists long-term memories to
+Postgres — the system's source of truth — and runs the write-time ingest
+pipeline: exact dedup, semantic dedup, contradiction detection, and
+importance scoring happen *before* the row lands, and embedding/indexing
+follow asynchronously. LTM rows are the only rows that:
+
+- get embeddings and participate in [semantic recall](/docs/architecture/vector-backends/),
+- are subject to decay, pruning, and corpus consolidation,
+- carry the audit trail and version CAS guarantees.
+
+Under the `lite` profile, LTM swaps Postgres for `LiteJsonStore`
+(`packages/memory-lite`): per-memory encrypted JSON files
+(AES-256-GCM with `LOCAL_ENCRYPTION_KEY`) under `~/.engram/data`. Same
+service contract, single-user storage.
+
+## Crossing the boundary
+
+There are three ways a memory moves or lands between tiers:
+
+1. **Explicit** — `create_memory` with `type: 'long-term'`, or
+   `promote_memory` on an existing STM row.
+2. **Heuristic** — `remember` with `type: 'auto'` (the default posture for
+   agents) routes to a tier from content signals and TTL hints.
+3. **Automatic** — the consolidation pass promotes STM rows whose
+   `accessCount` and importance clear the thresholds.
+
+Promotion preserves the memory's id and content; the row simply becomes
+`type: 'long-term'`, loses `expiresAt`, and enters the LTM lifecycle
+(embedding, recall, decay).
+
+## Why not one tier?
+
+A single durable tier forces a bad choice on every write: either everything
+persists (and recall drowns in expired session noise, while the corpus grows
+unboundedly) or the agent must decide durability perfectly at write time (it
+cannot). The two-tier design lets writes default to cheap-and-forgettable,
+and uses *observed access behavior* — not write-time guesses — to earn
+durability. Decay then applies the same principle in reverse to LTM: memories
+that stop being accessed lose importance and are eventually marked stale or
+pruned. Between promotion and decay, the corpus tracks what is actually
+useful.

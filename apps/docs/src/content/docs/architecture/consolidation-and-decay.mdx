@@ -1,0 +1,175 @@
+---
+title: Consolidation & decay
+description: How the memory corpus stays useful over time — STM→LTM promotion, review-gated corpus consolidation, decay, dedup, contradiction policy, and CAS-guarded lifecycle writes.
+sidebar:
+  order: 9
+---
+
+A memory store that only ever appends becomes noise. Engram runs a small set
+of lifecycle mechanisms that promote what matters, merge what repeats, flag
+what conflicts, and let the rest fade — all under one hard rule: **no
+background job may silently clobber a concurrent edit, and nothing is hidden
+from recall without either an explicit policy choice or a durable, auditable
+marker.**
+
+Two similarly-named mechanisms are easy to confuse, so up front:
+
+| | `consolidate_memories` | `consolidate_corpus` |
+| --- | --- | --- |
+| What | STM→LTM **promotion** | LTM **near-duplicate merging** |
+| Acts on | short-term memories | long-term corpus |
+| Signal | access count + importance | embedding cosine similarity |
+| Scheduler | on by default (5 min) | **off by default** |
+| Mutating by default | yes (promotion is safe) | no — `dryRun` defaults to `true` |
+
+## STM→LTM promotion (`consolidate_memories`)
+
+`ConsolidationService` (`apps/mcp-server/src/memory/consolidation.service.ts`)
+scans short-term memories and promotes those that have *earned* durability:
+accessed at least `STM_CONSOLIDATION_ACCESS_THRESHOLD` times (default 3) and
+scoring at least `STM_CONSOLIDATION_IMPORTANCE_THRESHOLD` (default 0.5).
+The scheduler runs every `STM_CONSOLIDATION_INTERVAL_MS` (default 5 minutes;
+`0` disables); the admin MCP tool `consolidate_memories` triggers the same
+pass synchronously. Promotion is idempotent — a unique-constraint hit means
+"already promoted" and is counted as skipped, and LTM quota limits are
+respected.
+
+The rationale is in [Memory tiers](/docs/architecture/memory-tiers/): agents
+cannot reliably judge durability at write time, but *repeated access* is an
+honest signal after the fact.
+
+## Review-gated corpus consolidation (`consolidate_corpus`)
+
+Write-time dedup (below) collapses **near-identical** writes, but a corpus
+still accumulates *near-duplicates*: rephrasings, partial overlaps, the same
+fact learned twice in different words. `CorpusConsolidationService`
+(`packages/memory-ltm/src/corpus-consolidation.service.ts`) targets exactly
+the gray zone the write-time check leaves behind — pairs whose cosine
+similarity falls in the band
+**[`MEMORY_CONSOLIDATION_MERGE_THRESHOLD`, `MEMORY_DUPLICATE_THRESHOLD`)**
+(defaults **[0.85, 0.97)**; the boot check enforces merge < duplicate).
+
+Per pass, it clusters near-duplicates and, per cluster:
+
+1. elects one **canonical** — highest `metadata.importance`, most recent on
+   ties;
+2. unions all members' tags onto the canonical;
+3. marks the losers superseded (`status: 'superseded'`,
+   `supersededBy: <canonicalId>`, reason, timestamp) and links each to the
+   canonical with a `duplicate-of` `MemoryLink`;
+4. emits a lifecycle audit row (`actorId: 'corpus_consolidation'`).
+
+The pass is cursor-resumable and idempotent, and returns
+`{ scanned, clusters, merged, skippedConcurrentEdit, cursor, dryRun, perCluster }`.
+
+**Why review-gated.** Merging hides rows from recall — that is the point, and
+also the risk. So the mechanism is conservative twice over:
+
+- The `consolidate_corpus` tool's **`dryRun` defaults to `true`**: it reports
+  would-be merges (per-cluster canonical, losers, scores) without mutating.
+  Destructive merging requires an explicit `dryRun: false`.
+- The scheduler (`CorpusConsolidationSchedulerService`) is **off by
+  default**: `MEMORY_CONSOLIDATION_INTERVAL_MS` defaults to `0`, because a
+  scheduled pass merges *without* review. An operator opts in only after
+  inspecting dry-run reports.
+
+Superseded losers are hidden from default recall but never deleted — the
+merge is inspectable and reversible in the data.
+
+## Decay
+
+`DecayService` (`apps/mcp-server/src/memory/decay.service.ts`, algorithm in
+`MemoryLtmService.applyDecayPolicy()`) runs every `MEMORY_DECAY_INTERVAL_MS`
+(default 24 h; `0` disables), walking the LTM corpus in cursor-resumable
+batches (`MEMORY_DECAY_BATCH_SIZE`, default 100). For each row it
+**recomputes** the importance score — content and tag signals plus access
+recency, with a `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` (default 14) half-life —
+then applies two thresholds:
+
+- score ≤ `MEMORY_DECAY_STALE_SCORE_THRESHOLD` (default 0.3) → mark
+  `status: 'stale'`. Metadata only; the memory still recalls.
+- score < `MEMORY_DECAY_PRUNE_SCORE_THRESHOLD` (default 0.15) **and** older
+  than `MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS` (default 30) **and** not
+  `pinned` → **delete**, with a pre-image audit snapshot
+  (`actorId: 'ltm_decay'`) so `restore_memory` can bring it back.
+
+Decay is the counterweight to promotion: durability is earned by access and
+lost by neglect. `pinned: true` in metadata exempts a memory from pruning
+entirely.
+
+## Write-time dedup
+
+On every LTM create, `DuplicateDetectionService` checks the new content
+against existing memories. An exact content match returns the existing row
+untouched. A semantic match at or above `MEMORY_DUPLICATE_THRESHOLD`
+(default 0.97) **collapses the write into the existing row**: no new row is
+created, a `duplicateMatches` annotation (match id, score, timestamp) is
+appended to the existing row's metadata, its importance is re-scored, and
+the existing memory is returned. This is why agents can re-`remember` the
+same fact freely — the server absorbs the repetition instead of accumulating
+it.
+
+## Contradiction policy
+
+Similarity just *below* the duplicate zone —
+[`MEMORY_CONTRADICTION_THRESHOLD`, `MEMORY_CONTRADICTION_THRESHOLD_MAX`)
+(defaults [0.8, 0.97)) — is where contradictions live: same topic, different
+claim. `ContradictionDetectionService`
+(`packages/memory-ltm/src/contradiction-detection.service.ts`) confirms a
+candidate pair with **value-swap detection**, a deterministic lexical check
+(no LLM): it parses relational patterns ("X prefers/uses/lives in/works at
+Y") and copular patterns ("X is Y", "X = Y", "X: Y"), fires only when the
+subjects match and the values genuinely diverge, and refuses to fire when one
+value is a token-subset of the other ("vim" vs "vim with plugins" is
+elaboration, not contradiction).
+
+What happens next is governed by `MEMORY_CONTRADICTION_POLICY`:
+
+- **`flag` (default)** — keep **both** rows visible in recall and mark both
+  with `status: 'contradicted'`, a symmetric `contradictionWith: <otherId>`,
+  reason, and timestamp, plus a `contradicts` link. Conservative by design:
+  no data is hidden without review; the conflict surfaces to whoever reads
+  either row.
+- **`supersede`** — latest wins: the older row is marked
+  `status: 'superseded'`, `supersededBy: <newId>` and drops out of default
+  recall. The newer row is not marked.
+
+## Superseded and contradicted status
+
+These markers live in the memory's `metadata` JSON
+([memory model](/docs/architecture/memory-model/#the-metadata-json-contract)),
+and their asymmetry is intentional:
+
+- **Superseded ⇒ hidden.** `semanticSearch()` and list reads drop rows where
+  `isSuperseded()` is true, unless the caller opts in with
+  `includeSuperseded` (audit/UI paths). Detection keys on the **durable**
+  `supersededBy` marker first, falling back to `status === 'superseded'` —
+  because the decay pass rewrites `status` on every run and would otherwise
+  silently un-hide a superseded memory. Direct `get_memory` by id always
+  returns the row.
+- **Contradicted ⇒ visible.** Under the default `flag` policy, contradicted
+  rows still recall — hiding one side of a conflict would be the `supersede`
+  policy by the back door. The markers exist so a human or agent can
+  reconcile the pair deliberately.
+
+## Concurrency: version CAS everywhere
+
+Every mutation described on this page competes with live agent edits, so all
+of it routes through compare-and-set writes on the `Memory.version` column:
+
+- **Agent updates**: `update_memory` requires `expectedVersion`; stale
+  versions get a `CONFLICT` error and re-read guidance.
+- **Lifecycle writes** (decay marks, dedup annotations, contradiction
+  markers, corpus-consolidation merges): `casMetadataUpdate()` folds the
+  expected version into the `WHERE` clause; a miss is retried once from a
+  fresh read, then **skipped** and counted (`skippedConcurrentEdit`) — the
+  concurrent editor wins.
+- **Access bookkeeping** is version-keyed but **non-bumping**
+  (`bumpVersion: false`), so a read-then-update never conflicts with its own
+  access write.
+- **Imports** CAS against the ledger's `lastWrittenVersion` and skip on
+  conflict rather than overwrite.
+
+The full policy table — including the deliberate STM deferral and the
+invariants that must not regress — is in the
+[Concurrent-writer policy](/docs/reference/concurrency-policy/).

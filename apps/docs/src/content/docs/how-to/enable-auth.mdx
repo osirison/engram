@@ -1,0 +1,136 @@
+---
+title: Enable authentication
+description: Turn on AUTH_REQUIRED for an HTTP-exposed Engram server — JWT secret, per-agent API keys, scopes, and the boot-time fail-safe.
+sidebar:
+  order: 10
+---
+
+This guide turns on request authentication for an Engram MCP server exposed
+over `MCP_TRANSPORT=streamable-http`. Auth is only enforced on the HTTP
+transport — `stdio` is a trusted local pipe between one client and one server
+process, so `AUTH_REQUIRED` has no effect there.
+
+For the *why* (threat model, tenant boundaries, delegation), see
+[Auth & multi-tenancy](/docs/architecture/auth-and-multitenancy/).
+
+## The boot-time fail-safe
+
+Before configuring anything, know the guardrail you are working with: a
+**multi-tenant** profile serving **streamable-http** **without**
+`AUTH_REQUIRED=true` refuses to start — in **every** `NODE_ENV`, not just
+production (`apps/mcp-server/src/http-auth-posture.ts`):
+
+> Refusing to start: multi-tenant streamable-http without AUTH_REQUIRED=true.
+> This would serve all tenants unauthenticated with a client-controlled
+> userId. Set AUTH_REQUIRED=true (recommended), or set
+> ALLOW_UNAUTHENTICATED_HTTP=true to acknowledge a trusted-network deployment.
+
+If you hit this error, this page is the fix. `ALLOW_UNAUTHENTICATED_HTTP=true`
+is the escape hatch for a deliberately open deployment (for example a
+loopback-bound, single-operator host on a trusted network) — it is an explicit
+operator acknowledgement, not a default to reach for.
+
+## Step 1 — Generate a JWT secret
+
+`JWT_SECRET` must be set and **at least 32 characters** when
+`AUTH_REQUIRED=true`; the config schema rejects boot otherwise
+(`JWT_SECRET must be set and at least 32 characters when AUTH_REQUIRED=true`).
+
+```bash
+openssl rand -base64 48
+```
+
+Store it in the server's `.env` only. It is the HMAC secret for issuing and
+verifying session JWTs and is never logged.
+
+## Step 2 — Set the auth variables
+
+```bash
+# .env on the server host
+MCP_TRANSPORT=streamable-http
+AUTH_REQUIRED=true
+JWT_SECRET=<output of openssl rand -base64 48>
+# Optional: JWT lifetime (duration string or bare seconds). Default: 7d
+JWT_EXPIRES_IN=7d
+```
+
+Restart the server. From now on every `/mcp` tool call must present a
+credential; a protected call without one is rejected with `401` and a JSON-RPC
+error (`code -32001`, "Unauthorized: authentication is required"). A
+credential that is presented but fails verification is always rejected — it is
+never downgraded to anonymous.
+
+## Step 3 — Mint per-agent API keys
+
+With auth on, clients authenticate with either a session JWT or an API key.
+For AI coding agents, mint **one least-privilege API key per agent**:
+
+```bash
+pnpm --filter mcp-server provision-agent-keys -- \
+  --agents claude-code,copilot,cursor --user qp \
+  --scopes memories:read,memories:write
+```
+
+Each key is shown in plaintext (`eng_…`) exactly once; the server stores only
+a hash. The full workflow — scope choices, rotation, where each key goes in
+each agent's config — is in
+[Provision agent API keys](/docs/how-to/provision-agent-keys/).
+
+## Step 4 — Wire the credential into clients
+
+Every request carries the key as a Bearer header:
+
+```
+Authorization: Bearer eng_<key-for-this-agent>
+```
+
+Set it as a header on the MCP server entry in the client's config, or export
+`ENGRAM_API_KEY=eng_…` where the client tooling reads it. Per-client syntax is
+in [Agent memory client wiring](/docs/agent-memory/clients/).
+
+## How identity is enforced
+
+Once `AUTH_REQUIRED=true`:
+
+- **The token wins over the body.** For `identity`-mode tools the verified
+  credential's `userId` is injected over any client-supplied `userId` — a
+  forged tenant id in the request body is ignored.
+- **Scopes are enforced per tool.** Keys carry scopes (`memories:read`,
+  `memories:write`, `memories:delete`); each tool declares the scope it
+  requires, and the `admin` scope satisfies any check. A read-only key calling
+  `remember` gets a scope error, and nothing is written.
+- **Delegation is admin-only.** Only an `admin`-scoped key may act on another
+  tenant, and only on tools marked delegable; the delegation is audited.
+
+## What AUTH_REQUIRED does *not* cover
+
+- **Admin maintenance tools** (`reindex_memories`, `consolidate_corpus`,
+  `create_api_key`, …) carry their own gate: an `adminToken` input compared in
+  constant time against `MCP_ADMIN_TOKEN`. That token is operator-only — never
+  hand it to an agent. See
+  [MCP_ADMIN_TOKEN is admin-only](/docs/how-to/provision-agent-keys/#mcp_admin_token-is-admin-only).
+- **OAuth login** (GitHub/Google via `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`,
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_BASE_URL`) is an
+  optional way for humans to obtain a session JWT; agents should use API keys.
+- **Rate limiting** is a separate switch (`RATE_LIMIT_ENABLED=true`,
+  enterprise profile) — see the
+  [configuration guide](/docs/reference/configuration-guide/#rate-limits).
+
+## Verify
+
+Run the scripted checks first:
+
+```bash
+scripts/verify-engram-server.sh
+```
+
+Then confirm by hand:
+
+- A protected `tools/call` **without** an `Authorization` header returns `401`.
+- The same call with a valid `eng_…` key succeeds.
+- A read-only key calling `remember` is rejected with a scope error.
+- A request whose body sets a different `userId` acts on the **key's** tenant,
+  not the spoofed one.
+
+The full manual checklist lives in
+[Provision agent API keys](/docs/how-to/provision-agent-keys/#manual-verification-checklist).

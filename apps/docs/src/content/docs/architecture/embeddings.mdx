@@ -1,0 +1,80 @@
+---
+title: Embeddings
+description: Why embedding generation is optional at every seam — provider selection, Redis caching, and the null-return degradation contract.
+sidebar:
+  order: 6
+---
+
+Embeddings power semantic recall, but Engram refuses to make them a hard
+dependency: an external embeddings API is the least reliable component in the
+stack (network, quotas, keys, cost), and a memory server that cannot *store*
+because it cannot *embed* has its priorities backwards. The design rule is:
+
+> **The embedding is an enhancement. When it cannot be produced, the memory
+> workflow continues without a vector.**
+
+`EmbeddingsService` (`packages/embeddings`) returns `null` when the provider
+is disabled, unconfigured, or failing; callers treat a missing vector as
+"skip indexing", never as an error. A vector-less memory is still created,
+listed, exported, and — once the provider is back — picked up by
+[reindex](/docs/architecture/reindex-backfill/) or `reembed_memory`.
+
+## Three providers
+
+`EMBEDDING_PROVIDER` selects the implementation behind
+`EMBEDDING_PROVIDER_TOKEN`:
+
+| Provider | What it does | When to use |
+| -------- | ------------ | ----------- |
+| `openai` (default) | Calls the OpenAI embeddings API — `text-embedding-3-small` (1536 dims) by default, `text-embedding-3-large` (3072) supported | Production recall quality |
+| `local` | Deterministic hash-based vectors, no network | Tests, CI, offline dev, cost-free bulk imports |
+| `disabled` | Always returns `null` | Deployments that only need lexical/structured retrieval |
+
+Two properties of this lineup are intentional:
+
+- **`local` is deterministic.** The same text always yields the same vector,
+  so tests and the eval harness get stable, service-free similarity behavior.
+  It is also the recommended first pass for bulk imports: ingest cheaply with
+  local vectors, then run a reindex with `--regenerate` under `openai` (see
+  [the migration runbook](/docs/agent-memory/migration/)).
+- **`openai` without a key degrades, not dies.** If `OPENAI_API_KEY` is
+  absent, embedding generation is silently disabled and writes proceed
+  vector-less — same contract as `disabled`.
+
+## Redis caching
+
+Embedding calls are cached in Redis under a deterministic key derived from
+`(text, model)`, with TTL `EMBEDDING_CACHE_TTL` (default 30 days). The cache
+exists because agent workloads re-embed the same strings constantly — recall
+queries repeat, dedup checks re-embed recent content, and reindex passes
+re-touch the corpus. A content-keyed cache makes those calls free and
+idempotent. Cache hits/misses are exported as metrics
+([observability](/docs/reference/observability/)).
+
+Under profiles without Redis, the cache is simply absent — same interface,
+no caching layer.
+
+## Dimensions are configuration, not convention
+
+`VECTOR_DIMENSIONS` (default 1536) flows into the vector store's
+`ensureReady(dimensions)`, which validates or creates the index accordingly.
+Switching models with a different dimensionality (e.g. to
+`text-embedding-3-large`) is therefore a **reindex event**: existing vectors
+are incompatible with the new index shape. The procedure — including why you
+must regenerate rather than reuse stored embeddings — is in
+[Configure embeddings](/docs/how-to/configure-embeddings/) and
+[Reindex embeddings](/docs/how-to/reindex-embeddings/).
+
+## Failure modes, made boring
+
+| Failure | Behavior |
+| ------- | -------- |
+| Provider down at write time | Memory stored without vector; excluded from semantic hits until re-embedded |
+| Provider down at query time | `recall` returns empty semantic results (logged); no exception to the caller |
+| Content edited while provider down | Row flagged `embeddingStale`; repair with `reembed_memory` |
+| Key revoked / quota exhausted | Same as provider down — degrade, log, continue |
+
+This is the same philosophy as the
+[vector backend design](/docs/architecture/vector-backends/): Postgres is the
+source of truth, everything derived can be regenerated, so no derived-state
+failure is allowed to block a write.

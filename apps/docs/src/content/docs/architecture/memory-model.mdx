@@ -1,0 +1,96 @@
+---
+title: Memory model
+description: Why both memory tiers share one Prisma Memory model — fields, the metadata JSON contract, optimistic versioning, and the supporting tables.
+sidebar:
+  order: 2
+---
+
+Engram stores every memory — short-term and long-term — in a **single Prisma
+model**, `Memory` (`prisma/schema.prisma`). This is a deliberate choice: the
+two tiers differ in *lifecycle*, not in *shape*. A short-term memory that gets
+promoted to long-term keeps its id, content, tags, and metadata; only its
+`type` and expiry change. One model means promotion is a field update, not a
+cross-table copy, and every read path (recall, list, export, audit) works on
+one shape.
+
+## The Memory row
+
+| Field | Type | Why it exists |
+| ----- | ---- | ------------- |
+| `id` | `String @id @default(cuid(2))` | Stable identity across promotion, reindex, export/import |
+| `userId` | `String` | The tenant boundary — every query filters on it |
+| `organizationId` | `String?` | Optional org scope for multi-org deployments |
+| `scope` | `String?` | Namespace within a tenant (`project:<slug>`, `session:<id>`, …) |
+| `content` | `String @db.Text` | The memory text itself |
+| `metadata` | `Json?` | Open extension point — lifecycle status, importance, dedup/contradiction markers (below) |
+| `tags` | `String[]` | Filterable labels |
+| `type` | `String` | `'short-term'` or `'long-term'` — the tier switch |
+| `version` | `Int @default(1)` | Optimistic-concurrency counter; bumped on every content update |
+| `expiresAt` | `DateTime?` | Set only for short-term memories; the TTL contract |
+| `embedding` | `Float[]` | Embedding as a float array — what the Qdrant backend syncs from |
+| `embeddingVec` | `Unsupported("vector(1536)")?` | Native pgvector column (`embedding_vec`) used by the pgvector backend |
+| `createdAt` / `updatedAt` | `DateTime` | Recency signals for ranking and decay |
+
+Indexes back the hot paths: `(userId)`, `(userId, type)`, `(userId, scope)`,
+`(organizationId)`, `(organizationId, type)`, and `(expiresAt)`.
+
+### Why two embedding columns?
+
+The vector store is a **derived index**, and Engram supports two backends
+([vector backends](/docs/architecture/vector-backends/)). `embedding Float[]`
+is portable — any backend (and the reindex pipeline) can read it back from
+Postgres. `embeddingVec` is the pgvector-native column that Postgres can index
+with HNSW; Prisma cannot type it, so it is declared `Unsupported`. Keeping the
+float array in Postgres regardless of backend is what makes
+[reindex](/docs/architecture/reindex-backfill/) able to rebuild a lost vector
+store without calling the embeddings provider again.
+
+### The `metadata` JSON contract
+
+Rather than adding a column per lifecycle feature, lifecycle state lives in
+`metadata`. The important keys (all written by services, not clients):
+
+- `importance` — blended score used by ranking and decay.
+- `accessCount`, `lastAccessedAt`, `pinned` — access bookkeeping and the
+  decay-protection flag.
+- `status` — `active` / `stale` / `superseded` / `contradicted`; recomputed by
+  the decay pass.
+- `supersededBy`, `supersededReason`, `supersededAt` — durable markers written
+  when a memory is hidden by contradiction policy or corpus consolidation.
+  Recall filters on `supersededBy` (durable), **not** on `status` alone,
+  because the decay pass rewrites `status` and would otherwise un-hide a
+  superseded row.
+- `contradictionWith`, `contradictionReason`, `contradictedAt` — symmetric
+  markers under the default `flag` contradiction policy.
+- `duplicateMatches` — annotations appended when a near-identical write is
+  collapsed into this row.
+
+The semantics of these keys are explained in
+[Consolidation & decay](/docs/architecture/consolidation-and-decay/).
+
+### `version`: the concurrency backbone
+
+Every update folds `expectedVersion` into the SQL `WHERE` clause and bumps
+`version` in the same statement — a compare-and-set. The `update_memory` MCP
+tool *requires* `expectedVersion`; background lifecycle jobs use the same
+mechanism internally so they can never clobber a concurrent edit. Full rules:
+[Concurrent-writer policy](/docs/reference/concurrency-policy/).
+
+## Supporting models
+
+The schema has eight further models; each exists to keep the `Memory` row
+simple:
+
+| Model | Purpose |
+| ----- | ------- |
+| `User`, `Organization`, `Membership` | Identity and optional org multi-tenancy |
+| `ApiKey` | Hashed per-agent credentials with scopes — see [Auth & multi-tenancy](/docs/architecture/auth-and-multitenancy/) |
+| `MemoryAudit` | Append-only trail for destructive ops (`update`/`delete`/`promote`/`reembed`/`restore`), with before/after snapshots — this is what `restore_memory` restores from |
+| `MemoryLink` | First-class typed edges between memories (`duplicate-of`, `contradicts`, wikilink-derived relations) |
+| `MemoryImportSource` | Idempotency ledger for `import_agent_memory`, including the `lastWrittenVersion` CAS baseline |
+| `MigrationCheckpoint` | State machine + cursor for the lite→enterprise migration tooling |
+
+Notably absent: a soft-delete column. Deletes are hard, but every delete
+writes a `MemoryAudit` snapshot first, so `restore_memory` can recreate the
+row (original id included) from the audit trail. This keeps every read path
+free of `deletedAt` filters while still making deletion reversible.

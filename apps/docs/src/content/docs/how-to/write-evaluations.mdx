@@ -1,0 +1,113 @@
+---
+title: Write evaluations
+description: Score retrieval quality with the @engram/eval harness — datasets, retrievers, precision/recall/MRR/nDCG metrics, and the recall gate.
+sidebar:
+  order: 12
+---
+
+`@engram/eval` (`packages/eval`) is a dependency-free harness for scoring
+retrieval quality. The built-in run needs **no external services** — it uses
+deterministic hash embeddings and a fixture dataset — so it works offline and
+in CI.
+
+## Run the built-in evaluation
+
+```bash
+pnpm eval        # scores the fixture dataset, prints the report
+pnpm eval:gate   # same, then enforces the recall-quality thresholds (CI gate)
+```
+
+`pnpm eval` runs `packages/eval/src/run.ts` against the golden fixtures in
+`packages/eval/src/fixtures/recall-fixtures.ts` and reports **precision@k**,
+**recall@k**, **MRR**, and **nDCG@k**. `pnpm eval:gate` fails (non-zero exit)
+when any metric drops below the thresholds in
+`packages/eval/src/thresholds.ts` — that is the regression tripwire for
+ranking changes.
+
+## Write a custom evaluation
+
+Three pieces: a dataset, a retriever, and the harness.
+
+### 1. Dataset
+
+A dataset is TypeScript (compiled with your code, not loose JSON):
+
+```ts
+import type { EvalDataset } from '@engram/eval';
+
+export const myDataset: EvalDataset = {
+  documents: [
+    { id: 'doc-1', text: 'qp prefers TypeScript strict mode everywhere' },
+    { id: 'doc-2', text: 'The staging database runs Postgres 16' },
+  ],
+  queries: [
+    { id: 'q-1', query: 'what language settings does qp like', relevantIds: ['doc-1'] },
+  ],
+};
+```
+
+`relevantIds` is the golden judgment — which documents *should* come back.
+
+### 2. Retriever
+
+A retriever is just `(query, limit) => string[] | Promise<string[]>` (ranked
+document ids). Use the built-ins or wrap anything, including a live server:
+
+```ts
+import {
+  createKeywordRetriever,
+  createEmbeddingRetriever,
+  createFusionRetriever,
+} from '@engram/eval';
+
+const keyword = createKeywordRetriever(myDataset.documents);
+const semantic = createEmbeddingRetriever(myDataset.documents, embedFn);
+// Reciprocal Rank Fusion — the same recipe production recall uses
+const hybrid = createFusionRetriever([keyword, semantic]);
+```
+
+To evaluate a real Engram deployment, write a retriever that calls the
+`recall` tool and returns the hit ids — the harness does not care where the
+ranking came from.
+
+### 3. Run the harness
+
+```ts
+import { runHarness, evaluateGate, formatReport } from '@engram/eval';
+
+const report = await runHarness(myDataset.queries, hybrid, 5); // k = 5
+console.log(formatReport(report));
+// report: { k, queryCount, precisionAtK, recallAtK, mrr, ndcgAtK, perQuery }
+
+const { passed, breaches } = evaluateGate(report);
+if (!passed) process.exitCode = 1;
+```
+
+Metric meanings:
+
+| Metric | Answers |
+| ------ | ------- |
+| `precisionAtK` | Of the top-k results, how many were relevant? |
+| `recallAtK` | Of all relevant documents, how many made the top k? |
+| `mrr` | How high does the *first* relevant hit rank? |
+| `ndcgAtK` | Are relevant hits concentrated near the top? |
+
+## Latency benchmarking
+
+The same package exports a latency harness:
+
+- `runLatencyBenchmark(options)` — warmup + timed iterations, percentile
+  summary (p50/p95/p99), optional threshold breaches.
+- `createVectorStoreLatencyTarget(options)` — adapts a real vector store to
+  the benchmark target interface.
+
+For the ready-made backend comparison (Qdrant vs pgvector over fixture
+records), use the repo script — it needs real services:
+
+```bash
+DATABASE_URL=... QDRANT_URL=... pnpm bench:backends
+# flags: --iterations 80 --warmup 20 --limit 10 --p95 <ms> --output <file>
+```
+
+For end-to-end pipeline throughput (not per-search latency), see
+[Run a load test](/docs/how-to/run-load-test/).

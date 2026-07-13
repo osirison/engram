@@ -1,0 +1,200 @@
+---
+title: Configuration guide
+description: Hand-written companion to the generated configuration reference — per-profile requirements, example .env files, security-critical variables, and tuning notes.
+---
+
+This page is the annotated companion to the auto-generated
+[configuration reference](/docs/reference/configuration/), which lists every
+variable with its type and default. Here: what each **deployment profile**
+actually requires, ready-to-copy `.env` examples, and the variables worth
+special care.
+
+## Profile requirements matrix
+
+The base schema keeps most variables optional; the profile transform enforces
+them at boot (fail-fast, before any traffic). See
+[Deployment profiles](/docs/architecture/deployment-profiles/) for the design.
+
+| Variable | `memory` | `lite` | `enterprise` |
+| -------- | -------- | ------ | ------------ |
+| `DEPLOYMENT_PROFILE` | `memory` | `lite` | `enterprise` (default) |
+| `DATABASE_URL` | — | **required** | **required** |
+| `REDIS_URL` | — | — | **required** |
+| `QDRANT_URL` | — | — | **required** when `VECTOR_BACKEND=qdrant` |
+| `LOCAL_ENCRYPTION_KEY` | — | **required in production** (ephemeral dev fallback) | — |
+| `JWT_SECRET` | — | — | **required (≥32 chars) when `AUTH_REQUIRED=true`** |
+| `AUTH_REQUIRED` | n/a (single-tenant) | n/a (single-tenant) | effectively required over `streamable-http` (boot fail-safe) |
+| `MCP_ADMIN_TOKEN` | — | recommended (admin tools) | **required for any admin tool use** |
+
+Boot-time enforcement to expect:
+
+- Missing profile-required URLs fail validation with a clear message.
+- `AUTH_REQUIRED=true` without a ≥32-char `JWT_SECRET` refuses to boot.
+- Multi-tenant (`enterprise`) + `MCP_TRANSPORT=streamable-http` +
+  `AUTH_REQUIRED=false` refuses to boot in **every** `NODE_ENV` unless
+  `ALLOW_UNAUTHENTICATED_HTTP=true` is set — see
+  [Enable authentication](/docs/how-to/enable-auth/).
+- `MEMORY_CONSOLIDATION_MERGE_THRESHOLD` must stay strictly below
+  `MEMORY_DUPLICATE_THRESHOLD`, and `MEMORY_CONTRADICTION_THRESHOLD` below
+  `MEMORY_CONTRADICTION_THRESHOLD_MAX`.
+
+## Example .env per profile
+
+### `memory` — zero services, nothing persists
+
+```bash
+DEPLOYMENT_PROFILE=memory
+MCP_TRANSPORT=stdio
+EMBEDDING_PROVIDER=local   # or openai + OPENAI_API_KEY for real semantics
+```
+
+### `lite` — one encrypted local store
+
+```bash
+DEPLOYMENT_PROFILE=lite
+DATABASE_URL=postgresql://engram:engram@localhost:5432/engram
+MCP_TRANSPORT=stdio
+
+# Encrypted file store
+LOCAL_DATA_DIR=~/.engram/data
+LOCAL_ENCRYPTION_KEY=<base64 of 32 random bytes>   # openssl rand -base64 32
+
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+MCP_ADMIN_TOKEN=<openssl rand -hex 24>
+```
+
+### `enterprise` — full stack, authenticated HTTP
+
+```bash
+DEPLOYMENT_PROFILE=enterprise
+NODE_ENV=production
+PORT=3000
+MCP_TRANSPORT=streamable-http
+
+# Stores
+DATABASE_URL=postgresql://engram:engram@postgres:5432/engram
+REDIS_URL=redis://redis:6379
+VECTOR_BACKEND=qdrant            # or pgvector (then QDRANT_URL not needed)
+QDRANT_URL=http://qdrant:6333
+
+# Embeddings
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+
+# Auth (mandatory posture for multi-tenant HTTP)
+AUTH_REQUIRED=true
+JWT_SECRET=<openssl rand -base64 48>
+MCP_ADMIN_TOKEN=<openssl rand -hex 24>
+
+# Rate limiting
+RATE_LIMIT_ENABLED=true
+```
+
+## Security-critical variables
+
+These three secrets have different blast radii — treat them accordingly:
+
+- **`JWT_SECRET`** — HMAC key for session JWTs. A holder can forge a token
+  for **any tenant**. ≥32 chars enforced; rotate by restarting with a new
+  value (all sessions invalidate). Never logged, never in client configs.
+- **`MCP_ADMIN_TOKEN`** — gates every admin tool (`reindex_*`,
+  `consolidate_corpus`, `import_agent_memory`, `create_api_key`, …) via
+  constant-time comparison. A leak allows minting keys for any tenant — it
+  is the most sensitive secret in the system. Operator-only: it belongs in
+  the server env and the operator's shell,
+  [never in an agent config](/docs/how-to/provision-agent-keys/#mcp_admin_token-is-admin-only).
+  Tool inputs require ≥16 chars.
+- **`LOCAL_ENCRYPTION_KEY`** (`lite` profile) — base64-encoded 32-byte
+  AES-256-GCM key for the on-disk store. Required in production; in dev an
+  ephemeral key is generated, meaning **data is unreadable after restart**
+  unless you pin one. Losing this key loses the store; it is also needed
+  when [migrating lite → enterprise](/docs/how-to/profile-migration/).
+  `LOCAL_INSECURE_MODE=true` (plaintext) is dev-only.
+
+Related, not secrets but security-posture: `ALLOW_UNAUTHENTICATED_HTTP`
+(explicit opt-out of the boot fail-safe), `METRICS_TOKEN` (bearer for
+`/health/metrics`), `CORS_ALLOWED_ORIGINS`.
+
+## Tuning notes
+
+### pgvector HNSW tuning
+
+Only relevant with `VECTOR_BACKEND=pgvector`; unset values use pgvector's
+defaults.
+
+| Variable | Applies at | Effect |
+| -------- | ---------- | ------ |
+| `PGVECTOR_HNSW_M` (2–100) | index build | Graph connectivity — higher = better recall, bigger index, slower build |
+| `PGVECTOR_HNSW_EF_CONSTRUCTION` (4–1000) | index build | Build-time candidate list — higher = better index quality, slower build |
+| `PGVECTOR_HNSW_EF_SEARCH` (1–1000) | per query | Recall/latency dial — raise it when recall quality matters more than p95 |
+
+Build-time values take effect on index (re)creation. Validate changes with
+`pnpm bench:backends` and the p95 budgets in the
+[capacity reference](/docs/reference/capacity/).
+
+### STM consolidation
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `STM_CONSOLIDATION_ACCESS_THRESHOLD` | `3` | Reads an STM memory needs before qualifying for LTM promotion |
+| `STM_CONSOLIDATION_IMPORTANCE_THRESHOLD` | `0.5` | Minimum importance score to promote (not schema-validated; read directly from the environment) |
+| `STM_CONSOLIDATION_INTERVAL_MS` | `300000` | Promotion scan interval; `0` disables the scheduler |
+
+Lower thresholds promote more aggressively (bigger LTM corpus, more
+embedding cost); raise them if LTM accumulates trivia. Background:
+[Consolidation & decay](/docs/architecture/consolidation-and-decay/).
+
+### Memory lifecycle (decay, dedup, consolidation, contradictions)
+
+Decay — how memories fade:
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `MEMORY_DECAY_INTERVAL_MS` | `86400000` (24 h) | Decay pass interval; `0` disables |
+| `MEMORY_DECAY_BATCH_SIZE` | `100` | Rows per cursor-resumable batch |
+| `MEMORY_DECAY_STALE_SCORE_THRESHOLD` | `0.3` | Score at/below which a memory is marked `stale` |
+| `MEMORY_DECAY_PRUNE_SCORE_THRESHOLD` | `0.15` | Score below which an old, unpinned memory is deleted (audited) |
+| `MEMORY_DECAY_PRUNE_OLDER_THAN_DAYS` | `30` | Minimum age before prune eligibility |
+| `MEMORY_IMPORTANCE_HALF_LIFE_DAYS` | `14` | Recency half-life in importance scoring |
+
+Similarity bands — these four variables partition cosine-similarity space
+for a new write against an existing memory (defaults shown):
+
+```
+0.80                    0.85                    0.97                 1.00
+ |── contradiction band ─|── corpus-merge band ──|── duplicate zone ──|
+ CONTRADICTION_THRESHOLD  CONSOLIDATION_MERGE     DUPLICATE_THRESHOLD
+```
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `MEMORY_DUPLICATE_THRESHOLD` | `0.97` | At/above: write-time collapse into the existing row |
+| `MEMORY_CONSOLIDATION_MERGE_THRESHOLD` | `0.85` | Lower bound of the `consolidate_corpus` merge band; must stay below the duplicate threshold (boot-enforced) |
+| `MEMORY_CONSOLIDATION_INTERVAL_MS` | `0` (**disabled**) | Corpus-consolidation scheduler. Off by default because a scheduled pass merges **without review** — opt in only after inspecting `consolidate_corpus` dry runs |
+| `MEMORY_CONTRADICTION_THRESHOLD` | `0.8` | Lower bound of the contradiction band |
+| `MEMORY_CONTRADICTION_THRESHOLD_MAX` | `0.97` | Upper bound (exclusive) of the contradiction band |
+| `MEMORY_CONTRADICTION_POLICY` | `flag` | `flag`: keep both rows visible, mark `contradicted` for review. `supersede`: hide the older row (latest-wins) |
+
+Keep `flag` unless you have a reconciliation habit — `supersede` silently
+hides data on a heuristic match.
+
+### Rate limits
+
+Enterprise-only, Redis-backed fixed window; all buckets are evaluated and
+the tightest one wins (`429` + `Retry-After`).
+
+| Variable | Default | Bucket |
+| -------- | ------- | ------ |
+| `RATE_LIMIT_ENABLED` | `false` | Master switch |
+| `RATE_LIMIT_WINDOW_SEC` | `60` | Window length (defaults make the `*_RPM` values per-minute) |
+| `RATE_LIMIT_USER_RPM` | `120` | Per authenticated user/key |
+| `RATE_LIMIT_ORG_RPM` | `6000` | Aggregated per organization |
+| `RATE_LIMIT_IP_RPM` | `60` | Per unauthenticated client IP |
+| `RATE_LIMIT_TOOL_OVERRIDES` | — | JSON per-tool overrides, e.g. `{"reindex_memories":{"limit":2,"windowSeconds":3600}}` (validated at boot) |
+
+Size `USER_RPM` from agent behavior: a coding agent with recall-first habits
+makes a handful of calls per task; the default 120/min accommodates bursts
+(`ingest_conversation` is charged proportionally to payload size). Cap
+expensive admin tools with per-tool overrides rather than lowering the
+global limit.

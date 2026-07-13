@@ -1,0 +1,49 @@
+---
+title: How-to guides
+description: Task-oriented guides for operating and extending an Engram deployment — deploy, secure, back up, reindex, tune, and test.
+sidebar:
+  order: 0
+  label: Overview
+---
+
+Each guide solves one operational task, assuming a working deployment (start
+with [Getting started](/docs/getting-started/) if you don't have one). For
+the *why* behind these procedures, see [Architecture](/docs/architecture/).
+
+## Run it in production
+
+| Guide | Task |
+| ----- | ---- |
+| [Deploy to production](/docs/how-to/deploy-production/) | Build and run the hardened Docker image, compose file, health checks |
+| [Back up and restore](/docs/how-to/backup-and-restore/) | pg_dump, Redis BGSAVE, Qdrant snapshots, retention, restore drills |
+| [Enable observability](/docs/how-to/enable-observability/) | Prometheus metrics scraping and OpenTelemetry tracing |
+| [Migrate lite to enterprise](/docs/how-to/profile-migration/) | Promote a profile-lite deployment to the full stack |
+
+## Secure it
+
+| Guide | Task |
+| ----- | ---- |
+| [Enable authentication](/docs/how-to/enable-auth/) | `AUTH_REQUIRED`, `JWT_SECRET`, the boot fail-safe, verifying enforcement |
+| [Provision agent API keys](/docs/how-to/provision-agent-keys/) | Mint, distribute, and rotate least-privilege per-agent keys |
+
+## Tune retrieval
+
+| Guide | Task |
+| ----- | ---- |
+| [Change vector backend](/docs/how-to/change-vector-backend/) | Switch Qdrant ⇄ pgvector and backfill the new index |
+| [Configure embeddings](/docs/how-to/configure-embeddings/) | Providers, cache TTL, and safe model/dimension changes |
+| [Reindex embeddings](/docs/how-to/reindex-embeddings/) | Rebuild the vector store — CLI flags and the queued admin tools |
+
+## Move data in
+
+| Guide | Task |
+| ----- | ---- |
+| [Import agent memory](/docs/how-to/import-agent-memory/) | Bulk-import Claude/Copilot/Cursor/Codex/Gemini memory files |
+
+## Extend and validate
+
+| Guide | Task |
+| ----- | ---- |
+| [Add an MCP tool](/docs/how-to/add-mcp-tool/) | Zod schema → manifest entry → handler → regenerated reference |
+| [Write evaluations](/docs/how-to/write-evaluations/) | Score retrieval quality with `@engram/eval`; recall gate |
+| [Run a load test](/docs/how-to/run-load-test/) | Throughput/latency of the storage pipeline with `scripts/load-test.mjs` |
