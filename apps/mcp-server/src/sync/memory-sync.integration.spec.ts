@@ -99,7 +99,7 @@ describePg('#240 live file-watcher sync (integration)', () => {
     return prisma.memory.findMany({
       where: {
         userId: USER_ID,
-        scope: CONFLICT_COPY_SCOPE,
+        scope: { startsWith: `${CONFLICT_COPY_SCOPE}/` },
         tags: { has: CONFLICT_COPY_TAG },
       },
       select: { id: true, content: true, metadata: true },

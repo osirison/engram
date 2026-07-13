@@ -63,12 +63,18 @@ export interface SyncOptions {
 /** Tag every D7 file-version copy carries — the review surface filters on it. */
 export const CONFLICT_COPY_TAG = 'conflict';
 /**
- * Dedicated namespace for conflict copies. Keeps them out of normal recall
- * scopes (no double-hit of contradictory facts) and bounds the LTM
- * exact-content dedup to other copies, which is exactly the idempotency we
- * want for re-stored identical file versions.
+ * Dedicated namespace prefix for conflict copies. Keeps them out of normal
+ * recall scopes (no double-hit of contradictory facts). Each contested memory
+ * gets its OWN sub-scope so the scope-bound LTM exact-content dedup gives
+ * per-conflict idempotency without ever letting one contested memory's copy
+ * satisfy another's create when file contents happen to be identical.
  */
 export const CONFLICT_COPY_SCOPE = 'sync-conflict';
+
+/** Scope of the single live copy for one contested memory. */
+export function conflictCopyScope(contestedMemoryId: string): string {
+  return `${CONFLICT_COPY_SCOPE}/${contestedMemoryId}`;
+}
 
 /** `metadata.conflict` payload on a copy — links it to the contested memory. */
 interface ConflictCopyMeta {
@@ -247,9 +253,14 @@ export class MemorySyncService {
     const byLedgerKey = new Map(facts.map((f) => [f.ledgerKey, f]));
     const byBareKey = new Map(facts.map((f) => [f.sourceKey, f]));
 
-    // Current contents of the contested memories, to skip already-reconciled facts.
+    // Current contents of the contested memories, to skip already-reconciled
+    // facts. userId is defense-in-depth: never read across tenants even if a
+    // ledger row were to carry a foreign memory id.
     const contested = await this.prisma.memory.findMany({
-      where: { id: { in: conflicts.map((c) => c.memoryId) } },
+      where: {
+        id: { in: conflicts.map((c) => c.memoryId) },
+        userId: spec.userId,
+      },
       select: { id: true, content: true },
     });
     const contentById = new Map(contested.map((m) => [m.id, m.content]));
@@ -314,7 +325,7 @@ export class MemorySyncService {
         existing.id,
         { content: fact.content, metadataMerge: { conflict: meta } },
         undefined,
-        CONFLICT_COPY_SCOPE,
+        conflictCopyScope(conflict.memoryId),
       );
       summary.updated++;
       this.logger.log(
@@ -325,7 +336,11 @@ export class MemorySyncService {
 
     const created = await this.ltm.create({
       userId: spec.userId,
-      scope: CONFLICT_COPY_SCOPE,
+      // Per-contested sub-scope: exact-content dedup is scope-bound, so an
+      // identical file version re-stored for THIS conflict no-ops (free
+      // idempotency) while another contested memory with the same content
+      // still gets its own copy.
+      scope: conflictCopyScope(conflict.memoryId),
       content: fact.content,
       tags: [CONFLICT_COPY_TAG, spec.source],
       metadata: {
@@ -335,9 +350,8 @@ export class MemorySyncService {
       // Verbatim review snapshot: never collapse into a semantic near-duplicate.
       skipDuplicateCheck: true,
     });
-    // Exact-content dedup inside the conflict scope can hand back an existing
-    // copy (same file content contested under two memories) — count it as
-    // unchanged rather than pretending a second copy exists.
+    // Backstop only — with per-contested scopes a foreign copy can no longer
+    // satisfy this create; an exact dup here is our own idempotent re-store.
     const createdMeta = readConflictMeta(created.metadata);
     if (createdMeta?.memoryId === conflict.memoryId) {
       summary.created++;
@@ -358,7 +372,7 @@ export class MemorySyncService {
     return this.prisma.memory.findFirst({
       where: {
         userId,
-        scope: CONFLICT_COPY_SCOPE,
+        scope: conflictCopyScope(contestedMemoryId),
         tags: { has: CONFLICT_COPY_TAG },
         metadata: { path: ['conflict', 'memoryId'], equals: contestedMemoryId },
       },
@@ -382,7 +396,7 @@ export class MemorySyncService {
       const copies = await this.prisma.memory.findMany({
         where: {
           userId: spec.userId,
-          scope: CONFLICT_COPY_SCOPE,
+          scope: { startsWith: `${CONFLICT_COPY_SCOPE}/` },
           tags: { has: CONFLICT_COPY_TAG },
           metadata: { path: ['conflict', 'sourceTool'], equals: spec.source },
         },
@@ -401,12 +415,12 @@ export class MemorySyncService {
         ) {
           continue;
         }
-        // Scope-guarded delete: only rows in the conflict scope can match.
+        // Scope-guarded delete: only rows in this conflict's scope can match.
         const deleted = await this.ltm.delete(
           spec.userId,
           copy.id,
           undefined,
-          CONFLICT_COPY_SCOPE,
+          conflictCopyScope(contestedId),
         );
         if (deleted) {
           summary.removedStale++;

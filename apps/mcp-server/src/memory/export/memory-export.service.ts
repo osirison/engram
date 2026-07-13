@@ -255,7 +255,7 @@ export class MemoryExportService {
       });
       for (const row of rows) {
         byUniqueKey.set(
-          `${row.sourceMemoryId} ${row.targetLocator} ${row.relType}`,
+          `${row.sourceMemoryId}\u0000${row.targetLocator}\u0000${row.relType}`,
           row,
         );
       }

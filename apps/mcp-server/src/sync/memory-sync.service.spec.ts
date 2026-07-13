@@ -1,6 +1,6 @@
 import {
-  CONFLICT_COPY_SCOPE,
   CONFLICT_COPY_TAG,
+  conflictCopyScope,
   MemorySyncService,
   type SyncSpec,
 } from './memory-sync.service';
@@ -254,7 +254,7 @@ describe('MemorySyncService', () => {
       };
       expect(created.content).toBe('file v2');
       expect(created.tags).toContain(CONFLICT_COPY_TAG);
-      expect(created.scope).toBe(CONFLICT_COPY_SCOPE);
+      expect(created.scope).toBe(conflictCopyScope('m1'));
       expect(created.skipDuplicateCheck).toBe(true);
       // The review surface can find both sides through the metadata link.
       expect(created.metadata.conflict).toMatchObject({
@@ -266,6 +266,45 @@ describe('MemorySyncService', () => {
       });
       // The contested memory itself is never written.
       expect(update).not.toHaveBeenCalled();
+    });
+
+    it('gives each contested memory its own copy even when file contents are identical', async () => {
+      // Two contested memories whose file versions are byte-identical: the
+      // scope-bound exact dedup must not let m1's copy satisfy m2's create.
+      const sameContent = 'shared instruction text';
+      const { create, service } = build({
+        entries: [
+          ledgerEntry(),
+          ledgerEntry({
+            id: 'l2',
+            memoryId: 'm2',
+            sourcePath: 'AGENTS.md',
+            sourceKey: 'claude-code:AGENTS.md',
+          }),
+        ],
+        memories: [
+          { id: 'm1', updatedAt: EDITED_AT, content: 'agent-edited 1' },
+          { id: 'm2', updatedAt: EDITED_AT, content: 'agent-edited 2' },
+        ],
+        facts: [
+          parsedFact({ content: sameContent }),
+          parsedFact({
+            content: sameContent,
+            sourcePath: 'AGENTS.md',
+            sourceKey: 'claude-code:AGENTS.md',
+            ledgerKey: 'claude-code@abcdef012345:AGENTS.md',
+          }),
+        ],
+      });
+      const result = await service.syncSource(SPEC);
+
+      expect(result.conflictCopies.created).toBe(2);
+      expect(create).toHaveBeenCalledTimes(2);
+      const scopes = create.mock.calls.map(
+        (c) => (c[0] as { scope: string }).scope,
+      );
+      expect(scopes).toContain(conflictCopyScope('m1'));
+      expect(scopes).toContain(conflictCopyScope('m2'));
     });
 
     it('matches conflicts by the root-namespaced ledger key too (#236)', async () => {
@@ -332,7 +371,7 @@ describe('MemorySyncService', () => {
       expect(userId).toBe('qp');
       expect(copyId).toBe('copy-1');
       expect((input as { content: string }).content).toBe('file v3');
-      expect(scope).toBe(CONFLICT_COPY_SCOPE);
+      expect(scope).toBe(conflictCopyScope('m1'));
     });
 
     it('stores no copy for a memory-only edit (file still matches last import)', async () => {
@@ -395,7 +434,7 @@ describe('MemorySyncService', () => {
         'qp',
         'copy-stale',
         undefined,
-        CONFLICT_COPY_SCOPE,
+        conflictCopyScope('m1'),
       );
     });
 
