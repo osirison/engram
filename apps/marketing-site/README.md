@@ -1,6 +1,6 @@
 ---
-title: ENGRAM
-description: Developer setup and project entry points for the ENGRAM MCP memory server
+title: Engram marketing site
+description: Vite + React marketing site for ENGRAM, deployed to engram.events via GitHub Pages
 ---
 
 # Engram marketing site
@@ -27,12 +27,34 @@ a slowly cycling sacred-geometry backdrop.
 
 ## Running
 
-It is a static site with no build step. Serve the folder over any static
-host, e.g.:
+The site is a Vite + React 18 app. It needs a build step — serving the source
+folder directly will not work (`app.jsx` is raw JSX that browsers cannot
+execute).
 
 ```bash
-npx serve apps/marketing-site
+cd apps/marketing-site
+npm ci           # install from package-lock.json (npm, not pnpm)
+npm run dev      # Vite dev server with hot reload
 ```
 
-Then open the printed URL. React, ReactDOM, and Babel are loaded from a CDN
-(pinned versions) directly in `index.html`.
+Production build and local preview:
+
+```bash
+npm run build    # emits dist/
+npm run preview  # serve the built dist/ locally
+```
+
+Lint with `npm run lint` (self-contained ESLint flat config).
+
+## Workspace note
+
+This app is intentionally **excluded from the pnpm workspace**
+(`pnpm-workspace.yaml` lists `!apps/marketing-site`) and manages its own
+dependencies with npm via its own `package-lock.json`. Root `pnpm`/Turborepo
+commands do not build it — `pnpm --filter @engram/marketing-site <cmd>` matches
+no project by design.
+
+CI lint/build/deploy live in `.github/workflows/node.js.yml` (npm-based,
+path-filtered). On pushes to `main` the built `dist/` is deployed to GitHub
+Pages at [https://engram.events](https://engram.events) (custom domain shipped
+via `public/CNAME`; DNS/TLS runbook: `docs/MARKETING_SITE_DOMAIN.md`).
