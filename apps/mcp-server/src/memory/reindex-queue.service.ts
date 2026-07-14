@@ -218,9 +218,15 @@ export class ReindexQueueService {
       // job; a resumed job already has a cursor and must not re-wipe completed
       // progress. After resetting we strip `recreate` from the per-batch calls.
       if (current.options.recreate) {
-        if (current.options.userId) {
+        if (
+          current.options.userId ||
+          current.options.maxMemories !== undefined
+        ) {
+          // A scoped (userId) or capped (maxMemories) job would drop the whole
+          // index but only restore its own slice, breaking recall for everything
+          // outside it. Mirror the LTM guard: recreate is unsafe for either.
           this.logger.warn(
-            'Ignoring recreate: the vector index may only be rebuilt by an unscoped full reindex (no userId)',
+            'Ignoring recreate: the vector index may only be rebuilt by an unscoped full reindex (no userId or maxMemories)',
           );
         } else if (cursor) {
           this.logger.log(

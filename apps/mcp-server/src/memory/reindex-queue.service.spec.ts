@@ -151,6 +151,30 @@ describe('ReindexQueueService', () => {
     expect(memoryService.reindex).toHaveBeenCalled();
   });
 
+  it('does not recreate the vector index for a capped (maxMemories) recreate job', async () => {
+    memoryService.reindex.mockResolvedValue({
+      processed: 1,
+      indexed: 1,
+      skipped: 0,
+      failed: 0,
+      cursor: null,
+    });
+    wireRedis();
+
+    // A capped job restores only its own slice, so dropping the whole index
+    // would strand every vector past the cap — recreate must be refused.
+    const job = await service.enqueue({
+      recreate: true,
+      maxMemories: 5000,
+      batchSize: 2,
+    });
+    await flush();
+
+    const status = await service.get(job.jobId);
+    expect(status?.state).toBe('completed');
+    expect(memoryService.recreateVectorIndex).not.toHaveBeenCalled();
+  });
+
   it('does not re-recreate the vector index for a resumed recreate job', async () => {
     memoryService.reindex.mockResolvedValue({
       processed: 1,
