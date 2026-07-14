@@ -12,11 +12,7 @@ import { ImportLedgerService } from './ledger/import-ledger.service.js';
 import { namespaceSourceKey } from './ledger/source-key.js';
 import { LinkResolver, type ResolverFact } from './links/link-resolver.service.js';
 import { SecretScanner, type SecretPolicy } from './secrets/secret-scanner.js';
-import {
-  estimateEmbeddingCost,
-  EMBEDDING_USD_PER_MILLION,
-  type CostEstimate,
-} from './embedding/cost-estimator.js';
+import { estimateEmbeddingCost, type CostEstimate } from './embedding/cost-estimator.js';
 import { computeContentHash } from './content-hash.js';
 import { ADAPTER_REGISTRY, type AdapterRegistry } from './adapters/registry.js';
 import type { ImportedFact, ImportIR, SourceTool } from './ir/types.js';
@@ -549,15 +545,16 @@ export class MemoryImportService {
 
   /**
    * Resolve the cost-estimate options from the caller's explicit model or the
-   * process-wide embedding runtime. Models missing from the pricing table
-   * estimate at $0 when the active provider is not OpenAI — local models have
-   * no per-token API cost, and defaulting them to an OpenAI rate would inflate
-   * dry-run budgets.
+   * process-wide embedding runtime. Cost tracks the ACTIVE PROVIDER, not the
+   * model-id string: only OpenAI bills per token, so any other provider
+   * (ollama/local/disabled) estimates at $0 — even when the model id collides
+   * with a priced OpenAI entry (e.g. a stray `text-embedding-3-small` under an
+   * Ollama runtime), which would otherwise inflate dry-run budgets.
    */
   private estimateOptions(model?: string): { model: string; usdPerMillion?: number } {
     const runtime = resolveEmbeddingRuntime();
     const effectiveModel = model ?? runtime.model;
-    if (EMBEDDING_USD_PER_MILLION[effectiveModel] === undefined && runtime.provider !== 'openai') {
+    if (runtime.provider !== 'openai') {
       return { model: effectiveModel, usdPerMillion: 0 };
     }
     return { model: effectiveModel };

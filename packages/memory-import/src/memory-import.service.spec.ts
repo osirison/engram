@@ -278,6 +278,32 @@ describe('MemoryImportService.run', () => {
     expect(summary.embeddingCostEstimate.approxTokens).toBeGreaterThan(0);
   });
 
+  it('dry-run cost is $0 for a non-OpenAI provider even with an OpenAI-priced model id', async () => {
+    const prevProvider = process.env.EMBEDDING_PROVIDER;
+    const prevModel = process.env.EMBEDDING_MODEL;
+    // Active provider is local (ollama), but the model id collides with a priced
+    // OpenAI entry — cost must track the provider, not the model-id string.
+    process.env.EMBEDDING_PROVIDER = 'ollama';
+    process.env.EMBEDDING_MODEL = 'text-embedding-3-small';
+    try {
+      const ir = makeIR([
+        fact({ sourceKey: 'markdown:a.md', content: 'Alpha note with some words to embed' }),
+      ]);
+      const summary = await build(ir, makeLedger(), ltm, resolver).run({
+        ...baseInput,
+        dryRun: true,
+      });
+      expect(summary.embeddingCostEstimate.calls).toBe(1);
+      expect(summary.embeddingCostEstimate.approxTokens).toBeGreaterThan(0);
+      expect(summary.embeddingCostEstimate.approxUsd).toBe(0);
+    } finally {
+      if (prevProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
+      else process.env.EMBEDDING_PROVIDER = prevProvider;
+      if (prevModel === undefined) delete process.env.EMBEDDING_MODEL;
+      else process.env.EMBEDDING_MODEL = prevModel;
+    }
+  });
+
   it('dry-run cost excludes flag-policy embeddingExcluded facts (matches the real run)', async () => {
     const ir = makeIR([
       fact({ sourceKey: 'markdown:clean.md', content: 'an ordinary note about coffee and books' }),
