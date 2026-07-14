@@ -37,3 +37,25 @@
     justify-content: center;
   }
 }
+
+/* Homepage splash body — lead paragraph.
+ *
+ * Below the centered hero, the splash body (`.sl-markdown-content`) fills the
+ * full ~1080px content column. Directly under a tightly centered hero, the
+ * intro paragraph ran that entire width left-aligned (~150 characters per line —
+ * an uncomfortable measure whose left edge lined up with nothing above it).
+ *
+ * Cap the lead paragraph to the same 60ch measure as the hero copy and center
+ * it, so the hero, the lead, and the card grid all share one centered axis.
+ * Scoped to the splash via `.sl-container:has(.hero)` so the article pages that
+ * reuse `.sl-markdown-content` are untouched. (The card grid is separately
+ * aligned by dropping the `stagger` prop in index.mdx: with only four cards it
+ * offset the right column downward and left no shared row baseline.)
+ */
+@media (min-width: 50rem) {
+  .sl-container:has(.hero) .sl-markdown-content > p:first-child {
+    max-width: 60ch;
+    margin-inline: auto;
+    text-align: center;
+  }
+}
