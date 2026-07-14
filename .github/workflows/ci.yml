@@ -123,16 +123,18 @@ jobs:
         run: pnpm build
 
       - name: Check generated docs are up to date (drift gate)
-        # The MCP-tool and configuration references are generated from source
-        # and committed (WP6 T3/T4). Regenerate and fail if the committed output
-        # is stale — runs after Build so the compiled tool manifest exists. The
-        # TypeDoc API reference is git-ignored (rebuilt every docs build), so it
-        # is intentionally not part of this diff.
+        # The MCP-tool, configuration, and agent-memory references are
+        # generated from source and committed (WP6 T3/T4; agent-memory mirror
+        # generator). Regenerate and fail if the committed output is stale —
+        # runs after Build so the compiled tool manifest exists. The TypeDoc
+        # API reference is git-ignored (rebuilt every docs build), so it is
+        # intentionally not part of this diff.
         run: |
           pnpm docs:generate
           git diff --exit-code -- \
             apps/docs/src/content/docs/reference/configuration.md \
             apps/docs/src/content/docs/reference/mcp-tools/ \
+            apps/docs/src/content/docs/agent-memory/ \
             || { echo "::error::Generated docs are stale. Run 'pnpm docs:generate' and commit the result."; exit 1; }
 
       - name: Lint

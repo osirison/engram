@@ -21,9 +21,8 @@ cheap-first strategy: import with **local hash embeddings** (no API cost), then
 rebuild **real embeddings** with the admin reindex tool — free under the
 default local Ollama provider, or via the opt-in OpenAI provider. For the full importer
 reference (secrets policies, link resolution, provenance, ledger schema) see
-[Import agent memory](/docs/how-to/import-agent-memory/). For the identity/scope
-rules every command here relies on, see the
-[agent memory contract](/docs/agent-memory/contract/).
+[Agentic Memory Import](/docs/how-to/import-agent-memory/). For the identity/scope rules every command
+here relies on, see the [Agent Memory Contract](/docs/agent-memory/contract/).
 
 ## Overview
 
@@ -46,13 +45,13 @@ safely, and you can migrate one source at a time.
 ## How this differs from the file-watcher sync
 
 This is the **initial bulk load**, run by hand, once. It is distinct from the
-**ongoing [file-watcher sync bridge](/docs/agent-memory/sync/)** — a separate
-long-running component that watches those same native files and upserts edits
-into ENGRAM continuously (with newest-wins conflict handling). Both consume the
-same WP4 importer parsing and the same dedup/provenance model, so running this
-migration first and the watcher afterward does **not** create duplicates: the
-watcher reuses the ledger this migration populates. Use this runbook for the
-first import; the watcher takes over for everything after.
+**ongoing file-watcher sync bridge** — a separate long-running component that
+watches those same native files and upserts edits into ENGRAM continuously (with
+newest-wins conflict handling). Both consume the same WP4 importer parsing and
+the same dedup/provenance model, so running this migration first and the watcher
+afterward does **not** create duplicates: the watcher reuses the ledger this
+migration populates. Use this runbook for the first import; the watcher takes
+over for everything after.
 
 ## Prerequisites
 
@@ -70,7 +69,7 @@ first import; the watcher takes over for everything after.
 - **Decide scope before you run.** `userId` is always `qp` (it must be
   lowercase-alphanumeric; hyphens/uppercase are rejected). Project/agent
   separation lives entirely in `--scope`, per the
-  [agent memory contract](/docs/agent-memory/contract/#scope-grammar):
+  [Agent Memory Contract](/docs/agent-memory/contract/#scope-grammar):
 
   | Scope            | Use for                                                           |
   | ---------------- | ----------------------------------------------------------------- |
@@ -89,11 +88,11 @@ first import; the watcher takes over for everything after.
 - **Auth / keys.** The import CLI runs as a local NestJS process and needs no MCP
   bearer key. The **reindex step (Step 3)** uses the admin `reindex_memories`
   tool, which requires `MCP_ADMIN_TOKEN`. If you will run agents against a shared
-  authenticated server afterward, mint per-agent API keys as described in
-  [Provision agent API keys](/docs/how-to/provision-agent-keys/) and the
-  [persistent-server runbook](/docs/agent-memory/server/). Never place a secret
-  or token in a memory — the importer redacts, but confirm the advisories
-  (Step 1) first.
+  authenticated server afterward, mint per-agent API keys as described in the
+  [agent keys note](/docs/how-to/provision-agent-keys/) and the
+  [persistent-server runbook](/docs/agent-memory/server/). Never place a secret or
+  token in a memory — the importer redacts, but confirm the advisories (Step 1)
+  first.
 
 ## Step 1 — Dry-run every source
 
@@ -215,8 +214,7 @@ cursor.
 > running Ollama server with `nomic-embed-text` pulled — free, no API key),
 > or use `EMBEDDING_PROVIDER=openai` with a valid `OPENAI_API_KEY` (costs
 > tokens per the dry-run estimate). A third option is `--no-embed` (store
-> empty vectors) — see
-> [Import agent memory](/docs/how-to/import-agent-memory/#embedding-cost---no-embed-closes-g7);
+> empty vectors) — see [Agentic Memory Import](/docs/how-to/import-agent-memory/#embedding-cost---no-embed-closes-g7);
 > with empty vectors a **default** reindex backfills them, whereas the `local`
 > path below requires the regenerate flag.
 
@@ -342,8 +340,7 @@ safety net that catches a reused-hash-vector mistake.
 
 Where these verification facts overlap the recall-quality regression gate's seed
 dataset, the same queries feed that gate — keep them in sync with
-[Release gates](/docs/reference/release-gates/) so "primary memory" cannot
-silently regress.
+[Release Gates](/docs/reference/release-gates/) so "primary memory" cannot silently regress.
 
 ## Per-source command reference
 
@@ -352,15 +349,15 @@ All commands take the form
 (prefix `EMBEDDING_PROVIDER=local` for the real run; append `--dry-run` to
 preview).
 
-| Source        | Typical path                                     | Reads                                                                         | Recommended scope      |
-| ------------- | ------------------------------------------------ | ----------------------------------------------------------------------------- | ---------------------- |
-| `claude-code` | repo root (e.g. `~/Cloud/Projects/engram`)       | `CLAUDE.md`/`CLAUDE.local.md` (H2-chunked)                                    | `project:<slug>`       |
-| `claude-code` | auto-memory dir (`~/.claude/projects/<encoded>`) | each `memory/*.md` atomic (`MEMORY.md` index excluded)                        | `global`               |
-| `copilot`     | repo root                                        | `.github/copilot-instructions.md` + `.github/instructions/*.instructions.md`  | `project:<slug>`       |
-| `cursor`      | repo root                                        | `.cursor/rules/*.mdc` + legacy `.cursorrules`                                 | `project:<slug>`       |
-| `codex`       | repo root                                        | `AGENTS.md` hierarchy (`--include-global` adds `~/.codex/AGENTS.md`)          | `project:<slug>`       |
-| `gemini`      | repo root                                        | `GEMINI.md` hierarchy (`--include-global` adds `~/.gemini/GEMINI.md`)         | `project:<slug>`       |
-| `markdown`    | a notes folder / Obsidian vault                  | any `.md` (index/MOC skipped; `--split-headings` chunks on H2)                | `global` (or per-repo) |
+| Source        | Typical path                                     | Reads                                                                        | Recommended scope      |
+| ------------- | ------------------------------------------------ | ---------------------------------------------------------------------------- | ---------------------- |
+| `claude-code` | repo root (e.g. `~/Cloud/Projects/engram`)       | `CLAUDE.md`/`CLAUDE.local.md` (H2-chunked)                                   | `project:<slug>`       |
+| `claude-code` | auto-memory dir (`~/.claude/projects/<encoded>`) | each `memory/*.md` atomic (`MEMORY.md` index excluded)                       | `global`               |
+| `copilot`     | repo root                                        | `.github/copilot-instructions.md` + `.github/instructions/*.instructions.md` | `project:<slug>`       |
+| `cursor`      | repo root                                        | `.cursor/rules/*.mdc` + legacy `.cursorrules`                                | `project:<slug>`       |
+| `codex`       | repo root                                        | `AGENTS.md` hierarchy (`--include-global` adds `~/.codex/AGENTS.md`)         | `project:<slug>`       |
+| `gemini`      | repo root                                        | `GEMINI.md` hierarchy (`--include-global` adds `~/.gemini/GEMINI.md`)        | `project:<slug>`       |
+| `markdown`    | a notes folder / Obsidian vault                  | any `.md` (index/MOC skipped; `--split-headings` chunks on H2)               | `global` (or per-repo) |
 
 Machine-global files pulled in by `--include-global` are cross-project — import
 them in a separate `--scope global` pass (see
