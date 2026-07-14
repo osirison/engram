@@ -42,6 +42,8 @@ function Chrome() {
         <span className="mark-word">engram</span>
       </div>
       <nav className="chrome-nav">
+        <a href="/docs/">docs</a>
+        <span className="chrome-sep">/</span>
         <a href="https://github.com/osirison/engram" target="_blank" rel="noopener">source</a>
         <span className="chrome-sep">/</span>
         <a href="#install">connect</a>
