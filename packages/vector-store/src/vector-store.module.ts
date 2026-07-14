@@ -6,16 +6,19 @@ import { DEFAULT_VECTOR_COLLECTION, QdrantVectorStore } from './qdrant.vector-st
 import { PgVectorStore, type PgVectorClient, type PgVectorOptions } from './pgvector.vector-store';
 import { VECTOR_STORE_TOKEN, type VectorBackend, type VectorStore } from './vector-store.interface';
 
-const DEFAULT_VECTOR_DIMENSIONS = 1536;
-
 function resolveBackend(): VectorBackend {
   const raw = (process.env.VECTOR_BACKEND ?? 'qdrant').toLowerCase();
   return raw === 'pgvector' ? 'pgvector' : 'qdrant';
 }
 
-function resolveDimensions(): number {
+/**
+ * Optional strict dimensionality pin from `VECTOR_DIMENSIONS`. When unset,
+ * both backends infer dimensions from the first upserted vector, so the
+ * embedding model alone determines the index dimensionality.
+ */
+function resolveDimensions(): number | undefined {
   const parsed = Number.parseInt(process.env.VECTOR_DIMENSIONS ?? '', 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_VECTOR_DIMENSIONS;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function resolvePgVectorOptions(): PgVectorOptions {
@@ -40,8 +43,9 @@ function resolvePgVectorOptions(): PgVectorOptions {
  * {@link VECTOR_STORE_TOKEN}, selected from the `VECTOR_BACKEND` environment
  * variable (`qdrant` by default, `pgvector` for the Postgres-backed provider).
  *
- * The Qdrant collection name is configurable via `VECTOR_COLLECTION`; the
- * pgvector embedding dimensionality is configurable via `VECTOR_DIMENSIONS`.
+ * The Qdrant collection name is configurable via `VECTOR_COLLECTION`. Both
+ * backends infer embedding dimensionality from the first upserted vector;
+ * `VECTOR_DIMENSIONS` acts as an optional strict pin for pgvector.
  * `PrismaService` is injected optionally so Qdrant-only deployments do not
  * require a database connection from this module.
  */

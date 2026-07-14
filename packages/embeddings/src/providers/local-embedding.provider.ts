@@ -1,13 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { EMBEDDING_RUNTIME_TOKEN, type EmbeddingRuntime } from '../embedding-runtime.js';
 import type { EmbeddingModel } from '../types.js';
 import type { EmbeddingProvider } from './embedding-provider.interface.js';
 
-const LOCAL_DIMENSIONS = 1536;
+const DEFAULT_LOCAL_DIMENSIONS = 1536;
 
 @Injectable()
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   private readonly logger = new Logger(LocalEmbeddingProvider.name);
+  private readonly dimensions: number;
+
+  constructor(@Optional() @Inject(EMBEDDING_RUNTIME_TOKEN) runtime?: EmbeddingRuntime) {
+    this.dimensions = runtime?.dimensions ?? DEFAULT_LOCAL_DIMENSIONS;
+  }
 
   async generate(text: string, _model: EmbeddingModel): Promise<number[] | null> {
     const normalized = text.trim().toLowerCase();
@@ -17,7 +23,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     // Deterministic local scaffold provider for non-production/testing use.
     const hashBytes = createHash('sha256').update(normalized).digest();
-    const vector = Array.from({ length: LOCAL_DIMENSIONS }, (_, i) => {
+    const vector = Array.from({ length: this.dimensions }, (_, i) => {
       const byte = hashBytes[i % hashBytes.length] ?? 0;
       return byte / 255;
     });

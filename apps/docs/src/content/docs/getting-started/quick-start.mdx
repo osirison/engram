@@ -7,8 +7,8 @@ sidebar:
 
 The `memory` profile boots with **no external services**. Short-term and
 long-term memory are in-process; embeddings degrade to lexical-only when no
-provider is configured. Data is lost on process exit — use it for demos, CI
-smoke tests, and exploring the MCP tool surface.
+embedding backend is reachable. Data is lost on process exit — use it for
+demos, CI smoke tests, and exploring the MCP tool surface.
 
 ## 1. Install, build, run
 
@@ -41,10 +41,20 @@ The health response reports `ok` with only the process-level `memory-store`
 indicator. Postgres, Redis, and Qdrant indicators are not present in this
 profile.
 
-## 3. Optional: deterministic local embeddings
+## 3. Optional: local embeddings for hybrid recall
 
-Enable the deterministic hash embedding provider for hybrid recall without an
-API key:
+The default embedding provider is **Ollama** — local, no API key. If an
+Ollama server is running ([ollama.com/download](https://ollama.com/download))
+with the default model pulled, hybrid semantic recall works with zero extra
+configuration:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+If Ollama is unreachable, the server degrades gracefully (memories are stored
+without vectors). No Ollama at all? The deterministic hash provider gives
+stable — but not semantic — similarity without any model:
 
 ```bash
 DEPLOYMENT_PROFILE=memory \

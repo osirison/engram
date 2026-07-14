@@ -18,8 +18,8 @@ const describePg = connectionString ? describe : describe.skip;
 const DIMENSIONS = 1536;
 const USER_ID = 'pgvector-integration-user';
 
-function unitVector(seed: number): number[] {
-  const raw = Array.from({ length: DIMENSIONS }, (_, index) => Math.sin(seed * (index + 1)));
+function unitVector(seed: number, dimensions: number = DIMENSIONS): number[] {
+  const raw = Array.from({ length: dimensions }, (_, index) => Math.sin(seed * (index + 1)));
   const magnitude = Math.sqrt(raw.reduce((sum, value) => sum + value * value, 0)) || 1;
   return raw.map((value) => value / magnitude);
 }
@@ -103,5 +103,41 @@ describePg('PgVectorStore (integration)', () => {
     await store.delete([ids[0]!]);
     const results = await store.search(unitVector(1), { userId: USER_ID }, 3);
     expect(results.some((result) => result.id === ids[0])).toBe(false);
+  });
+
+  it('survives a dimension change via reset (1536 -> 768)', async () => {
+    // Simulate an embedding model switch: reset drops the column + index, and
+    // an unpinned store reprovisions them at the new dimensionality.
+    const unpinned = new PgVectorStore(prisma);
+    await unpinned.reset();
+
+    await unpinned.upsert([
+      {
+        id: ids[1]!,
+        vector: unitVector(5, 768),
+        payload: { userId: USER_ID, tags: ['integration'] },
+      },
+    ]);
+
+    const results = await unpinned.search(unitVector(5, 768), { userId: USER_ID }, 3);
+    expect(results.length).toBe(1);
+    expect(results[0]!.id).toBe(ids[1]);
+
+    const health = await unpinned.healthCheck();
+    expect(health).toMatchObject({ ok: true, column: true, dimensions: 768 });
+
+    // A store still assuming the OLD dimensionality now fails loudly instead
+    // of silently corrupting the index.
+    const stale = new PgVectorStore(prisma);
+    await expect(stale.upsert([{ id: ids[2]!, vector: unitVector(9, 1536) }])).rejects.toThrow(
+      /vector\(768\)/
+    );
+
+    // Restore the 1536-dim column so earlier assertions remain valid on re-runs.
+    await unpinned.reset();
+    const restored = new PgVectorStore(prisma, DIMENSIONS);
+    await restored.upsert([
+      { id: ids[1]!, vector: unitVector(5), payload: { userId: USER_ID, tags: ['integration'] } },
+    ]);
   });
 });

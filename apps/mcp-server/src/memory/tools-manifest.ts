@@ -168,14 +168,14 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'reindex_memories',
     description:
-      'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable. Run it after switching VECTOR_BACKEND, changing the embedding model/provider (regenerate), or losing/corrupting the vector index. Synchronous — blocks until the pass completes and returns the processed/indexed/skipped/failed summary; prefer queue_reindex_memories for large corpora.',
+      'Rebuild the vector store from Postgres (admin/maintenance). Backfills embeddings for one user or all users; idempotent and cursor-resumable. Run it after switching VECTOR_BACKEND, changing the embedding model/provider (set reuseExistingEmbeddings=false and recreate=true so the index is rebuilt at the new dimensionality), or losing/corrupting the vector index. Synchronous — blocks until the pass completes and returns the processed/indexed/skipped/failed summary; prefer queue_reindex_memories for large corpora.',
     inputSchema: reindexToolSchema,
     auth: 'admin',
   },
   {
     name: 'queue_reindex_memories',
     description:
-      'Queue an asynchronous vector reindex and return a jobId immediately — the right choice for large corpora or any rebuild you should not block on. Jobs persist progress (with a resume cursor) in Redis and run strictly one at a time. Poll with get_reindex_status; cancel_reindex_job / retry_reindex_job manage the job from its persisted cursor.',
+      'Queue an asynchronous vector reindex and return a jobId immediately — the right choice for large corpora or any rebuild you should not block on. Supports the same options as reindex_memories, including recreate for embedding model/dimension changes. Jobs persist progress (with a resume cursor) in Redis and run strictly one at a time. Poll with get_reindex_status; cancel_reindex_job / retry_reindex_job manage the job from its persisted cursor.',
     inputSchema: reindexQueueToolSchema,
     auth: 'admin',
   },

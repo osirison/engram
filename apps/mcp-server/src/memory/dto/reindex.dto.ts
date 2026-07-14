@@ -22,6 +22,13 @@ export const reindexToolSchema = z
     cursor: z.string().optional(),
     /** Stop after processing at most this many memories. */
     maxMemories: z.coerce.number().int().min(1).optional(),
+    /**
+     * Drop and rebuild the entire vector index before reindexing. Required
+     * after an embedding model/dimension change. Only honored by an unscoped
+     * full reindex (no userId/cursor/maxMemories); destructive and
+     * non-atomic — recall is empty until the rebuild completes.
+     */
+    recreate: z.boolean().optional(),
   })
   .strict();
 

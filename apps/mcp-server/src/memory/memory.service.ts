@@ -162,6 +162,7 @@ type LtmServiceContract = {
     maxMemories?: number;
     recreate?: boolean;
   }) => Promise<ReindexSummary>;
+  recreateVectorIndex: () => Promise<void>;
 };
 
 export interface ReindexSummary {
@@ -845,6 +846,15 @@ export class MemoryService {
       this.metricsService?.reindexOpsTotal.inc({ status: 'error' });
       throw err;
     }
+  }
+
+  /**
+   * Drop and rebuild the vector index once, before a chunked backfill. Used by
+   * the async reindex queue so a `recreate` job actually rebuilds the index at
+   * the job level instead of having each chunked batch silently skip it.
+   */
+  async recreateVectorIndex(): Promise<void> {
+    await this.ltm.recreateVectorIndex();
   }
 
   // ─── C1: High-Level Agent UX Methods ───────────────────────────────────────

@@ -35,12 +35,24 @@ tenant isolation is enforced inside the index (payload filter in Qdrant,
 (`scope`, `tags`, `type`, `organizationId`, created-date range) ride along the
 same way.
 
+Dimensionality is **observed, not assumed**: both backends call
+`ensureReady` with the vector length of the first upserted vector,
+provisioning or validating the index at that size. `VECTOR_DIMENSIONS` is an
+**optional strict pin** (it no longer defaults to 1536) — when set, the
+backend verifies the index against it and throws an actionable error on
+mismatch instead of failing silently.
+
 ### Qdrant (`VECTOR_BACKEND=qdrant`, the default)
 
 `QdrantVectorStore` (`packages/vector-store/src/qdrant.vector-store.ts`)
 stores vectors in a dedicated Qdrant collection (`VECTOR_COLLECTION`, default
 `engram_memories`) with cosine similarity. Memory CUIDs are mapped to
 deterministic UUIDv5 point ids, so upserts are idempotent.
+
+`ensureReady` guards the dimension contract: if the collection already exists
+with a different vector size than the pipeline produces, it throws one
+actionable error up front — previously a mismatch surfaced only as per-point
+silent upsert failures.
 
 Choose Qdrant when vector search is hot enough to deserve its own service:
 it scales independently of Postgres, and its ANN engine is purpose-built.
@@ -50,10 +62,26 @@ The cost is one more service to run, monitor, back up — and keep consistent
 ### pgvector (`VECTOR_BACKEND=pgvector`)
 
 `PgVectorStore` (`packages/vector-store/src/pgvector.vector-store.ts`) uses
-the `embedding_vec vector(1536)` column **on the `memories` table itself**,
-with an HNSW index created at runtime. No extra service; the vector index
-lives in the same transactional boundary as the data, and one `pg_dump`
-covers both.
+an `embedding_vec vector(n)` column **on the `memories` table itself**, with
+an HNSW index. No extra service; the vector index lives in the same
+transactional boundary as the data, and one `pg_dump` covers both.
+
+The column is **runtime-managed**, not schema-managed: it does not appear in
+`schema.prisma`, and `ensureReady` provisions the column and HNSW index at
+the observed dimensionality on the first vector write. On subsequent boots it
+verifies the live column's dimensions (via the `pg_attribute` typmod) and
+throws an actionable error on mismatch. Until the first vector is written,
+searches simply return empty results — the same behavior as a missing Qdrant
+collection. `reset()` drops the index *and* the column, so a full rebuild
+reprovisions them at the new dimensionality. Throughout, the raw
+`embedding Float[]` column in Postgres remains the source of truth; the
+pgvector column is a derived index. The health check reflects this split:
+`ok` tracks only the `vector` extension, while the lazily provisioned column
+is reported informationally (`column`, `dimensions`).
+
+Deployments that predate runtime management (the old fixed `vector(1536)`
+column) should run one plain reindex after deploying — it reuses the stored
+`Float[]` embeddings, so no provider calls are made.
 
 Tuning is exposed through three optional variables (see the
 [configuration guide](/docs/reference/configuration-guide/#pgvector-hnsw-tuning)):

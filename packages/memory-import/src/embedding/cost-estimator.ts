@@ -10,10 +10,19 @@
  * Token estimate ≈ ceil(chars / 4) per content (rough OpenAI heuristic).
  */
 
-/** USD per 1,000,000 tokens, from OpenAI embedding model rates. */
+/**
+ * USD per 1,000,000 tokens. OpenAI rates from their published pricing; local
+ * models (Ollama and the deterministic hash scaffold) cost nothing per token.
+ */
 export const EMBEDDING_USD_PER_MILLION: Record<string, number> = {
   'text-embedding-3-small': 0.02,
   'text-embedding-3-large': 0.13,
+  // Local models — no per-token API cost.
+  'nomic-embed-text': 0,
+  'mxbai-embed-large': 0,
+  'all-minilm': 0,
+  'bge-m3': 0,
+  'local-hash': 0,
 };
 
 /** Model used when the caller does not specify one. */

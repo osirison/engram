@@ -104,8 +104,42 @@ export class QdrantVectorStore implements VectorStore {
     if (!exists) {
       await this.qdrant.createCollection(this.collection, dimensions, 'Cosine');
       this.logger.log(`Created vector collection ${this.collection} (${dimensions} dims)`);
+    } else {
+      // Guard against an existing collection created for a different embedding
+      // model: without this check, every upsert fails point-by-point with an
+      // opaque Qdrant error. Turn it into one actionable failure instead.
+      const liveSize = await this.readCollectionSize();
+      if (liveSize !== null && liveSize !== dimensions) {
+        throw new Error(
+          `Qdrant collection "${this.collection}" is ${liveSize}-dimensional but the embedding ` +
+            `pipeline produced ${dimensions}-dim vectors. After changing the embedding model, ` +
+            `run an unscoped full reindex with recreate+regenerate ` +
+            `(CLI: pnpm --filter mcp-server reindex -- --recreate --regenerate).`
+        );
+      }
     }
     this.ensured = true;
+  }
+
+  /**
+   * Read the vector size of the existing collection. Returns null when the
+   * size cannot be determined (e.g. named-vector configurations), in which
+   * case the guard is skipped rather than producing false positives.
+   */
+  private async readCollectionSize(): Promise<number | null> {
+    try {
+      const info = await this.qdrant.getClient().getCollection(this.collection);
+      const vectors = (info as { config?: { params?: { vectors?: { size?: unknown } | unknown } } })
+        .config?.params?.vectors;
+      const size = (vectors as { size?: unknown } | undefined)?.size;
+      return typeof size === 'number' ? size : null;
+    } catch (error) {
+      this.logger.warn(
+        `Could not read collection info for dimension guard: ` +
+          `${error instanceof Error ? error.message : String(error)}`
+      );
+      return null;
+    }
   }
 
   async upsert(records: VectorRecord[]): Promise<void> {

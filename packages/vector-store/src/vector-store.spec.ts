@@ -9,6 +9,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function buildClient(): QdrantClient {
   return {
     getCollections: vi.fn().mockResolvedValue({ collections: [] }),
+    getCollection: vi.fn().mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } }),
     createCollection: vi.fn().mockResolvedValue(undefined),
     deleteCollection: vi.fn().mockResolvedValue(undefined),
     upsert: vi.fn().mockResolvedValue(undefined),
@@ -74,6 +75,41 @@ describe('QdrantVectorStore', () => {
 
     it('rejects invalid dimensions', async () => {
       await expect(store.ensureReady(0)).rejects.toThrow('positive integer');
+    });
+
+    it('throws an actionable error when the existing collection has different dimensions', async () => {
+      client.getCollections = vi
+        .fn()
+        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
+      client.getCollection = vi
+        .fn()
+        .mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } });
+
+      await expect(store.ensureReady(768)).rejects.toThrow(/1536-dimensional.*768-dim/s);
+      await expect(store.ensureReady(768)).rejects.toThrow('recreate+regenerate');
+    });
+
+    it('accepts an existing collection whose dimensions match', async () => {
+      client.getCollections = vi
+        .fn()
+        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
+      client.getCollection = vi
+        .fn()
+        .mockResolvedValue({ config: { params: { vectors: { size: 768 } } } });
+
+      await expect(store.ensureReady(768)).resolves.toBeUndefined();
+      expect(client.createCollection).not.toHaveBeenCalled();
+    });
+
+    it('skips the dimension guard when the collection size cannot be determined', async () => {
+      client.getCollections = vi
+        .fn()
+        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
+      client.getCollection = vi.fn().mockResolvedValue({
+        config: { params: { vectors: { named: { size: 768 } } } },
+      });
+
+      await expect(store.ensureReady(768)).resolves.toBeUndefined();
     });
   });
 
@@ -278,6 +314,10 @@ describe('PgVectorStore', () => {
     expect(() => new PgVectorStore(buildClient(), 0)).toThrow('positive integer');
   });
 
+  it('accepts construction without a dimensions pin', () => {
+    expect(() => new PgVectorStore(buildClient())).not.toThrow();
+  });
+
   describe('ensureReady', () => {
     it('creates the extension, column, and HNSW index idempotently', async () => {
       const client = buildClient();
@@ -302,6 +342,21 @@ describe('PgVectorStore', () => {
       const store = new PgVectorStore(buildClient(), 3);
       await expect(store.ensureReady(0)).rejects.toThrow('positive integer');
     });
+
+    it('throws an actionable error when the live column has different dimensions', async () => {
+      const client = buildClient([{ atttypmod: 1536 }]);
+      const store = new PgVectorStore(client);
+
+      await expect(store.ensureReady(768)).rejects.toThrow(/vector\(1536\).*768-dim/s);
+      await expect(store.ensureReady(768)).rejects.toThrow('recreate+regenerate');
+    });
+
+    it('accepts a live column whose dimensions match', async () => {
+      const client = buildClient([{ atttypmod: 768 }]);
+      const store = new PgVectorStore(client);
+
+      await expect(store.ensureReady(768)).resolves.toBeUndefined();
+    });
   });
 
   describe('upsert', () => {
@@ -320,6 +375,27 @@ describe('PgVectorStore', () => {
       expect(updates).toHaveLength(2);
       expect(updates[0]?.[1]).toBe('[0.1,0.2,0.3]');
       expect(updates[0]?.[2]).toBe('mem-1');
+    });
+
+    it('infers dimensions from the first vector when no pin is configured', async () => {
+      const client = buildClient();
+      const store = new PgVectorStore(client);
+
+      await store.upsert([{ id: 'mem-1', vector: [0.1, 0.2, 0.3, 0.4] }]);
+
+      const statements = client.$executeRawUnsafe.mock.calls.map((call) => String(call[0]));
+      expect(
+        statements.some((s) => s.includes('ADD COLUMN IF NOT EXISTS "embedding_vec" vector(4)'))
+      ).toBe(true);
+    });
+
+    it('rejects vectors that do not match the configured VECTOR_DIMENSIONS pin', async () => {
+      const client = buildClient();
+      const store = new PgVectorStore(client, 3);
+
+      await expect(store.upsert([{ id: 'mem-1', vector: [0.1, 0.2] }])).rejects.toThrow(
+        'VECTOR_DIMENSIONS pin of 3'
+      );
     });
 
     it('rejects non-finite vector values', async () => {
@@ -357,18 +433,38 @@ describe('PgVectorStore', () => {
       await store.delete([]);
       expect(client.$executeRawUnsafe).not.toHaveBeenCalled();
     });
+
+    it('swallows undefined-column errors (column not provisioned yet)', async () => {
+      const client = buildClient();
+      client.$executeRawUnsafe = vi
+        .fn()
+        .mockRejectedValue(
+          new Error('column "embedding_vec" of relation "memories" does not exist')
+        );
+      const store = new PgVectorStore(client, 3);
+
+      await expect(store.delete(['mem-1'])).resolves.toBeUndefined();
+    });
   });
 
   describe('reset', () => {
-    it('nulls the vector column across every row', async () => {
+    it('drops the index and column so the next upsert reprovisions at new dimensions', async () => {
       const client = buildClient();
-      const store = new PgVectorStore(client, 3);
+      const store = new PgVectorStore(client);
 
+      await store.upsert([{ id: 'mem-1', vector: [0.1, 0.2, 0.3] }]);
       await store.reset();
 
-      expect(client.$executeRawUnsafe).toHaveBeenCalledWith(
-        'UPDATE "memories" SET "embedding_vec" = NULL'
-      );
+      const statements = client.$executeRawUnsafe.mock.calls.map((call) => String(call[0]));
+      expect(statements).toContain('DROP INDEX IF EXISTS "memories_embedding_vec_hnsw"');
+      expect(statements).toContain('ALTER TABLE "memories" DROP COLUMN IF EXISTS "embedding_vec"');
+
+      // ensured flag cleared: a subsequent upsert at NEW dimensions reprovisions.
+      await store.upsert([{ id: 'mem-1', vector: [0.1, 0.2, 0.3, 0.4] }]);
+      const afterReset = client.$executeRawUnsafe.mock.calls.map((call) => String(call[0]));
+      expect(
+        afterReset.some((s) => s.includes('ADD COLUMN IF NOT EXISTS "embedding_vec" vector(4)'))
+      ).toBe(true);
     });
   });
 
@@ -454,6 +550,26 @@ describe('PgVectorStore', () => {
       const store = new PgVectorStore(buildClient(), 3);
       await expect(store.search([0.1], { userId: '' })).rejects.toThrow('tenant isolation');
     });
+
+    it('returns an empty array when the column is not provisioned yet', async () => {
+      const client = buildClient();
+      client.$queryRawUnsafe = vi
+        .fn()
+        .mockRejectedValue(new Error('column "embedding_vec" does not exist'));
+      const store = new PgVectorStore(client, 3);
+
+      await expect(store.search([0.1, 0.2, 0.3], { userId: 'user-1' })).resolves.toEqual([]);
+    });
+
+    it('rethrows non-column search errors', async () => {
+      const client = buildClient();
+      client.$queryRawUnsafe = vi.fn().mockRejectedValue(new Error('connection refused'));
+      const store = new PgVectorStore(client, 3);
+
+      await expect(store.search([0.1, 0.2, 0.3], { userId: 'user-1' })).rejects.toThrow(
+        'connection refused'
+      );
+    });
   });
 
   describe('HNSW tuning', () => {
@@ -519,13 +635,14 @@ describe('PgVectorStore', () => {
   });
 
   describe('healthCheck', () => {
-    it('reports healthy when the extension and column exist', async () => {
+    it('reports healthy with live dimensions when the extension and column exist', async () => {
       const client: PgVectorClient & { $queryRawUnsafe: ReturnType<typeof vi.fn> } = {
         $executeRawUnsafe: vi.fn().mockResolvedValue(1),
         $queryRawUnsafe: vi
           .fn()
           .mockResolvedValueOnce([{ installed: true }])
-          .mockResolvedValueOnce([{ present: true }]),
+          .mockResolvedValueOnce([{ present: true }])
+          .mockResolvedValueOnce([{ atttypmod: 768 }]),
       };
       const store = new PgVectorStore(client, 3);
 
@@ -533,6 +650,25 @@ describe('PgVectorStore', () => {
         ok: true,
         extension: true,
         column: true,
+        dimensions: 768,
+      });
+    });
+
+    it('stays healthy when the runtime-managed column is not provisioned yet', async () => {
+      const client: PgVectorClient & { $queryRawUnsafe: ReturnType<typeof vi.fn> } = {
+        $executeRawUnsafe: vi.fn().mockResolvedValue(1),
+        $queryRawUnsafe: vi
+          .fn()
+          .mockResolvedValueOnce([{ installed: true }])
+          .mockResolvedValueOnce([{ present: false }]),
+      };
+      const store = new PgVectorStore(client, 3);
+
+      await expect(store.healthCheck()).resolves.toEqual({
+        ok: true,
+        extension: true,
+        column: false,
+        dimensions: null,
       });
     });
 
@@ -542,7 +678,8 @@ describe('PgVectorStore', () => {
         $queryRawUnsafe: vi
           .fn()
           .mockResolvedValueOnce([{ installed: false }])
-          .mockResolvedValueOnce([{ present: true }]),
+          .mockResolvedValueOnce([{ present: true }])
+          .mockResolvedValueOnce([{ atttypmod: 768 }]),
       };
       const store = new PgVectorStore(client, 3);
 

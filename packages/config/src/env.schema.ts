@@ -18,6 +18,16 @@ const booleanFlag = (defaultValue: boolean): z.ZodType<boolean> =>
     .default(defaultValue) as z.ZodType<boolean>;
 
 /**
+ * Optional string that treats the compose-style empty default (`VAR: ${VAR:-}`)
+ * as unset, so an empty environment value does not fail min-length/url checks.
+ */
+const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T): z.ZodType<z.output<T>> =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema
+  ) as z.ZodType<z.output<T>>;
+
+/**
  * Environment validation schema for ENGRAM.
  *
  * URL requirements are conditional on the active deployment profile so that
@@ -48,15 +58,22 @@ export const baseSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   /** Conditional Qdrant URL. Required only for `enterprise`. */
   QDRANT_URL: z.string().url().optional(),
-  /** Optional — when absent, embedding generation is silently disabled. */
+  /** Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. */
   OPENAI_API_KEY: z.string().optional(),
-  /** Optional embedding provider selection, defaults to OpenAI. */
-  EMBEDDING_PROVIDER: z.enum(['openai', 'disabled', 'local']).optional().default('openai'),
+  /** Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. */
+  EMBEDDING_PROVIDER: z
+    .enum(['ollama', 'openai', 'disabled', 'local'])
+    .optional()
+    .default('ollama'),
+  /** Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. */
+  EMBEDDING_MODEL: emptyStringAsUndefined(z.string().min(1).optional()),
+  /** Base URL of the Ollama server used when `EMBEDDING_PROVIDER=ollama`. Defaults to `http://localhost:11434`. */
+  OLLAMA_URL: emptyStringAsUndefined(z.string().url().optional()),
   /** Vector backend selection. Both `qdrant` and `pgvector` are implemented. */
   VECTOR_BACKEND: z.enum(['qdrant', 'pgvector']).default('qdrant'),
   /** Optional override for the vector collection/table name. */
   VECTOR_COLLECTION: z.string().min(1).optional(),
-  /** Optional override for embedding dimensionality (defaults to the provider's model dimension). */
+  /** Optional strict pin for embedding dimensionality. When unset, dimensions are inferred from the model (if known) or from the first generated vector. */
   VECTOR_DIMENSIONS: z.coerce.number().int().positive().optional(),
   /** MCP transport selection: stdio for local clients, streamable-http for Inspector. */
   MCP_TRANSPORT: z.enum(['stdio', 'streamable-http']).default('stdio'),
@@ -283,6 +300,23 @@ export const envSchema: z.ZodType<Env> = baseSchema.transform((value, ctx) => {
     return z.NEVER;
   }
 
+  // OLLAMA_URL is optional and not profile-gated, but `z.string().url()` accepts
+  // scheme-less values like `localhost:11434` that pass validation yet fail at
+  // fetch time in the Ollama provider. Enforce the same scheme requirement the
+  // other service URLs get via isLikelyUrl so a misconfiguration fails at boot.
+  if (
+    typeof value.OLLAMA_URL === 'string' &&
+    value.OLLAMA_URL.length > 0 &&
+    !isLikelyUrl(value.OLLAMA_URL)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OLLAMA_URL'],
+      message: 'OLLAMA_URL must be a valid URL including a scheme (e.g. http://localhost:11434)',
+    });
+    return z.NEVER;
+  }
+
   // When auth enforcement is on, a real JWT secret is mandatory.
   if (value.AUTH_REQUIRED) {
     if (typeof value.JWT_SECRET !== 'string' || value.JWT_SECRET.length < 32) {
@@ -350,7 +384,9 @@ export type Env = {
   REDIS_URL?: string;
   QDRANT_URL?: string;
   OPENAI_API_KEY?: string;
-  EMBEDDING_PROVIDER: 'openai' | 'disabled' | 'local';
+  EMBEDDING_PROVIDER: 'ollama' | 'openai' | 'disabled' | 'local';
+  EMBEDDING_MODEL?: string;
+  OLLAMA_URL?: string;
   VECTOR_BACKEND: 'qdrant' | 'pgvector';
   VECTOR_COLLECTION?: string;
   VECTOR_DIMENSIONS?: number;

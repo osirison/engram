@@ -76,7 +76,7 @@ pnpm bench:backends              # latency benchmark
 
 ### Memory Model
 
-The single `Memory` Prisma model (in `prisma/schema.prisma`) serves both memory tiers. Memories have `type: 'short-term' | 'long-term'`, optional `expiresAt` for STM, and two embedding columns: `embedding Float[]` (used by Qdrant backend) and `embeddingVec vector(1536)` (native pgvector column, untyped `Unsupported` in Prisma).
+The single `Memory` Prisma model (in `prisma/schema.prisma`) serves both memory tiers. Memories have `type: 'short-term' | 'long-term'`, optional `expiresAt` for STM, and an `embedding Float[]` column (the embedding source of truth). The native pgvector column `embedding_vec` is NOT in the Prisma schema: it is a derived, runtime-managed index column provisioned by `PgVectorStore.ensureReady` at the dimensionality of the configured embedding model.
 
 ### Memory Tiers
 
@@ -88,13 +88,13 @@ The single `Memory` Prisma model (in `prisma/schema.prisma`) serves both memory 
 Two interchangeable backends selected by `VECTOR_BACKEND` env var:
 
 - `qdrant` (default) — uses a separate Qdrant service; requires `QDRANT_URL`.
-- `pgvector` — stores vectors in the `embedding_vec` column on `memories`; requires `pgvector/pgvector:pg16+` Docker image. Qdrant service not needed.
+- `pgvector` — stores vectors in the runtime-managed `embedding_vec` column on `memories`; requires `pgvector/pgvector:pg16+` Docker image. Qdrant service not needed.
 
-Both backends are injected via `VECTOR_STORE_TOKEN`. Switch backends by changing `VECTOR_BACKEND` in `.env`.
+Both backends are injected via `VECTOR_STORE_TOKEN` and infer vector dimensionality from the first upserted vector (`VECTOR_DIMENSIONS` is an optional strict pin). Both fail loudly with reindex guidance when the existing index dimensionality no longer matches the embedding pipeline. Switch backends by changing `VECTOR_BACKEND` in `.env`.
 
 ### Embeddings (`packages/embeddings`)
 
-Provider selected by `EMBEDDING_PROVIDER`: `openai` (default), `local` (deterministic hash, for testing), or `disabled`. The service returns `null` when unavailable so memory workflows continue without a vector. Embeddings are cached in Redis (`EMBEDDING_CACHE_TTL`, default 30 days).
+Provider selected by `EMBEDDING_PROVIDER`: `ollama` (default — local Ollama server, model `nomic-embed-text`, 768 dims, no API key), `openai` (requires `OPENAI_API_KEY`), `local` (deterministic hash, for testing), or `disabled`. `EMBEDDING_MODEL` overrides the per-provider default model; `OLLAMA_URL` points at the Ollama server (default `http://localhost:11434`). `resolveEmbeddingRuntime()` in `embedding-runtime.ts` is the single source of truth for effective provider/model/dimensions. The service returns `null` when unavailable so memory workflows continue without a vector. Embeddings are cached in Redis (`EMBEDDING_CACHE_TTL`, default 30 days; cache keys include the model id).
 
 ### MCP Tools (`packages/core/src/mcp/tools/`)
 
@@ -106,7 +106,7 @@ Root imports: `ConfigModule` (global, validates env via `@engram/config`), `Logg
 
 ### Reindex / Backfill
 
-`MemoryLtmService.reindex()` rebuilds vector embeddings from Postgres. The MCP server exposes admin-guarded MCP tools (`reindex_memories`, `queue_reindex_memories`, etc.) and a CLI (`pnpm --filter mcp-server reindex`). All admin tool calls require `adminToken` matching `MCP_ADMIN_TOKEN`.
+`MemoryLtmService.reindex()` rebuilds vector embeddings from Postgres. The MCP server exposes admin-guarded MCP tools (`reindex_memories`, `queue_reindex_memories`, etc.) and a CLI (`pnpm --filter mcp-server reindex`). All admin tool calls require `adminToken` matching `MCP_ADMIN_TOKEN`. After an embedding model/dimension change, run an unscoped full reindex with `recreate: true` and `reuseExistingEmbeddings: false` (CLI: `--recreate --regenerate`) — it drops the old index, regenerates at the new dimensionality, and writes regenerated embeddings back to Postgres.
 
 ### Evaluation (`packages/eval`)
 
@@ -132,8 +132,10 @@ Key variables (full list in `.env.example`):
 | `REDIS_URL`                   | Redis connection string                                 |
 | `QDRANT_URL`                  | Qdrant HTTP URL (required when `VECTOR_BACKEND=qdrant`) |
 | `VECTOR_BACKEND`              | `qdrant` or `pgvector`                                  |
-| `EMBEDDING_PROVIDER`          | `openai`, `local`, or `disabled`                        |
-| `OPENAI_API_KEY`              | Required for OpenAI embeddings                          |
+| `EMBEDDING_PROVIDER`          | `ollama` (default), `openai`, `local`, or `disabled`    |
+| `EMBEDDING_MODEL`             | Model id; defaults per provider (`nomic-embed-text`)    |
+| `OLLAMA_URL`                  | Ollama server URL (default `http://localhost:11434`)    |
+| `OPENAI_API_KEY`              | Required only when `EMBEDDING_PROVIDER=openai`          |
 | `MCP_ADMIN_TOKEN`             | Required for reindex admin MCP tools                    |
 | `PGVECTOR_TEST_URL`           | Enables pgvector integration tests in CI                |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Enable OTel tracing; omit to disable (no overhead)      |

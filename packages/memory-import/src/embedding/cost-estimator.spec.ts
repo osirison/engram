@@ -80,4 +80,14 @@ describe('estimateEmbeddingCost', () => {
     expect(EMBEDDING_USD_PER_MILLION['text-embedding-3-small']).toBe(0.02);
     expect(EMBEDDING_USD_PER_MILLION['text-embedding-3-large']).toBe(0.13);
   });
+
+  it('estimates zero cost for known local models', () => {
+    const contents = ['x'.repeat(100_000)]; // 25_000 tokens
+    for (const model of ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm', 'local-hash']) {
+      const est = estimateEmbeddingCost(contents, { model });
+      expect(est.model).toBe(model);
+      expect(est.approxUsd).toBe(0);
+      expect(est.approxTokens).toBe(25_000);
+    }
+  });
 });

@@ -937,6 +937,7 @@ export class MemoryController {
         reuseExistingEmbeddings: validatedInput.reuseExistingEmbeddings,
         cursor: validatedInput.cursor,
         maxMemories: validatedInput.maxMemories,
+        recreate: validatedInput.recreate,
       });
 
       return {
@@ -989,6 +990,7 @@ export class MemoryController {
         reuseExistingEmbeddings: validatedInput.reuseExistingEmbeddings,
         cursor: validatedInput.cursor,
         maxMemories: validatedInput.maxMemories,
+        recreate: validatedInput.recreate,
       });
 
       return {

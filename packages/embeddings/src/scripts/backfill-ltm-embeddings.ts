@@ -1,12 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { DEFAULT_EMBEDDING_MODEL } from '../types.js';
+import { resolveEmbeddingRuntime, type EmbeddingRuntime } from '../embedding-runtime.js';
 import { DisabledEmbeddingProvider } from '../providers/disabled-embedding.provider.js';
 import { LocalEmbeddingProvider } from '../providers/local-embedding.provider.js';
+import { OllamaEmbeddingProvider } from '../providers/ollama-embedding.provider.js';
 import { OpenAIEmbeddingProvider } from '../providers/openai-embedding.provider.js';
-import {
-  DEFAULT_EMBEDDING_PROVIDER,
-  type EmbeddingProviderName,
-} from '../providers/provider.tokens.js';
+import type { EmbeddingProviderName } from '../providers/provider.tokens.js';
 import type { EmbeddingProvider } from '../providers/embedding-provider.interface.js';
 
 const DEFAULT_BATCH_SIZE = 100;
@@ -22,15 +20,17 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function selectProvider(name: EmbeddingProviderName): EmbeddingProvider {
+function selectProvider(name: EmbeddingProviderName, runtime: EmbeddingRuntime): EmbeddingProvider {
   switch (name) {
     case 'disabled':
       return new DisabledEmbeddingProvider();
     case 'local':
-      return new LocalEmbeddingProvider();
+      return new LocalEmbeddingProvider(runtime);
     case 'openai':
-    default:
       return new OpenAIEmbeddingProvider();
+    case 'ollama':
+    default:
+      return new OllamaEmbeddingProvider();
   }
 }
 
@@ -85,10 +85,9 @@ async function withRetry<T>(
 
 async function backfill(): Promise<void> {
   const prisma = new PrismaClient();
-  const providerName =
-    (process.env['EMBEDDING_PROVIDER'] as EmbeddingProviderName | undefined) ??
-    DEFAULT_EMBEDDING_PROVIDER;
-  const provider = selectProvider(providerName);
+  const runtime = resolveEmbeddingRuntime();
+  const providerName = runtime.provider;
+  const provider = selectProvider(providerName, runtime);
 
   const batchSize = parsePositiveInt(process.env['BACKFILL_BATCH_SIZE'], DEFAULT_BATCH_SIZE);
   const maxBatches = parsePositiveInt(process.env['BACKFILL_MAX_BATCHES'], Number.MAX_SAFE_INTEGER);
@@ -114,6 +113,7 @@ async function backfill(): Promise<void> {
     maxBatches,
     dryRun,
     providerName,
+    model: runtime.model,
     retryAttempts,
     retryBaseDelayMs,
   });
@@ -152,7 +152,7 @@ async function backfill(): Promise<void> {
       for (const memory of memories) {
         const embedding = await withRetry(
           'provider',
-          async () => provider.generate(memory.content, DEFAULT_EMBEDDING_MODEL),
+          async () => provider.generate(memory.content, runtime.model),
           retryAttempts,
           retryBaseDelayMs,
           { memoryId: memory.id }
