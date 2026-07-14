@@ -6,12 +6,17 @@
 
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { resolveEmbeddingRuntime } from '@engram/embeddings';
 import { MemoryLtmService, LtmMemoryQuotaExceededError, type LtmMemory } from '@engram/memory-ltm';
 import { ImportLedgerService } from './ledger/import-ledger.service.js';
 import { namespaceSourceKey } from './ledger/source-key.js';
 import { LinkResolver, type ResolverFact } from './links/link-resolver.service.js';
 import { SecretScanner, type SecretPolicy } from './secrets/secret-scanner.js';
-import { estimateEmbeddingCost, type CostEstimate } from './embedding/cost-estimator.js';
+import {
+  estimateEmbeddingCost,
+  EMBEDDING_USD_PER_MILLION,
+  type CostEstimate,
+} from './embedding/cost-estimator.js';
 import { computeContentHash } from './content-hash.js';
 import { ADAPTER_REGISTRY, type AdapterRegistry } from './adapters/registry.js';
 import type { ImportedFact, ImportIR, SourceTool } from './ir/types.js';
@@ -542,6 +547,22 @@ export class MemoryImportService {
     return scanned.filter((s) => !s.skip && !s.embeddingExcluded).map((s) => s.content);
   }
 
+  /**
+   * Resolve the cost-estimate options from the caller's explicit model or the
+   * process-wide embedding runtime. Models missing from the pricing table
+   * estimate at $0 when the active provider is not OpenAI — local models have
+   * no per-token API cost, and defaulting them to an OpenAI rate would inflate
+   * dry-run budgets.
+   */
+  private estimateOptions(model?: string): { model: string; usdPerMillion?: number } {
+    const runtime = resolveEmbeddingRuntime();
+    const effectiveModel = model ?? runtime.model;
+    if (EMBEDDING_USD_PER_MILLION[effectiveModel] === undefined && runtime.provider !== 'openai') {
+      return { model: effectiveModel, usdPerMillion: 0 };
+    }
+    return { model: effectiveModel };
+  }
+
   private finishDryRun(
     summary: ImportSummary,
     scanned: ScannedFact[],
@@ -552,7 +573,7 @@ export class MemoryImportService {
     summary.secretsSkipped = scanned.length - persistable.length;
     summary.embeddingCostEstimate = estimateEmbeddingCost(
       this.embeddableContents(scanned),
-      model !== undefined ? { model } : undefined
+      this.estimateOptions(model)
     );
     summary.advisories.push('Dry run: no memories, links, or ledger rows were written.');
     return summary;
@@ -566,7 +587,7 @@ export class MemoryImportService {
   ): void {
     summary.embeddingCostEstimate = estimateEmbeddingCost(
       this.embeddableContents(scanned),
-      model !== undefined ? { model } : undefined
+      this.estimateOptions(model)
     );
     if (!embed) {
       summary.advisories.push(
@@ -605,7 +626,7 @@ export class MemoryImportService {
         calls: 0,
         approxTokens: 0,
         approxUsd: 0,
-        model: input.model ?? 'text-embedding-3-small',
+        model: this.estimateOptions(input.model).model,
       },
       advisories: [],
     };
