@@ -1630,10 +1630,22 @@ export class MemoryLtmService {
           processed += 1;
           const memory = this.mapToLtmMemory(row);
           try {
-            const embedding = await this.resolveEmbedding(memory, reuseExisting);
+            const { vector: embedding, regenerated } = await this.resolveEmbedding(
+              memory,
+              reuseExisting
+            );
             if (embedding.length === 0) {
               skipped += 1;
               continue;
+            }
+            // Postgres is the source of truth: persist a regenerated embedding
+            // before indexing it, so a later reuse-based reindex works from the
+            // new vectors instead of silently reverting to stale ones.
+            if (regenerated) {
+              await (this.prisma as any).memory.update({
+                where: { id: memory.id },
+                data: { embedding },
+              });
             }
             await this.vectorStore.upsert([
               {
@@ -1674,24 +1686,33 @@ export class MemoryLtmService {
   /**
    * Resolve the embedding to index for a memory, reusing the stored embedding
    * when present and permitted, otherwise regenerating via the embeddings
-   * service. Returns an empty array when no embedding can be produced.
+   * service. Returns an empty vector when no embedding can be produced.
+   * `regenerated` is true only for vectors freshly produced by the embeddings
+   * service — those must be written back to Postgres (source of truth) so
+   * later reuse-based reindexes do not revert to stale vectors.
    */
-  private async resolveEmbedding(memory: LtmMemory, reuseExisting: boolean): Promise<number[]> {
+  private async resolveEmbedding(
+    memory: LtmMemory,
+    reuseExisting: boolean
+  ): Promise<{ vector: number[]; regenerated: boolean }> {
     // An embeddingExcluded memory is never (re)indexed: return [] so the reindex
     // loop counts it as skipped and the row stays out of the vector store.
     if (this.readEmbeddingExcluded(memory.metadata)) {
-      return [];
+      return { vector: [], regenerated: false };
     }
     if (reuseExisting && memory.embedding && memory.embedding.length > 0) {
-      return memory.embedding;
+      return { vector: memory.embedding, regenerated: false };
     }
     if (!this.embeddingsService) {
-      return memory.embedding ?? [];
+      return { vector: memory.embedding ?? [], regenerated: false };
     }
     const result = await this.embeddingsService
       .generate({ text: memory.content })
       .catch(() => null);
-    return result?.embedding ?? memory.embedding ?? [];
+    if (result?.embedding) {
+      return { vector: result.embedding, regenerated: true };
+    }
+    return { vector: memory.embedding ?? [], regenerated: false };
   }
 
   /**

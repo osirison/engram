@@ -41,6 +41,7 @@ describe('MemoryLtmService.reindex', () => {
     prisma = {
       memory: {
         findMany: vi.fn(),
+        update: vi.fn().mockResolvedValue(undefined),
         count: vi.fn().mockResolvedValue(0),
       },
     };
@@ -94,6 +95,54 @@ describe('MemoryLtmService.reindex', () => {
       expect.objectContaining({ id: 'a', vector: [0.4, 0.5, 0.6] }),
     ]);
     expect(result.indexed).toBe(1);
+  });
+
+  it('persists regenerated embeddings to Postgres before the vector upsert', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+
+    await service.reindex({ reuseExistingEmbeddings: false, batchSize: 1 });
+
+    // Postgres is the source of truth: the regenerated vector is written back
+    // so later reuse-based reindexes do not revert to stale embeddings.
+    expect(prisma.memory.update).toHaveBeenCalledWith({
+      where: { id: 'a' },
+      data: { embedding: [0.4, 0.5, 0.6] },
+    });
+    expect(prisma.memory.update.mock.invocationCallOrder[0]).toBeLessThan(
+      vectorStore.upsert.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('does not write back to Postgres when reusing stored embeddings', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+
+    await service.reindex({ batchSize: 1 });
+
+    expect(prisma.memory.update).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the stored embedding without a write-back when regeneration fails', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+    embeddings.generate.mockResolvedValueOnce(null);
+
+    const result = await service.reindex({ reuseExistingEmbeddings: false, batchSize: 1 });
+
+    expect(result.indexed).toBe(1);
+    expect(prisma.memory.update).not.toHaveBeenCalled();
+    expect(vectorStore.upsert).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'a', vector: [0.1, 0.2, 0.3] }),
+    ]);
+  });
+
+  it('counts a failed write-back as a per-item failure without indexing the row', async () => {
+    prisma.memory.findMany.mockResolvedValueOnce([buildMemory('a')]).mockResolvedValueOnce([]);
+    prisma.memory.update.mockRejectedValueOnce(new Error('db down'));
+
+    const result = await service.reindex({ reuseExistingEmbeddings: false, batchSize: 1 });
+
+    expect(result.failed).toBe(1);
+    expect(result.indexed).toBe(0);
+    expect(vectorStore.upsert).not.toHaveBeenCalled();
   });
 
   it('skips memories that produce no embedding', async () => {
