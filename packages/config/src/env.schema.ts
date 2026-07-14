@@ -300,6 +300,23 @@ export const envSchema: z.ZodType<Env> = baseSchema.transform((value, ctx) => {
     return z.NEVER;
   }
 
+  // OLLAMA_URL is optional and not profile-gated, but `z.string().url()` accepts
+  // scheme-less values like `localhost:11434` that pass validation yet fail at
+  // fetch time in the Ollama provider. Enforce the same scheme requirement the
+  // other service URLs get via isLikelyUrl so a misconfiguration fails at boot.
+  if (
+    typeof value.OLLAMA_URL === 'string' &&
+    value.OLLAMA_URL.length > 0 &&
+    !isLikelyUrl(value.OLLAMA_URL)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OLLAMA_URL'],
+      message: 'OLLAMA_URL must be a valid URL including a scheme (e.g. http://localhost:11434)',
+    });
+    return z.NEVER;
+  }
+
   // When auth enforcement is on, a real JWT secret is mandatory.
   if (value.AUTH_REQUIRED) {
     if (typeof value.JWT_SECRET !== 'string' || value.JWT_SECRET.length < 32) {

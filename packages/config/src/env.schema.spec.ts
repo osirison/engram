@@ -84,6 +84,9 @@ describe('envSchema', () => {
       };
 
       expect(() => envSchema.parse({ ...base, OLLAMA_URL: 'not-a-url' })).toThrow(ZodError);
+      // `z.string().url()` accepts a scheme-less host:port, but it fails at fetch
+      // time in the Ollama provider — the transform must reject it at boot.
+      expect(() => envSchema.parse({ ...base, OLLAMA_URL: 'localhost:11434' })).toThrow(ZodError);
       expect(() => envSchema.parse({ ...base, EMBEDDING_PROVIDER: 'bogus' })).toThrow(ZodError);
 
       // Compose-style empty defaults (`VAR: ${VAR:-}`) must read as unset.

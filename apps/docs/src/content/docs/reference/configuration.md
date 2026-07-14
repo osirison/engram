@@ -70,6 +70,7 @@ depending on the active `DEPLOYMENT_PROFILE`:
 - DATABASE_URL must be a valid URL
 - REDIS_URL must be a valid URL
 - QDRANT_URL must be a valid URL
+- OLLAMA_URL must be a valid URL including a scheme (e.g. http://localhost:11434)
 - JWT_SECRET must be set and at least 32 characters when AUTH_REQUIRED=true
 
 ## Additional variables (not schema-validated)
