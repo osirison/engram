@@ -339,11 +339,43 @@ describe('MemoryController', () => {
       expect(payload.scope).toBe('all-users');
     });
 
+    it('forwards recreate to the service for full index rebuilds', async () => {
+      mockMemoryService.reindex.mockResolvedValue({
+        processed: 0,
+        indexed: 0,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      });
+
+      await controller.reindexMemories({
+        adminToken: 'test-admin-token-12345',
+        reuseExistingEmbeddings: false,
+        recreate: true,
+      });
+
+      expect(mockMemoryService.reindex).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recreate: true,
+          reuseExistingEmbeddings: false,
+        }),
+      );
+    });
+
     it('should reject an invalid batch size', async () => {
       await expect(
         controller.reindexMemories({
           adminToken: 'test-admin-token-12345',
           batchSize: 99999,
+        }),
+      ).rejects.toThrow(/Failed to reindex memories/);
+    });
+
+    it('should reject unknown fields (strict schema)', async () => {
+      await expect(
+        controller.reindexMemories({
+          adminToken: 'test-admin-token-12345',
+          dropEverything: true,
         }),
       ).rejects.toThrow(/Failed to reindex memories/);
     });
@@ -379,9 +411,31 @@ describe('MemoryController', () => {
         reuseExistingEmbeddings: undefined,
         cursor: undefined,
         maxMemories: undefined,
+        recreate: undefined,
       });
       expect(payload.jobId).toBe('2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1');
       expect(payload.state).toBe('queued');
+    });
+
+    it('forwards recreate to the queue for full index rebuilds', async () => {
+      mockReindexQueueService.enqueue.mockResolvedValue({
+        jobId: '2ec89f7a-6e83-48f0-901d-b9fbd58fa8e1',
+        state: 'queued',
+        createdAt: '2026-06-01T00:00:00.000Z',
+      });
+
+      await controller.queueReindexMemories({
+        adminToken: 'test-admin-token-12345',
+        reuseExistingEmbeddings: false,
+        recreate: true,
+      });
+
+      expect(mockReindexQueueService.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recreate: true,
+          reuseExistingEmbeddings: false,
+        }),
+      );
     });
 
     it('wraps enqueue errors without leaking internal details', async () => {
