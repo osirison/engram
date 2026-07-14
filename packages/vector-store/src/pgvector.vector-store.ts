@@ -91,6 +91,7 @@ export class PgVectorStore implements VectorStore {
 
   private readonly logger = new Logger(PgVectorStore.name);
   private ensured = false;
+  private missingColumnWarned = false;
 
   private readonly hnswM?: number;
   private readonly hnswEfConstruction?: number;
@@ -98,13 +99,13 @@ export class PgVectorStore implements VectorStore {
 
   constructor(
     private readonly client: PgVectorClient,
-    private readonly dimensions: number,
+    private readonly dimensions?: number,
     private readonly table: string = PGVECTOR_TABLE,
     private readonly column: string = PGVECTOR_COLUMN,
     options: PgVectorOptions = {}
   ) {
-    if (!Number.isInteger(dimensions) || dimensions <= 0) {
-      throw new Error('PgVectorStore requires a positive integer dimensions value');
+    if (dimensions !== undefined && (!Number.isInteger(dimensions) || dimensions <= 0)) {
+      throw new Error('PgVectorStore dimensions, when provided, must be a positive integer');
     }
     this.hnswM = assertOptionalIntInRange(options.m, 'PgVector HNSW m', 2, 100);
     this.hnswEfConstruction = assertOptionalIntInRange(
@@ -133,12 +134,43 @@ export class PgVectorStore implements VectorStore {
     await this.client.$executeRawUnsafe(
       `ALTER TABLE "${this.table}" ADD COLUMN IF NOT EXISTS "${this.column}" vector(${dimensions})`
     );
+
+    // The column is runtime-managed: guard against a pre-existing column whose
+    // dimensionality no longer matches the embedding pipeline (the ADD COLUMN
+    // above is a no-op when the column already exists).
+    const liveDimensions = await this.readLiveDimensions();
+    if (liveDimensions !== null && liveDimensions !== dimensions) {
+      throw new Error(
+        `pgvector column "${this.table}"."${this.column}" is vector(${liveDimensions}) but the ` +
+          `embedding pipeline produced ${dimensions}-dim vectors. After changing the embedding ` +
+          `model, run an unscoped full reindex with recreate+regenerate ` +
+          `(CLI: pnpm --filter mcp-server reindex -- --recreate --regenerate), or pin ` +
+          `VECTOR_DIMENSIONS to match the stored column.`
+      );
+    }
+
     await this.client.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS "${PGVECTOR_INDEX}" ON "${this.table}" ` +
         `USING hnsw ("${this.column}" vector_cosine_ops)${this.hnswBuildClause()}`
     );
     this.ensured = true;
     this.logger.log(`pgvector ready: ${this.table}.${this.column} (${dimensions} dims)`);
+  }
+
+  /**
+   * Read the dimensionality of the live column from the catalog. pgvector
+   * stores the dimension directly in `atttypmod` (-1 for unconstrained).
+   * Returns null when the column does not exist or has no fixed dimension.
+   */
+  private async readLiveDimensions(): Promise<number | null> {
+    const rows = await this.client.$queryRawUnsafe<Array<{ atttypmod: number }>>(
+      `SELECT a.atttypmod FROM pg_attribute a ` +
+        `WHERE a.attrelid = $1::regclass AND a.attname = $2 AND NOT a.attisdropped`,
+      `"${this.table}"`,
+      this.column
+    );
+    const typmod = rows[0]?.atttypmod;
+    return typeof typmod === 'number' && typmod > 0 ? typmod : null;
   }
 
   /** Builds the `WITH (...)` clause for HNSW build-time parameters, if configured. */
@@ -163,12 +195,13 @@ export class PgVectorStore implements VectorStore {
       return;
     }
     assertNonEmptyVector(first.vector, this.logger);
-    if (first.vector.length !== this.dimensions) {
+    if (this.dimensions !== undefined && first.vector.length !== this.dimensions) {
       throw new Error(
-        `Vector dimensionality ${first.vector.length} does not match configured ${this.dimensions}`
+        `Vector dimensionality ${first.vector.length} does not match the configured ` +
+          `VECTOR_DIMENSIONS pin of ${this.dimensions}`
       );
     }
-    await this.ensureReady(this.dimensions);
+    await this.ensureReady(first.vector.length);
 
     for (const record of records) {
       assertNonEmptyVector(record.vector, this.logger);
@@ -184,20 +217,34 @@ export class PgVectorStore implements VectorStore {
     if (ids.length === 0) {
       return;
     }
-    await this.client.$executeRawUnsafe(
-      `UPDATE "${this.table}" SET "${this.column}" = NULL WHERE "id" = ANY($1::text[])`,
-      ids
-    );
+    try {
+      await this.client.$executeRawUnsafe(
+        `UPDATE "${this.table}" SET "${this.column}" = NULL WHERE "id" = ANY($1::text[])`,
+        ids
+      );
+    } catch (error) {
+      if (this.isUndefinedColumnError(error)) {
+        // Column not provisioned yet — nothing to delete.
+        return;
+      }
+      throw error;
+    }
   }
 
   /**
-   * Clear every stored vector so a subsequent {@link upsert} rebuilds them from
-   * scratch. Vectors live in a column on the `memories` table, so this nulls the
-   * column across all rows rather than dropping a collection. Idempotent.
+   * Drop the vector column and its index so a subsequent {@link upsert}
+   * reprovisions them at the dimensionality of the new embedding pipeline.
+   * This is what makes a model/dimension change survivable: the column is a
+   * derived index (Postgres `embedding Float[]` remains the source of truth)
+   * and is rebuilt by a full reindex. Idempotent.
    */
   async reset(): Promise<void> {
-    await this.client.$executeRawUnsafe(`UPDATE "${this.table}" SET "${this.column}" = NULL`);
-    this.logger.log(`Reset pgvector column ${this.table}.${this.column}`);
+    await this.client.$executeRawUnsafe(`DROP INDEX IF EXISTS "${PGVECTOR_INDEX}"`);
+    await this.client.$executeRawUnsafe(
+      `ALTER TABLE "${this.table}" DROP COLUMN IF EXISTS "${this.column}"`
+    );
+    this.ensured = false;
+    this.logger.log(`Reset pgvector column ${this.table}.${this.column} (dropped for rebuild)`);
   }
 
   async search(
@@ -258,16 +305,64 @@ export class PgVectorStore implements VectorStore {
       `FROM "${this.table}" WHERE ${clauses.join(' AND ')} ` +
       `ORDER BY "${this.column}" <=> $1::vector LIMIT ${safeLimit}`;
 
-    const rows = await this.client.$queryRawUnsafe<PgVectorSearchRow[]>(sql, ...params);
-    return rows.map((row) => this.mapRow(row));
+    try {
+      const rows = await this.client.$queryRawUnsafe<PgVectorSearchRow[]>(sql, ...params);
+      return rows.map((row) => this.mapRow(row));
+    } catch (error) {
+      if (this.isUndefinedColumnError(error)) {
+        // Column is provisioned on first upsert; before that, search over an
+        // empty index simply returns nothing (mirrors Qdrant's missing-collection
+        // behaviour).
+        this.warnMissingColumnOnce();
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * True when the error indicates the runtime-managed vector column does not
+   * exist yet (Postgres SQLSTATE 42703 / undefined_column).
+   */
+  private isUndefinedColumnError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    const meta = (error as { meta?: { code?: unknown } }).meta;
+    if (meta && typeof meta.code === 'string' && meta.code === '42703') {
+      return true;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      message.includes('42703') ||
+      (message.includes(this.column) && message.includes('does not exist'))
+    );
+  }
+
+  private warnMissingColumnOnce(): void {
+    if (this.missingColumnWarned) {
+      return;
+    }
+    this.missingColumnWarned = true;
+    this.logger.warn(
+      `pgvector column ${this.table}.${this.column} not provisioned yet — ` +
+        `returning empty results until the first vector is written`
+    );
   }
 
   /**
    * Lightweight readiness probe for health checks. Verifies the pgvector
-   * extension is installed and the embedding column exists. Returns a structured
+   * extension is installed and reports whether the runtime-managed embedding
+   * column has been provisioned (informational — the column is created on the
+   * first vector write, so its absence is not a failure). Returns a structured
    * status rather than throwing so callers can shape their own health response.
    */
-  async healthCheck(): Promise<{ ok: boolean; extension: boolean; column: boolean }> {
+  async healthCheck(): Promise<{
+    ok: boolean;
+    extension: boolean;
+    column: boolean;
+    dimensions: number | null;
+  }> {
     const extensionRows = await this.client.$queryRawUnsafe<Array<{ installed: boolean }>>(
       `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS installed`
     );
@@ -279,7 +374,8 @@ export class PgVectorStore implements VectorStore {
     );
     const extension = extensionRows[0]?.installed === true;
     const column = columnRows[0]?.present === true;
-    return { ok: extension && column, extension, column };
+    const dimensions = column ? await this.readLiveDimensions() : null;
+    return { ok: extension, extension, column, dimensions };
   }
 
   private mapRow(row: PgVectorSearchRow): VectorSearchResult {

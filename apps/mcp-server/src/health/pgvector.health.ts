@@ -8,7 +8,12 @@ import { VECTOR_STORE_TOKEN, type VectorStore } from '@engram/vector-store';
 
 /** Narrow structural shape for a vector store that supports a health probe. */
 interface HealthCheckableStore {
-  healthCheck(): Promise<{ ok: boolean; extension: boolean; column: boolean }>;
+  healthCheck(): Promise<{
+    ok: boolean;
+    extension: boolean;
+    column: boolean;
+    dimensions?: number | null;
+  }>;
 }
 
 function isHealthCheckable(
@@ -22,9 +27,10 @@ function isHealthCheckable(
 
 /**
  * Health indicator for the pgvector backend. Verifies the `vector` extension
- * and embedding column are present. Only meaningful when `VECTOR_BACKEND` is
- * `pgvector`; for other backends the active store has no `healthCheck` method
- * and the indicator reports healthy (not applicable).
+ * is installed; the embedding column is runtime-managed (provisioned on the
+ * first vector write) and reported informationally. Only meaningful when
+ * `VECTOR_BACKEND` is `pgvector`; for other backends the active store has no
+ * `healthCheck` method and the indicator reports healthy (not applicable).
  */
 @Injectable()
 export class PgVectorHealthIndicator extends HealthIndicator {
@@ -46,6 +52,7 @@ export class PgVectorHealthIndicator extends HealthIndicator {
     const result = this.getStatus(key, status.ok, {
       extension: status.extension,
       column: status.column,
+      dimensions: status.dimensions ?? null,
     });
 
     if (status.ok) {

@@ -95,14 +95,16 @@ model Memory {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   expiresAt      DateTime? // For short-term memories only
-  embedding      Float[]   // Vector embedding (1536 dims for text-embedding-3-small)
+  embedding      Float[]   // Vector embedding (dimensionality follows the configured embedding model)
 
-  // Native pgvector column used by the pgvector VectorStore backend. The column
-  // and `vector` extension are created by the baseline migration
-  // (20251021174411_init); the HNSW index is created at runtime by
-  // PgVectorStore.ensureReady. Typed as Unsupported because Prisma has no
-  // first-class vector type.
-  embeddingVec Unsupported("vector(1536)")? @map("embedding_vec")
+  // NOTE: the native pgvector column `embedding_vec` used by the pgvector
+  // VectorStore backend is intentionally NOT modelled here. It is a derived,
+  // runtime-managed index column whose dimensionality follows the configured
+  // embedding model: PgVectorStore.ensureReady provisions the column and its
+  // HNSW index on the first vector write, and PgVectorStore.reset drops both
+  // so a full reindex can rebuild them at new dimensions. The fixed
+  // vector(1536) column from the baseline migration is dropped by migration
+  // 20260714000000_runtime_managed_embedding_vec.
 
   // Relationships
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
