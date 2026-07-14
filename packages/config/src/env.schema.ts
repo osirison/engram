@@ -18,6 +18,16 @@ const booleanFlag = (defaultValue: boolean): z.ZodType<boolean> =>
     .default(defaultValue) as z.ZodType<boolean>;
 
 /**
+ * Optional string that treats the compose-style empty default (`VAR: ${VAR:-}`)
+ * as unset, so an empty environment value does not fail min-length/url checks.
+ */
+const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T): z.ZodType<z.output<T>> =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema
+  ) as z.ZodType<z.output<T>>;
+
+/**
  * Environment validation schema for ENGRAM.
  *
  * URL requirements are conditional on the active deployment profile so that
@@ -56,9 +66,9 @@ export const baseSchema = z.object({
     .optional()
     .default('ollama'),
   /** Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. */
-  EMBEDDING_MODEL: z.string().min(1).optional(),
+  EMBEDDING_MODEL: emptyStringAsUndefined(z.string().min(1).optional()),
   /** Base URL of the Ollama server used when `EMBEDDING_PROVIDER=ollama`. Defaults to `http://localhost:11434`. */
-  OLLAMA_URL: z.string().url().optional(),
+  OLLAMA_URL: emptyStringAsUndefined(z.string().url().optional()),
   /** Vector backend selection. Both `qdrant` and `pgvector` are implemented. */
   VECTOR_BACKEND: z.enum(['qdrant', 'pgvector']).default('qdrant'),
   /** Optional override for the vector collection/table name. */

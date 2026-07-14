@@ -76,7 +76,7 @@ describe('envSchema', () => {
       );
     });
 
-    it('rejects invalid OLLAMA_URL and empty EMBEDDING_MODEL', () => {
+    it('rejects an invalid OLLAMA_URL and provider; treats empty strings as unset', () => {
       const base = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
@@ -84,8 +84,12 @@ describe('envSchema', () => {
       };
 
       expect(() => envSchema.parse({ ...base, OLLAMA_URL: 'not-a-url' })).toThrow(ZodError);
-      expect(() => envSchema.parse({ ...base, EMBEDDING_MODEL: '' })).toThrow(ZodError);
       expect(() => envSchema.parse({ ...base, EMBEDDING_PROVIDER: 'bogus' })).toThrow(ZodError);
+
+      // Compose-style empty defaults (`VAR: ${VAR:-}`) must read as unset.
+      const emptied = envSchema.parse({ ...base, EMBEDDING_MODEL: '', OLLAMA_URL: '' });
+      expect(emptied.EMBEDDING_MODEL).toBeUndefined();
+      expect(emptied.OLLAMA_URL).toBeUndefined();
     });
 
     it('should use default values for NODE_ENV and PORT', () => {

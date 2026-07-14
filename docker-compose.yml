@@ -59,12 +59,36 @@ services:
     networks:
       - engram-network
 
+  # Local embedding models (default EMBEDDING_PROVIDER=ollama). Opt-in profile:
+  # skip it if Ollama already runs on the host (https://ollama.com/download).
+  #   docker compose --profile ollama up -d
+  #   docker compose exec ollama ollama pull nomic-embed-text
+  ollama:
+    image: ollama/ollama:latest
+    container_name: engram-ollama
+    profiles: ['ollama']
+    ports:
+      - '${OLLAMA_PORT:-11434}:11434'
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ['CMD', 'ollama', 'ls']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - engram-network
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
   qdrant_data:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:
