@@ -9,11 +9,12 @@
 // in the repo (`./security/agent-keys.md`) has no meaning on the site, so it
 // is mapped to the page it now lives on, or to a GitHub blob/tree URL when
 // there is no site page for it. Everything else — frontmatter title, prose,
-// tables — is reused verbatim.
+// tables — is reused verbatim, except the meta description gains a trailing
+// period (Starlight/SEO convention) if the source is missing one.
 //
 // Determinism (D3): output must be byte-for-byte identical across runs.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, posix } from 'node:path';
 
@@ -36,6 +37,8 @@ const DOCS = [
   { slug: 'migration', file: 'agent-memory-migration.md', kind: 'runbook', sidebar: { order: 5, label: 'Migration' } },
 ];
 const SIBLING_SLUGS = new Set(DOCS.map((d) => d.slug));
+
+mkdirSync(outDir, { recursive: true });
 
 // Repo-relative link targets that were themselves migrated to the docs site
 // (WP6) under a path the mechanical `agent-memory-X.md -> /docs/agent-memory/X/`
