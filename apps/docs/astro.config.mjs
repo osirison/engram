@@ -40,6 +40,7 @@ export default defineConfig({
       title: 'Engram Docs',
       description:
         'Developer documentation for Engram — an MCP memory server for AI agents.',
+      customCss: ['./src/styles/custom.css'],
       social: [
         {
           icon: 'github',

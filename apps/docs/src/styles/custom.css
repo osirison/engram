@@ -1,0 +1,39 @@
+/* Engram docs — custom overrides layered on top of Starlight core styles.
+ *
+ * customCss is loaded unlayered, so these rules win over Starlight's
+ * `@layer starlight.core` defaults without needing `!important`.
+ */
+
+/* Homepage splash hero.
+ *
+ * The landing page ships no hero image, but Starlight's splash hero reserves a
+ * two-column grid (`7fr` copy / `4fr` image) at >=50rem. With the image column
+ * empty the copy is stranded in the left ~55% of the page and the actions sit
+ * against a large blank right half, while `padding-block` up to `10rem` opens a
+ * cavernous gap before the content below.
+ *
+ * When (and only when) the hero has no image, collapse it to a single centered
+ * column and tighten the vertical padding so it reads as an intentional,
+ * balanced hero. The `:has()` guard means this reverts to the stock two-column
+ * layout automatically if a hero image is ever added.
+ */
+@media (min-width: 50rem) {
+  .hero:not(:has(img)):not(:has(.hero-html)) {
+    grid-template-columns: 1fr;
+    padding-block: clamp(2.5rem, 6vmin, 5rem);
+  }
+
+  .hero:not(:has(img)):not(:has(.hero-html)) .stack {
+    max-width: 60ch;
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  .hero:not(:has(img)):not(:has(.hero-html)) .copy {
+    align-items: center;
+  }
+
+  .hero:not(:has(img)):not(:has(.hero-html)) .actions {
+    justify-content: center;
+  }
+}
