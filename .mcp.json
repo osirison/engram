@@ -1,11 +1,3 @@
 {
-  "mcpServers": {
-    "engram": {
-      "type": "http",
-      "url": "http://127.0.0.1:3000/mcp",
-      "headers": {
-        "Authorization": "Bearer ${ENGRAM_API_KEY:-}"
-      }
-    }
-  }
+  "mcpServers": {}
 }
