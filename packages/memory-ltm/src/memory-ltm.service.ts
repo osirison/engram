@@ -1557,6 +1557,24 @@ export class MemoryLtmService {
   }
 
   /**
+   * Drop and rebuild the vector index from scratch. Destructive and NOT atomic:
+   * recall returns empty for all tenants until a subsequent reindex backfills
+   * the index. Callers that chunk their own backfill (e.g. the async reindex
+   * queue) invoke this exactly once up front, then reindex batch-by-batch with
+   * `recreate: false` — the per-batch `recreate` guard in {@link reindex} would
+   * otherwise skip the rebuild because every chunked call passes `maxMemories`.
+   * No-op (with a warning) when no vector store is configured.
+   */
+  async recreateVectorIndex(): Promise<void> {
+    if (!this.vectorStore) {
+      this.logger.warn('Recreate requested but no vector store is configured');
+      return;
+    }
+    this.logger.log('Recreating vector index (recall is unavailable until the rebuild completes)');
+    await this.vectorStore.reset();
+  }
+
+  /**
    * Backfill / reindex the vector store from Postgres.
    *
    * Pages through long-term memories using a stable cursor, (re)generates

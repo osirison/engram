@@ -11,6 +11,7 @@ describe('ReindexQueueService', () => {
 
   const memoryService = {
     reindex: jest.fn(),
+    recreateVectorIndex: jest.fn<Promise<void>, []>(),
   };
 
   let service: ReindexQueueService;
@@ -72,6 +73,106 @@ describe('ReindexQueueService', () => {
       true,
     );
     expect(memoryService.reindex).toHaveBeenCalledTimes(2);
+  });
+
+  const wireRedis = (): { current: () => ReindexJobStatus | null } => {
+    let latest: ReindexJobStatus | null = null;
+    redis.set.mockImplementation((_key, value) => {
+      latest = JSON.parse(value) as ReindexJobStatus;
+      return Promise.resolve();
+    });
+    redis.get.mockImplementation(() =>
+      Promise.resolve(latest ? JSON.stringify(latest) : null),
+    );
+    return { current: () => latest };
+  };
+
+  const flush = async (): Promise<void> => {
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  it('recreates the vector index exactly once at the start of a full recreate job', async () => {
+    memoryService.reindex.mockResolvedValue({
+      processed: 1,
+      indexed: 1,
+      skipped: 0,
+      failed: 0,
+      cursor: null,
+    });
+    wireRedis();
+
+    const job = await service.enqueue({
+      recreate: true,
+      reuseExistingEmbeddings: false,
+      batchSize: 2,
+    });
+    await flush();
+
+    const status = await service.get(job.jobId);
+    expect(status?.state).toBe('completed');
+    // Rebuilt once, at the job level — not once per chunked batch.
+    expect(memoryService.recreateVectorIndex).toHaveBeenCalledTimes(1);
+    // The reset happens before the first batch is indexed (invocationCallOrder
+    // is a global 1-based counter shared across mocks, so 0 means "never called").
+    const recreateOrder =
+      memoryService.recreateVectorIndex.mock.invocationCallOrder[0] ?? 0;
+    const firstReindexOrder =
+      memoryService.reindex.mock.invocationCallOrder[0] ?? 0;
+    expect(recreateOrder).toBeGreaterThan(0);
+    expect(firstReindexOrder).toBeGreaterThan(0);
+    expect(recreateOrder).toBeLessThan(firstReindexOrder);
+    // Per-batch reindex never re-triggers recreate (it would trip the LTM guard).
+    expect(memoryService.reindex).toHaveBeenCalledWith(
+      expect.objectContaining({ recreate: false }),
+    );
+  });
+
+  it('does not recreate the vector index for a scoped (userId) recreate job', async () => {
+    memoryService.reindex.mockResolvedValue({
+      processed: 1,
+      indexed: 1,
+      skipped: 0,
+      failed: 0,
+      cursor: null,
+    });
+    wireRedis();
+
+    const job = await service.enqueue({
+      recreate: true,
+      userId: 'user-1',
+      batchSize: 2,
+    });
+    await flush();
+
+    const status = await service.get(job.jobId);
+    expect(status?.state).toBe('completed');
+    expect(memoryService.recreateVectorIndex).not.toHaveBeenCalled();
+    expect(memoryService.reindex).toHaveBeenCalled();
+  });
+
+  it('does not re-recreate the vector index for a resumed recreate job', async () => {
+    memoryService.reindex.mockResolvedValue({
+      processed: 1,
+      indexed: 1,
+      skipped: 0,
+      failed: 0,
+      cursor: null,
+    });
+    wireRedis();
+
+    // A resumed/retried job re-enters processing with a cursor already set;
+    // re-wiping here would discard the progress the first run completed.
+    const job = await service.enqueue({
+      recreate: true,
+      cursor: 'resume-cursor',
+      batchSize: 2,
+    });
+    await flush();
+
+    const status = await service.get(job.jobId);
+    expect(status?.state).toBe('completed');
+    expect(memoryService.recreateVectorIndex).not.toHaveBeenCalled();
   });
 
   it('cancels queued jobs immediately', async () => {

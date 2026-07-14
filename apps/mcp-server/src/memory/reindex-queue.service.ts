@@ -211,6 +211,29 @@ export class ReindexQueueService {
       let remaining = current.options.maxMemories;
       const batchSize = current.options.batchSize ?? 100;
 
+      // `recreate` is a whole-index rebuild, so it must run exactly once at the
+      // job level — never per batch. Each chunked reindex() below always passes
+      // maxMemories, which trips the LTM recreate guard and would silently skip
+      // the rebuild. Reset only for a fresh (cursor-less), unscoped (no userId)
+      // job; a resumed job already has a cursor and must not re-wipe completed
+      // progress. After resetting we strip `recreate` from the per-batch calls.
+      if (current.options.recreate) {
+        if (current.options.userId) {
+          this.logger.warn(
+            'Ignoring recreate: the vector index may only be rebuilt by an unscoped full reindex (no userId)',
+          );
+        } else if (cursor) {
+          this.logger.log(
+            `Skipping recreate for resumed job ${jobId}: the vector index was already reset when the job first started`,
+          );
+        } else {
+          this.logger.log(
+            `Recreating vector index for job ${jobId} (recall is unavailable until the rebuild completes)`,
+          );
+          await this.memoryService.recreateVectorIndex();
+        }
+      }
+
       for (;;) {
         const latest = await this.get(jobId);
         if (!latest) {
@@ -242,6 +265,9 @@ export class ReindexQueueService {
 
         const summary: ReindexSummary = await this.memoryService.reindex({
           ...current.options,
+          // Handled once at the job level above; leaving it on would make every
+          // chunked batch log "Ignoring recreate" and re-trip the LTM guard.
+          recreate: false,
           cursor: cursor ?? undefined,
           maxMemories,
           batchSize,
