@@ -1,24 +1,33 @@
 import { z } from 'zod';
 
 /**
- * Supported embedding models.
- * text-embedding-3-small: 1536 dimensions, cost-efficient, recommended default.
- * text-embedding-3-large: 3072 dimensions, higher accuracy.
+ * Embedding model identifier. Open-ended: any model id the configured
+ * provider understands (e.g. Ollama model names, OpenAI model ids).
  */
-export const EMBEDDING_MODELS = ['text-embedding-3-small', 'text-embedding-3-large'] as const;
-export type EmbeddingModel = (typeof EMBEDDING_MODELS)[number];
+export type EmbeddingModel = string;
 
-/** Dimensions produced by each model. */
-export const MODEL_DIMENSIONS: Record<EmbeddingModel, number> = {
+/**
+ * Dimensions produced by well-known models. Models absent from this map still
+ * work — dimensionality then flows from the provider's actual output vector.
+ */
+export const MODEL_DIMENSIONS: Record<string, number> = {
+  // Local models (Ollama)
+  'nomic-embed-text': 768,
+  'mxbai-embed-large': 1024,
+  'all-minilm': 384,
+  'bge-m3': 1024,
+  // Deterministic hash scaffold (EMBEDDING_PROVIDER=local, CI/testing)
+  'local-hash': 1536,
+  // OpenAI
   'text-embedding-3-small': 1536,
   'text-embedding-3-large': 3072,
 };
 
+/** Well-known model ids (compat export; no longer a closed set). */
+export const EMBEDDING_MODELS: readonly string[] = Object.keys(MODEL_DIMENSIONS);
+
 /** Default cache TTL: 30 days in seconds. */
 export const EMBEDDING_CACHE_TTL = 60 * 60 * 24 * 30;
-
-/** Default embedding model. */
-export const DEFAULT_EMBEDDING_MODEL: EmbeddingModel = 'text-embedding-3-small';
 
 /** Maximum text length accepted for embedding (aligned with OpenAI token limits). */
 export const MAX_TEXT_LENGTH = 8191;
@@ -29,12 +38,13 @@ export const generateEmbeddingSchema = z.object({
     .string()
     .min(1, 'Text must not be empty')
     .max(MAX_TEXT_LENGTH, `Text cannot exceed ${MAX_TEXT_LENGTH} characters`),
-  model: z.enum(EMBEDDING_MODELS).optional().default(DEFAULT_EMBEDDING_MODEL),
+  model: z.string().min(1, 'Model must not be empty').max(200).optional(),
 });
 
 /**
  * Input type for EmbeddingsService.generate().
- * Uses z.input so that `model` is optional (a default is applied by the schema).
+ * `model` is optional — when omitted, the service falls back to the resolved
+ * runtime model (see resolveEmbeddingRuntime in embedding-runtime.ts).
  */
 export type GenerateEmbeddingInput = z.input<typeof generateEmbeddingSchema>;
 

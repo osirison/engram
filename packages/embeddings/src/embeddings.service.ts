@@ -3,12 +3,16 @@ import { createHash } from 'crypto';
 import { RedisService } from '@engram/redis';
 import {
   EMBEDDING_CACHE_TTL,
-  EMBEDDING_MODELS,
   type EmbeddingResult,
   type EmbeddingModel,
   type GenerateEmbeddingInput,
   generateEmbeddingSchema,
 } from './types.js';
+import {
+  EMBEDDING_RUNTIME_TOKEN,
+  resolveEmbeddingRuntime,
+  type EmbeddingRuntime,
+} from './embedding-runtime.js';
 import type { EmbeddingProvider } from './providers/embedding-provider.interface.js';
 import { EMBEDDING_PROVIDER_TOKEN } from './providers/provider.tokens.js';
 
@@ -27,10 +31,15 @@ export class EmbeddingsService {
 
   private static readonly METRIC_PREFIX = 'engram_embeddings';
 
+  private readonly runtime: EmbeddingRuntime;
+
   constructor(
     @Optional() private readonly redis?: RedisService,
-    @Optional() @Inject(EMBEDDING_PROVIDER_TOKEN) private readonly provider?: EmbeddingProvider
-  ) {}
+    @Optional() @Inject(EMBEDDING_PROVIDER_TOKEN) private readonly provider?: EmbeddingProvider,
+    @Optional() @Inject(EMBEDDING_RUNTIME_TOKEN) runtime?: EmbeddingRuntime
+  ) {
+    this.runtime = runtime ?? resolveEmbeddingRuntime();
+  }
 
   /**
    * Generate an embedding for the given text.
@@ -47,7 +56,8 @@ export class EmbeddingsService {
       return null;
     }
 
-    const { text, model } = parsed.data;
+    const { text } = parsed.data;
+    const model = parsed.data.model ?? this.runtime.model;
 
     const cacheKey = this.buildCacheKey(text, model);
 
@@ -185,19 +195,19 @@ export class EmbeddingsService {
     const model = (parsed as { model?: unknown }).model;
     const embedding = (parsed as { embedding?: unknown }).embedding;
 
+    // The cache key already encodes the model, so a payload recorded under a
+    // different model indicates corruption — treat it as a parse error.
     if (
       !Array.isArray(embedding) ||
+      embedding.length === 0 ||
       !embedding.every((value) => typeof value === 'number') ||
       typeof model !== 'string' ||
-      !EMBEDDING_MODELS.includes(model as EmbeddingModel)
+      model !== requestedModel
     ) {
       return null;
     }
 
-    return {
-      embedding,
-      model: model as EmbeddingModel,
-    };
+    return { embedding, model };
   }
 
   private logStructured(

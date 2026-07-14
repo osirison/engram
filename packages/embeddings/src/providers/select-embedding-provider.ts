@@ -4,6 +4,7 @@ import type { EmbeddingProviderName } from './provider.tokens.js';
 export function selectEmbeddingProvider(
   provider: EmbeddingProviderName,
   providers: {
+    ollama: EmbeddingProvider;
     openai: EmbeddingProvider;
     disabled: EmbeddingProvider;
     local: EmbeddingProvider;
@@ -15,7 +16,9 @@ export function selectEmbeddingProvider(
     case 'local':
       return providers.local;
     case 'openai':
-    default:
       return providers.openai;
+    case 'ollama':
+    default:
+      return providers.ollama;
   }
 }
