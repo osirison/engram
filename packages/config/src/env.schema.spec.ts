@@ -22,7 +22,7 @@ describe('envSchema', () => {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
         QDRANT_URL: 'http://localhost:6333',
-        EMBEDDING_PROVIDER: 'openai',
+        EMBEDDING_PROVIDER: 'ollama',
         MCP_TRANSPORT: 'stdio',
         VECTOR_BACKEND: 'qdrant',
         STM_CONSOLIDATION_ACCESS_THRESHOLD: 3,
@@ -48,6 +48,44 @@ describe('envSchema', () => {
         RATE_LIMIT_ORG_RPM: 6000,
         RATE_LIMIT_IP_RPM: 60,
       });
+    });
+
+    it('defaults EMBEDDING_PROVIDER to ollama and accepts the new embedding vars', () => {
+      const base = {
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+        REDIS_URL: 'redis://localhost:6379',
+        QDRANT_URL: 'http://localhost:6333',
+      };
+
+      expect(envSchema.parse(base).EMBEDDING_PROVIDER).toBe('ollama');
+      expect(envSchema.parse(base).EMBEDDING_MODEL).toBeUndefined();
+      expect(envSchema.parse(base).OLLAMA_URL).toBeUndefined();
+
+      const full = envSchema.parse({
+        ...base,
+        EMBEDDING_PROVIDER: 'ollama',
+        EMBEDDING_MODEL: 'mxbai-embed-large',
+        OLLAMA_URL: 'http://ollama.internal:11434',
+      });
+      expect(full.EMBEDDING_MODEL).toBe('mxbai-embed-large');
+      expect(full.OLLAMA_URL).toBe('http://ollama.internal:11434');
+
+      // openai remains a valid opt-in
+      expect(envSchema.parse({ ...base, EMBEDDING_PROVIDER: 'openai' }).EMBEDDING_PROVIDER).toBe(
+        'openai'
+      );
+    });
+
+    it('rejects invalid OLLAMA_URL and empty EMBEDDING_MODEL', () => {
+      const base = {
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+        REDIS_URL: 'redis://localhost:6379',
+        QDRANT_URL: 'http://localhost:6333',
+      };
+
+      expect(() => envSchema.parse({ ...base, OLLAMA_URL: 'not-a-url' })).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, EMBEDDING_MODEL: '' })).toThrow(ZodError);
+      expect(() => envSchema.parse({ ...base, EMBEDDING_PROVIDER: 'bogus' })).toThrow(ZodError);
     });
 
     it('should use default values for NODE_ENV and PORT', () => {

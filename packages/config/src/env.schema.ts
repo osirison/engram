@@ -48,15 +48,22 @@ export const baseSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   /** Conditional Qdrant URL. Required only for `enterprise`. */
   QDRANT_URL: z.string().url().optional(),
-  /** Optional — when absent, embedding generation is silently disabled. */
+  /** Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. */
   OPENAI_API_KEY: z.string().optional(),
-  /** Optional embedding provider selection, defaults to OpenAI. */
-  EMBEDDING_PROVIDER: z.enum(['openai', 'disabled', 'local']).optional().default('openai'),
+  /** Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. */
+  EMBEDDING_PROVIDER: z
+    .enum(['ollama', 'openai', 'disabled', 'local'])
+    .optional()
+    .default('ollama'),
+  /** Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. */
+  EMBEDDING_MODEL: z.string().min(1).optional(),
+  /** Base URL of the Ollama server used when `EMBEDDING_PROVIDER=ollama`. Defaults to `http://localhost:11434`. */
+  OLLAMA_URL: z.string().url().optional(),
   /** Vector backend selection. Both `qdrant` and `pgvector` are implemented. */
   VECTOR_BACKEND: z.enum(['qdrant', 'pgvector']).default('qdrant'),
   /** Optional override for the vector collection/table name. */
   VECTOR_COLLECTION: z.string().min(1).optional(),
-  /** Optional override for embedding dimensionality (defaults to the provider's model dimension). */
+  /** Optional strict pin for embedding dimensionality. When unset, dimensions are inferred from the model (if known) or from the first generated vector. */
   VECTOR_DIMENSIONS: z.coerce.number().int().positive().optional(),
   /** MCP transport selection: stdio for local clients, streamable-http for Inspector. */
   MCP_TRANSPORT: z.enum(['stdio', 'streamable-http']).default('stdio'),
@@ -350,7 +357,9 @@ export type Env = {
   REDIS_URL?: string;
   QDRANT_URL?: string;
   OPENAI_API_KEY?: string;
-  EMBEDDING_PROVIDER: 'openai' | 'disabled' | 'local';
+  EMBEDDING_PROVIDER: 'ollama' | 'openai' | 'disabled' | 'local';
+  EMBEDDING_MODEL?: string;
+  OLLAMA_URL?: string;
   VECTOR_BACKEND: 'qdrant' | 'pgvector';
   VECTOR_COLLECTION?: string;
   VECTOR_DIMENSIONS?: number;
