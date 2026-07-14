@@ -47,13 +47,18 @@
  *
  * Cap the lead paragraph to the same 60ch measure as the hero copy and center
  * it, so the hero, the lead, and the card grid all share one centered axis.
- * Scoped to the splash via `.sl-container:has(.hero)` so the article pages that
- * reuse `.sl-markdown-content` are untouched. (The card grid is separately
- * aligned by dropping the `stagger` prop in index.mdx: with only four cards it
- * offset the right column downward and left no shared row baseline.)
+ *
+ * Guarded on the image-less hero (`:not(:has(img)):not(:has(.hero-html))`) and
+ * matched through the sibling `.sl-markdown-content`, exactly like the hero
+ * rules above. If a hero image is ever added the hero reverts to Starlight's
+ * stock two-column layout, and this centering reverts with it rather than
+ * stranding a centered paragraph under a now left-aligned hero. Article pages
+ * have no `.hero`, so they stay untouched. (The card grid is separately aligned
+ * by dropping the `stagger` prop in index.mdx: with only four cards it offset
+ * the right column downward and left no shared row baseline.)
  */
 @media (min-width: 50rem) {
-  .sl-container:has(.hero) .sl-markdown-content > p:first-child {
+  .hero:not(:has(img)):not(:has(.hero-html)) ~ .sl-markdown-content > p:first-child {
     max-width: 60ch;
     margin-inline: auto;
     text-align: center;
