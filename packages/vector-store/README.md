@@ -49,10 +49,15 @@ on `memories` and performs cosine k-nearest-neighbour search via the pgvector
 
 ### Schema
 
-The `vector` extension and `embedding_vec` column are provisioned by the
-baseline Prisma migration (`prisma/migrations/20251021174411_init`). The HNSW
-index is created at runtime by `PgVectorStore.ensureReady`, which also applies
-the extension and column DDL idempotently as a safety net for fresh databases.
+The `embedding_vec` column is **runtime-managed**: it is intentionally absent
+from `schema.prisma`, and `PgVectorStore.ensureReady` provisions the `vector`
+extension, the column, and the HNSW index on the first vector write — at the
+dimensionality of the vectors the embedding pipeline actually produces.
+`ensureReady` verifies an existing column's dimensionality and fails with
+reindex guidance on mismatch; `reset()` drops the index and column so a full
+reindex (`--recreate --regenerate`) can rebuild them at new dimensions.
+Postgres `embedding Float[]` remains the source of truth. `VECTOR_DIMENSIONS`
+is an optional strict pin — leave it unset to follow the embedding model.
 
 Running pgvector requires a Postgres image with the extension available (for
 example `pgvector/pgvector:pg16`). Plain `postgres:*-alpine` images do **not**
@@ -77,9 +82,12 @@ recall.
 
 ### Health check
 
-`PgVectorStore.healthCheck()` verifies the `vector` extension and embedding
-column exist, returning `{ ok, extension, column }`. The MCP server exposes this
-as a `pgvector` entry in `GET /health` when `VECTOR_BACKEND=pgvector`.
+`PgVectorStore.healthCheck()` verifies the `vector` extension is installed and
+reports the runtime-managed column informationally, returning
+`{ ok, extension, column, dimensions }` — `ok` tracks only the extension, since
+the column is provisioned lazily on the first vector write. The MCP server
+exposes this as a `pgvector` entry in `GET /health` when
+`VECTOR_BACKEND=pgvector`.
 
 ### Integration Tests
 
@@ -97,7 +105,7 @@ Set vector store values in the root `.env` file:
 
 ```env
 VECTOR_BACKEND=qdrant        # or "pgvector"
-VECTOR_DIMENSIONS=1536
+# VECTOR_DIMENSIONS=768      # optional strict pin; unset = follow the embedding model
 VECTOR_COLLECTION=memories
 QDRANT_URL=http://localhost:6333   # required when VECTOR_BACKEND=qdrant
 

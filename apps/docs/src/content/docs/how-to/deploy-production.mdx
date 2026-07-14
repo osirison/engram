@@ -58,8 +58,12 @@ The multi-stage build:
 ```bash
 cp .env.example .env.prod
 # Edit .env.prod and set at minimum:
-#   POSTGRES_PASSWORD, REDIS_PASSWORD, MCP_ADMIN_TOKEN, OPENAI_API_KEY
+#   POSTGRES_PASSWORD, REDIS_PASSWORD, MCP_ADMIN_TOKEN
 ```
+
+Embeddings default to local Ollama (`EMBEDDING_PROVIDER=ollama`) — no API key
+needed. To opt in to OpenAI instead, set `EMBEDDING_PROVIDER=openai` and
+`OPENAI_API_KEY` in `.env.prod`.
 
 ### 2. Run database migrations
 
@@ -73,6 +77,26 @@ docker compose -f docker-compose.prod.yml run --rm mcp-server \
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
+
+### 3a. Embeddings (Ollama)
+
+The prod compose file defaults `EMBEDDING_PROVIDER` to `ollama` and
+`OLLAMA_URL` to `http://ollama:11434` — a bundled Ollama service behind the
+**opt-in `ollama` compose profile** (with an `ollama_data` volume for pulled
+models). Start it with the profile and pull the default model once:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod --profile ollama up -d
+docker compose -f docker-compose.prod.yml exec ollama ollama pull nomic-embed-text
+```
+
+Skip the profile if Ollama already runs on the host (point `OLLAMA_URL` at
+the host's endpoint) or if you opted in to OpenAI. If Ollama is unreachable
+or the model is not pulled, writes still succeed — memories are stored
+without vectors and picked up by a later reindex. For GPU inference inside
+the container, add the standard Docker GPU configuration (e.g. the NVIDIA
+container toolkit and a `gpus` reservation); host installs use the GPU
+automatically.
 
 ### 4. Verify health
 

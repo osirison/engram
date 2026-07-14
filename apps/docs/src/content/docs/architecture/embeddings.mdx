@@ -6,9 +6,10 @@ sidebar:
 ---
 
 Embeddings power semantic recall, but Engram refuses to make them a hard
-dependency: an external embeddings API is the least reliable component in the
-stack (network, quotas, keys, cost), and a memory server that cannot *store*
-because it cannot *embed* has its priorities backwards. The design rule is:
+dependency: an embeddings provider — a local model server or a remote API —
+is the least reliable component in the stack (network, quotas, keys, an
+unpulled model), and a memory server that cannot *store* because it cannot
+*embed* has its priorities backwards. The design rule is:
 
 > **The embedding is an enhancement. When it cannot be produced, the memory
 > workflow continues without a vector.**
@@ -19,23 +20,34 @@ is disabled, unconfigured, or failing; callers treat a missing vector as
 listed, exported, and — once the provider is back — picked up by
 [reindex](/docs/architecture/reindex-backfill/) or `reembed_memory`.
 
-## Three providers
+## Four providers
 
 `EMBEDDING_PROVIDER` selects the implementation behind
 `EMBEDDING_PROVIDER_TOKEN`:
 
 | Provider | What it does | When to use |
 | -------- | ------------ | ----------- |
-| `openai` (default) | Calls the OpenAI embeddings API — `text-embedding-3-small` (1536 dims) by default, `text-embedding-3-large` (3072) supported | Production recall quality |
+| `ollama` (default) | Calls a local Ollama server's native `/api/embed` endpoint via plain HTTP (no SDK) — `nomic-embed-text` (768 dims) by default | Local-first production recall, no API key or per-token cost |
+| `openai` | Calls the OpenAI embeddings API — `text-embedding-3-small` (1536 dims) by default, `text-embedding-3-large` (3072) supported | Hosted recall quality, opt-in via `OPENAI_API_KEY` |
 | `local` | Deterministic hash-based vectors, no network | Tests, CI, offline dev, cost-free bulk imports |
 | `disabled` | Always returns `null` | Deployments that only need lexical/structured retrieval |
 
-Two properties of this lineup are intentional:
+The runtime resolves the model from the provider: `EMBEDDING_MODEL` defaults
+to `nomic-embed-text` under `ollama` and `text-embedding-3-small` under
+`openai`, and any model id is accepted. `OLLAMA_URL` (default
+`http://localhost:11434`) points at the Ollama server. Empty-string env
+values are read as unset, so compose-style `${VAR:-}` defaults are safe.
 
+Three properties of this lineup are intentional:
+
+- **`ollama` degrades, not dies.** An unreachable server, an unpulled model,
+  or a timeout (30 s) logs a warning and returns `null` — a 404 logs a hint
+  to run `ollama pull <model>` — and the write proceeds vector-less.
 - **`local` is deterministic.** The same text always yields the same vector,
   so tests and the eval harness get stable, service-free similarity behavior.
-  It is also the recommended first pass for bulk imports: ingest cheaply with
-  local vectors, then run a reindex with `--regenerate` under `openai` (see
+  It is also a cheap first pass for bulk imports: ingest with local vectors,
+  then run a reindex with `--regenerate` under a real provider — the Ollama
+  default or `openai` (see
   [the migration runbook](/docs/agent-memory/migration/)).
 - **`openai` without a key degrades, not dies.** If `OPENAI_API_KEY` is
   absent, embedding generation is silently disabled and writes proceed
@@ -44,24 +56,38 @@ Two properties of this lineup are intentional:
 ## Redis caching
 
 Embedding calls are cached in Redis under a deterministic key derived from
-`(text, model)`, with TTL `EMBEDDING_CACHE_TTL` (default 30 days). The cache
-exists because agent workloads re-embed the same strings constantly — recall
-queries repeat, dedup checks re-embed recent content, and reindex passes
-re-touch the corpus. A content-keyed cache makes those calls free and
-idempotent. Cache hits/misses are exported as metrics
+`(text, model)`, with TTL `EMBEDDING_CACHE_TTL` (default 30 days) — the key
+format is the same for every provider, and because the model id is part of
+it, switching models never serves stale vectors. The cache exists because
+agent workloads re-embed the same strings constantly — recall queries repeat,
+dedup checks re-embed recent content, and reindex passes re-touch the corpus.
+A content-keyed cache makes those calls free and idempotent. Cache
+hits/misses are exported as metrics
 ([observability](/docs/reference/observability/)).
 
 Under profiles without Redis, the cache is simply absent — same interface,
 no caching layer.
 
-## Dimensions are configuration, not convention
+## Dimensions are resolved, not assumed
 
-`VECTOR_DIMENSIONS` (default 1536) flows into the vector store's
-`ensureReady(dimensions)`, which validates or creates the index accordingly.
-Switching models with a different dimensionality (e.g. to
-`text-embedding-3-large`) is therefore a **reindex event**: existing vectors
-are incompatible with the new index shape. The procedure — including why you
-must regenerate rather than reuse stored embeddings — is in
+The pipeline resolves its dimensionality in strict precedence order:
+
+1. **`VECTOR_DIMENSIONS`** — an optional strict pin. When set, the vector
+   backends verify the index against it and throw an actionable error on
+   mismatch. It no longer defaults to 1536.
+2. **The known-model map** — `MODEL_DIMENSIONS` in `@engram/embeddings`:
+   `nomic-embed-text` 768, `mxbai-embed-large` 1024, `all-minilm` 384,
+   `bge-m3` 1024, `local-hash` 1536, `text-embedding-3-small` 1536,
+   `text-embedding-3-large` 3072.
+3. **The actual vector** — arbitrary model ids are allowed; an unknown model
+   gets its dimensions from the first vector it produces.
+
+When nothing pins the size up front, both backends infer dimensionality from
+the first upserted vector and provision themselves accordingly. Switching
+models with a different dimensionality (e.g. `nomic-embed-text` →
+`text-embedding-3-small`) is therefore a **reindex event**: existing vectors
+are incompatible with the new index shape. The procedure — recreate the index
+and regenerate rather than reuse stored embeddings — is in
 [Configure embeddings](/docs/how-to/configure-embeddings/) and
 [Reindex embeddings](/docs/how-to/reindex-embeddings/).
 
@@ -69,8 +95,9 @@ must regenerate rather than reuse stored embeddings — is in
 
 | Failure | Behavior |
 | ------- | -------- |
-| Provider down at write time | Memory stored without vector; excluded from semantic hits until re-embedded |
+| Provider down at write time (Ollama unreachable, API down, 30 s timeout) | Memory stored without vector; excluded from semantic hits until re-embedded |
 | Provider down at query time | `recall` returns empty semantic results (logged); no exception to the caller |
+| Ollama model not pulled (404) | Warning with an `ollama pull <model>` hint; write proceeds vector-less |
 | Content edited while provider down | Row flagged `embeddingStale`; repair with `reembed_memory` |
 | Key revoked / quota exhausted | Same as provider down — degrade, log, continue |
 

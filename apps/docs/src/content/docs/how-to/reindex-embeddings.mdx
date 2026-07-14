@@ -79,15 +79,59 @@ The queue processes one job at a time by design; queueing a second reindex
 serializes behind the first. Full parameter tables:
 [MCP tools reference](/docs/reference/mcp-tools/).
 
+**Recreate** — both `reindex_memories` and `queue_reindex_memories` accept
+`recreate: true` (admin-gated like the rest of the input): the same
+drop-and-rebuild the CLI exposes as `--recreate`, previously CLI-only. It is
+only honored by an **unscoped full reindex** — no `userId`, `cursor`, or
+`maxMemories` — and recall is empty until the rebuild completes:
+
+```json
+{
+  "name": "reindex_memories",
+  "arguments": {
+    "adminToken": "<MCP_ADMIN_TOKEN>",
+    "recreate": true,
+    "reuseExistingEmbeddings": false
+  }
+}
+```
+
 ## Choosing reuse vs regenerate
 
 | Situation | Mode |
 | --------- | ---- |
 | Backend switch (qdrant ⇄ pgvector) | reuse (default) — vectors are valid, no provider cost |
 | Vector store lost/corrupted | reuse (default) |
-| Embedding model or dimension change | **regenerate** |
+| Embedding model or dimension change | **recreate + regenerate** (see below) |
 | Imported with `EMBEDDING_PROVIDER=local`, upgrading to real vectors | **regenerate** |
 | A few individually stale memories | `reembed_memory` per id instead of a full pass |
+
+Regenerated embeddings are **written back to Postgres** (the `embedding`
+float array) before the vector upsert, so a later default (reuse) reindex
+carries the new vectors forward instead of silently reverting to the old
+ones.
+
+## Model or dimension change
+
+Changing the embedding model or provider (e.g. the 768-dim
+`nomic-embed-text` default → the 1536-dim `text-embedding-3-small`) changes
+the index shape. The canonical procedure:
+
+1. Set the new `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` (and
+   `VECTOR_DIMENSIONS`, if you pin it) and restart the server.
+2. Run an unscoped reindex with **recreate + regenerate**:
+
+   ```bash
+   pnpm --filter mcp-server reindex -- --recreate --regenerate
+   ```
+
+   or `reindex_memories` / `queue_reindex_memories` with
+   `{ "recreate": true, "reuseExistingEmbeddings": false }`.
+
+This drops the old-dimension index, regenerates every embedding at the new
+dimensionality, and persists the new vectors back to Postgres. Recall is
+empty during the rebuild. Full model/provider details:
+[Configure embeddings](/docs/how-to/configure-embeddings/).
 
 ## Verify
 

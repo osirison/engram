@@ -1,37 +1,110 @@
 ---
 title: Configure embeddings
-description: Choose an embedding provider (openai, local, disabled), tune the Redis cache, and change models safely.
+description: Choose an embedding provider (ollama, openai, local, disabled), pick a model, tune the Redis cache, and change models safely.
 sidebar:
   order: 8
 ---
 
-Embedding configuration is three variables; the design behind them —
+Embeddings are local-first: the default provider is **Ollama**, a local model
+server — no API key, no per-token cost. The design behind the configuration —
 including the "return `null`, never block a write" degradation contract — is
 explained in [Embeddings](/docs/architecture/embeddings/).
+
+## Quick start (Ollama, the default)
+
+`EMBEDDING_PROVIDER` defaults to `ollama`, so setup is just getting an Ollama
+server running with the default model pulled:
+
+```bash
+# Option A — host install (https://ollama.com/download)
+ollama pull nomic-embed-text
+
+# Option B — opt-in Docker Compose profile
+docker compose --profile ollama up -d
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+Done. The server calls Ollama's native `/api/embed` endpoint (plain HTTP, no
+SDK) at `OLLAMA_URL` (default `http://localhost:11434`) with
+`nomic-embed-text` (768 dims).
 
 ## Pick a provider
 
 ```bash
 # .env
-EMBEDDING_PROVIDER=openai    # default; needs OPENAI_API_KEY
-# EMBEDDING_PROVIDER=local   # deterministic hash vectors, no network
+EMBEDDING_PROVIDER=ollama     # default; local Ollama server, no API key
+# EMBEDDING_PROVIDER=openai   # opt-in; needs OPENAI_API_KEY
+# EMBEDDING_PROVIDER=local    # deterministic hash vectors, no network
 # EMBEDDING_PROVIDER=disabled
 ```
 
 | Provider | Needs | Recall behavior |
 | -------- | ----- | --------------- |
-| `openai` | `OPENAI_API_KEY` | Full semantic recall (`text-embedding-3-small`, 1536 dims, by default) |
+| `ollama` (default) | An Ollama server at `OLLAMA_URL` with the model pulled | Full semantic recall, fully local (`nomic-embed-text`, 768 dims, by default) |
+| `openai` | `OPENAI_API_KEY` | Full semantic recall via the OpenAI API (`text-embedding-3-small`, 1536 dims, by default) |
 | `local` | nothing | Deterministic vectors — stable similarity for tests/CI/offline dev, not real semantics |
 | `disabled` | nothing | Writes proceed vector-less; semantic recall returns no vector hits |
 
 Notes:
 
+- Any provider failure — Ollama unreachable, model not pulled, request
+  timeout (30 s) — logs a warning and returns `null`; the memory workflow
+  continues without a vector. Writes never fail because of embeddings. A 404
+  from Ollama logs a hint to run `ollama pull <model>`.
 - With `openai` and **no** `OPENAI_API_KEY`, embedding generation silently
-  disables itself — same runtime behavior as `disabled`. Writes never fail
-  because of embeddings.
-- `local` is the recommended provider for cheap bulk imports: ingest with
-  free vectors, then upgrade to real embeddings with a regenerating reindex
-  (see the [agent-memory migration runbook](/docs/agent-memory/migration/)).
+  disables itself — same runtime behavior as `disabled`.
+- `local` stays useful for CI and cheap bulk imports: ingest with
+  deterministic vectors, then upgrade to real embeddings with a regenerating
+  reindex (see the
+  [agent-memory migration runbook](/docs/agent-memory/migration/)). With the
+  free Ollama default, importing with real embeddings directly costs nothing
+  either.
+
+## Model, endpoint, and dimensions
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `EMBEDDING_MODEL` | per provider: `nomic-embed-text` (ollama), `text-embedding-3-small` (openai) | Embedding model id — any id is accepted |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama server base URL (native `/api/embed`) |
+| `VECTOR_DIMENSIONS` | unset | Optional strict pin — see below |
+
+Empty-string values are read as unset, so compose-style `${VAR:-}` defaults
+are safe.
+
+Known models and their dimensions:
+
+| Model | Provider | Dimensions |
+| ----- | -------- | ---------- |
+| `nomic-embed-text` | ollama | 768 |
+| `mxbai-embed-large` | ollama | 1024 |
+| `all-minilm` | ollama | 384 |
+| `bge-m3` | ollama | 1024 |
+| `text-embedding-3-small` | openai | 1536 |
+| `text-embedding-3-large` | openai | 3072 |
+| `local-hash` | local | 1536 |
+
+Arbitrary model ids are allowed — for a model not in this table, dimensions
+are taken from the actual vector the provider returns.
+
+`VECTOR_DIMENSIONS` no longer defaults to 1536; it is an optional **strict
+pin**. When unset, both vector backends infer dimensionality from the first
+upserted vector. Set it when you want the server to fail fast if the pipeline
+ever produces vectors of a different size — the backends verify and throw an
+actionable error on mismatch.
+
+## Opt in to OpenAI
+
+OpenAI stays fully supported:
+
+```bash
+# .env
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+# EMBEDDING_MODEL=text-embedding-3-small   # openai default; -3-large = 3072 dims
+```
+
+Switching an existing deployment between Ollama (768 dims) and OpenAI
+(1536 dims) is a dimension change — follow the model-change procedure below.
 
 ## Cache
 
@@ -42,27 +115,57 @@ EMBEDDING_CACHE_TTL=2592000   # seconds; default 30 days
 ```
 
 Repeated recall queries and dedup checks hit the cache instead of the
-provider. Profiles without Redis simply run uncached.
+provider. Because the model id is part of the key, switching models is safe —
+the cache never serves vectors from the old model. Profiles without Redis
+simply run uncached.
 
-## Change the model (dimension change)
+## Change the model or provider (dimension change)
 
-Switching to a model with a different dimensionality (e.g.
-`text-embedding-3-large`, 3072 dims) invalidates every stored vector — the
-index shape changes. The safe sequence:
+Switching to a model with a different dimensionality (e.g. from the 768-dim
+`nomic-embed-text` default to the 1536-dim `text-embedding-3-small`)
+invalidates every stored vector — the index shape changes. The canonical
+sequence:
 
-1. Set the model/provider config and `VECTOR_DIMENSIONS=3072`.
-2. Restart the server (`ensureReady()` validates/creates the index for the
-   new dimensionality).
-3. Reindex with **regeneration** — reusing stored 1536-dim vectors would be
-   rejected or, worse, silently wrong:
+1. Set the new provider/model env (`EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`,
+   and — if you pin — the new `VECTOR_DIMENSIONS`).
+2. Restart the server.
+3. Run an **unscoped** reindex that both **recreates** the index and
+   **regenerates** embeddings:
 
    ```bash
-   pnpm --filter mcp-server reindex --regenerate
+   pnpm --filter mcp-server reindex -- --recreate --regenerate
    ```
 
-Budget note: `--regenerate` calls the provider once per memory (cache
-notwithstanding). For a large corpus, prefer the queued admin tools so the
-pass is resumable — see [Reindex embeddings](/docs/how-to/reindex-embeddings/).
+   or via the admin MCP tool:
+
+   ```json
+   {
+     "name": "reindex_memories",
+     "arguments": {
+       "adminToken": "<MCP_ADMIN_TOKEN>",
+       "recreate": true,
+       "reuseExistingEmbeddings": false
+     }
+   }
+   ```
+
+This drops the old-dimension index, regenerates every embedding at the new
+dimensionality, and writes the new vectors back to Postgres. Recall is empty
+while the rebuild runs. `recreate` is only honored by an unscoped full pass —
+no `userId`, `cursor`, or memory cap.
+
+Budget note: regeneration calls the provider once per memory (cache
+notwithstanding) — free with the local Ollama default, token cost with
+`openai`. For a large corpus, prefer the queued variant
+(`queue_reindex_memories`, same arguments) so the pass runs in the background
+— see [Reindex embeddings](/docs/how-to/reindex-embeddings/).
+
+## GPU
+
+On a host install, Ollama uses a GPU automatically when one is available. For
+the Docker Compose `ollama` service, GPU passthrough needs the standard Docker
+GPU configuration (e.g. the NVIDIA container toolkit plus a `gpus`
+reservation). CPU-only is fine for `nomic-embed-text`.
 
 ## Repairing individual memories
 

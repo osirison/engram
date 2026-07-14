@@ -198,8 +198,10 @@ values are:
 | `VECTOR_BACKEND`       | `qdrant` (default) or `pgvector`                                |
 | `LOCAL_DATA_DIR`       | `profile-lite` data directory (default `~/.engram/data`)        |
 | `LOCAL_ENCRYPTION_KEY` | `profile-lite` 32-byte base64 AES-256 key                       |
-| `OPENAI_API_KEY`       | Optional key for remote embeddings                              |
-| `EMBEDDING_PROVIDER`   | Embedding provider: `openai`, `local`, or `disabled`            |
+| `EMBEDDING_PROVIDER`   | `ollama` (default), `openai`, `local`, or `disabled`            |
+| `EMBEDDING_MODEL`      | Model id; defaults per provider (`nomic-embed-text` for ollama) |
+| `OLLAMA_URL`           | Ollama server URL (default `http://localhost:11434`)            |
+| `OPENAI_API_KEY`       | Required only when `EMBEDDING_PROVIDER=openai`                  |
 | `MCP_ADMIN_TOKEN`      | Required token for admin maintenance MCP tools                  |
 | `MCP_TRANSPORT`        | MCP transport: `stdio` or `streamable-http`                     |
 

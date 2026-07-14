@@ -54,9 +54,12 @@ Call `recall`:
 ```
 
 The stored memory comes back with a relevance score. When embeddings are
-disabled or the vector store is unavailable, `recall` degrades gracefully and
-returns `{ "results": [] }` rather than erroring — with
-`EMBEDDING_PROVIDER=local` (or `openai`) you get real hybrid matches.
+unavailable (no reachable provider) or the vector store is down, `recall`
+degrades gracefully and returns `{ "results": [] }` rather than erroring.
+With the default `ollama` provider — an Ollama server running with
+`nomic-embed-text` pulled — you get real hybrid matches with no API key;
+`openai` (with `OPENAI_API_KEY`) and the deterministic `local` provider work
+too.
 
 ### 3. Inspect it
 

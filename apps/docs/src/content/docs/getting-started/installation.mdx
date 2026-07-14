@@ -38,6 +38,29 @@ curl http://localhost:3000/health
 The health response should report `ok` when PostgreSQL, Redis, and Qdrant are
 ready.
 
+### Embeddings (local by default)
+
+Semantic recall needs an embedding provider; the default is **Ollama**
+(`EMBEDDING_PROVIDER=ollama`) — local, no API key. Either install Ollama on
+the host ([ollama.com/download](https://ollama.com/download)) and pull the
+default model:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+or start the opt-in compose profile:
+
+```bash
+docker compose --profile ollama up -d
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+To use OpenAI instead, set `EMBEDDING_PROVIDER=openai` and `OPENAI_API_KEY`
+in `.env`. Without a reachable provider, writes still succeed — memories are
+stored without vectors and backfilled by a later reindex
+([Configure embeddings](/docs/how-to/configure-embeddings/)).
+
 ### Start specific workspaces
 
 Run one workspace at a time during local development.

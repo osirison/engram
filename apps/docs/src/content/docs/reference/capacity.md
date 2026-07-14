@@ -42,18 +42,24 @@ extension available (`pgvector/pgvector:pg16+` Docker image).
 
 ### 1. Embedding generation (write path)
 
-**Primary bottleneck in production.** Every memory creation calls the OpenAI
-Embeddings API (or a local provider). At 8 concurrent workers, embedding latency
-(~100–500 ms/call) dominates over Postgres write latency (~5–20 ms).
+Every memory creation calls the embedding provider. With the default
+`EMBEDDING_PROVIDER=ollama`, embedding runs against a local Ollama server —
+no API latency, quota, or per-token cost — and throughput is bounded by local
+CPU/GPU rather than the network. With the opt-in `EMBEDDING_PROVIDER=openai`,
+the API call is the **primary bottleneck in production**: at 8 concurrent
+workers, embedding latency (~100–500 ms/call) dominates over Postgres write
+latency (~5–20 ms).
 
 Mitigations:
 
 - **Redis cache** — already wired in `EmbeddingsService`; 30-day TTL. Cache hit
   rate is exported via `getPrometheusMetrics()` (`engram_embeddings_cacheHits_total`).
-- **Batch embeddings** — OpenAI `/v1/embeddings` accepts up to 2048 texts per
-  request. Use `bulk ingest` (#127) to amortize API overhead.
-- **Local provider** — `EMBEDDING_PROVIDER=local` uses a deterministic hash
-  embedding with no external call. Suitable for development and tests.
+- **Batch embeddings** (openai only) — OpenAI `/v1/embeddings` accepts up to
+  2048 texts per request. Use `bulk ingest` (#127) to amortize API overhead.
+- **Local providers** — the default `ollama` provider embeds locally with real
+  semantics and no external call; `EMBEDDING_PROVIDER=local` uses a
+  deterministic hash embedding with no model at all — suitable for
+  development and tests.
 
 ### 2. Postgres connection pool
 
@@ -70,9 +76,13 @@ Mitigations:
 
 ### 3. HNSW index quality
 
-The `embedding_vec` column uses an HNSW index with default parameters
-(`m=16`, `ef_construction=64`). Recall quality and search speed are both
-sensitive to these parameters.
+The runtime-provisioned `embedding_vec` column uses an HNSW index with
+default parameters (`m=16`, `ef_construction=64`). Recall quality and search
+speed are both sensitive to these parameters.
+
+Vector width matters for RAM: the default `nomic-embed-text` model produces
+768-dim vectors, roughly half the index and memory footprint of the 1536-dim
+`text-embedding-3-small` vectors used by the opt-in OpenAI provider.
 
 Guidance:
 

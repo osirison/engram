@@ -133,9 +133,14 @@ DEPLOYMENT_PROFILE=enterprise
 # Admin-only operations (reindex, backfill). Not an agent key.
 MCP_ADMIN_TOKEN=CHANGE_ME_ADMIN_TOKEN
 
-# Embeddings: openai (needs a key), local (deterministic, for testing), or disabled.
-EMBEDDING_PROVIDER=openai
-OPENAI_API_KEY=sk-CHANGE_ME
+# Embeddings: ollama (default — local, no API key; run an Ollama server and
+# `ollama pull nomic-embed-text` once), openai (needs a key), local
+# (deterministic, for testing), or disabled.
+EMBEDDING_PROVIDER=ollama
+# OLLAMA_URL=http://localhost:11434   # default; change if Ollama runs elsewhere
+# Opt in to OpenAI instead:
+# EMBEDDING_PROVIDER=openai
+# OPENAI_API_KEY=sk-CHANGE_ME
 ```
 
 Choose `DEPLOYMENT_PROFILE` for your durability and infrastructure needs — the

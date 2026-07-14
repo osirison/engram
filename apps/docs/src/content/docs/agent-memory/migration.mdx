@@ -18,7 +18,8 @@ memory instead of five per-agent silos.
 
 It uses the WP4 importer CLI (`pnpm --filter mcp-server import`) and follows a
 cheap-first strategy: import with **local hash embeddings** (no API cost), then
-rebuild **real embeddings** with the admin reindex tool. For the full importer
+rebuild **real embeddings** with the admin reindex tool — free under the
+default local Ollama provider, or via the opt-in OpenAI provider. For the full importer
 reference (secrets policies, link resolution, provenance, ledger schema) see
 [Import agent memory](/docs/how-to/import-agent-memory/). For the identity/scope
 rules every command here relies on, see the
@@ -33,7 +34,8 @@ The migration is four steps:
 2. **Execute** the import with `EMBEDDING_PROVIDER=local` (deterministic hash
    vectors, zero API cost), assigning `--user qp` and the right `--scope`.
 3. **Reindex** to replace the placeholder hash vectors with real embeddings via
-   the admin `reindex_memories` MCP tool (cursor-resumable).
+   the admin `reindex_memories` MCP tool (cursor-resumable) — free with the
+   default local Ollama provider, or paid via OpenAI.
 4. **Verify** with `recall` queries over known historical facts.
 
 The importer is **idempotent**: it keeps a per-source ledger keyed on
@@ -150,8 +152,10 @@ directories (as above), not one. You may also pass a `CLAUDE.md` file directly.
   every advisory: if a real credential is present, remove it from the source file
   (or rely on redaction, but confirm nothing sensitive is about to be embedded).
   Never embed a secret.
-- **Embedding cost estimate.** Reported as `est=$…`. With the local strategy
-  below this is effectively zero at import time; it becomes real at Step 3.
+- **Embedding cost estimate.** Reported as `est=$…`, priced from the active
+  provider and model. Local models — including the default Ollama
+  `nomic-embed-text` — estimate `$0`; a real dollar figure appears only when
+  the `openai` provider is active.
 
 ### Cross-project (global) agent files
 
@@ -205,10 +209,12 @@ import; `skipped`/`updated`/`merged` show up on re-runs; `failed` should be 0
 The CLI exits non-zero if any fact failed or a quota stop returned a resumable
 cursor.
 
-> **Alternative (real embeddings inline).** If you would rather pay the embedding
-> cost now and skip Step 3, run with `EMBEDDING_PROVIDER=openai` and a valid
-> `OPENAI_API_KEY` instead of `local`. Each memory is embedded as it is written
-> (costs tokens per the dry-run estimate). A third option is `--no-embed` (store
+> **Alternative (real embeddings inline).** If the embedding provider is
+> available at import time, you can skip Step 3 by importing with real
+> embeddings directly: leave the default `EMBEDDING_PROVIDER=ollama` (a
+> running Ollama server with `nomic-embed-text` pulled — free, no API key),
+> or use `EMBEDDING_PROVIDER=openai` with a valid `OPENAI_API_KEY` (costs
+> tokens per the dry-run estimate). A third option is `--no-embed` (store
 > empty vectors) — see
 > [Import agent memory](/docs/how-to/import-agent-memory/#embedding-cost---no-embed-closes-g7);
 > with empty vectors a **default** reindex backfills them, whereas the `local`
@@ -226,8 +232,11 @@ rows already carry non-empty (hash) vectors, you **must** pass
 
 `reindex_memories` is an **admin MCP tool**: it requires an `adminToken` matching
 `MCP_ADMIN_TOKEN`. It runs on the **persistent server process**, so that server
-must be started with the real embedding provider — `EMBEDDING_PROVIDER=openai`
-and a valid `OPENAI_API_KEY` — or restarted with them before you call the tool.
+must have a real embedding provider available when you call the tool: the
+default `EMBEDDING_PROVIDER=ollama` (a running Ollama server with
+`nomic-embed-text` pulled — free, no API key) or `EMBEDDING_PROVIDER=openai`
+with a valid `OPENAI_API_KEY`. Restart the server with the right provider
+first if needed.
 
 Call it (admin bearer token elided) with, at minimum:
 
@@ -253,10 +262,24 @@ Notes:
 - **Scope of work.** `reuseExistingEmbeddings: false` regenerates for **every**
   matched memory, not only the freshly imported rows. Pass `userId: "qp"` to
   limit it to qp's long-term memories; expect it to re-embed all of them.
+- **Dimension change → recreate.** The `local` hash vectors are 1536-dim.
+  Regenerating under the default Ollama provider (`nomic-embed-text`,
+  768 dims) changes the index shape, so a scoped call like the one above
+  would trip the dimension guard. Run an **unscoped** rebuild instead: pass
+  `recreate: true` alongside `reuseExistingEmbeddings: false` and drop
+  `userId` — `recreate` is only honored by an unscoped full reindex, and
+  recall is empty during the rebuild. It is accepted by both
+  `reindex_memories` and `queue_reindex_memories` (previously CLI-only).
+  Regenerating under OpenAI's `text-embedding-3-small` (1536 dims) matches
+  the hash dimensionality, so the scoped call works unchanged.
 - **CLI equivalent.** The same job runs from the command line with
-  `EMBEDDING_PROVIDER=openai pnpm --filter mcp-server reindex -- --user qp --regenerate`
-  (`--regenerate` sets `reuseExistingEmbeddings=false`). This spawns its own
-  process, so it does not depend on how the persistent server was started.
+  `pnpm --filter mcp-server reindex -- --user qp --regenerate`
+  (`--regenerate` sets `reuseExistingEmbeddings=false`; prefix
+  `EMBEDDING_PROVIDER=openai` to use OpenAI). For the dimension-change case
+  the unscoped rebuild is
+  `pnpm --filter mcp-server reindex -- --recreate --regenerate`. The CLI
+  spawns its own process, so it does not depend on how the persistent server
+  was started.
 
 ## Step 4 — Verify recall
 

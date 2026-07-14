@@ -18,38 +18,38 @@ The dual goal: a **production-grade enterprise memory system** that can also run
 
 context-mem v4.0.0 "Cognition" — MIT, 45+ MCP tools, fully local SQLite.
 
-| Dimension            | Engram (current)                                      | context-mem v4.0                                                                                                         |
-| -------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| MCP tools            | 13                                                    | 45+ (6 deprecated)                                                                                                       |
-| Storage              | Postgres + Redis + Qdrant/pgvector                    | SQLite (FTS5 + sqlite-vec) + markdown vault                                                                              |
-| Vector embeddings    | 1536-dim OpenAI or pgvector HNSW                      | 768-dim nomic-embed-text-v1.5 (local)                                                                                    |
-| Search               | Vector similarity only                                | 8 parallel BM25 + vector + trigram + Levenshtein, RRF fused                                                              |
-| BM25 strategies      | None                                                  | AND, phrase, entity-focused, sanitized, relaxed-AND, OR+synonyms, keywords, synonym-tokens                               |
-| LLM reranker         | None                                                  | Optional Claude Haiku judge (R@5: 97.8% → 100%)                                                                          |
-| Ingest pipeline      | Store → embed                                         | 13-step pipeline (privacy, dedup, entity, topic, importance, summarize, write, log, graph, backlinks, embed, FTS, vault) |
-| Token compression    | None                                                  | 15 content-aware summarizers, 99.1% savings (365KB → 3.2KB)                                                              |
-| Compression tiers    | None                                                  | 4-tier age-based: verbatim (0-7d), light (7-30d), medium (30-90d), distilled (90+d)                                      |
-| Memory types         | STM (Redis/TTL) + LTM (Postgres)                      | Observations, entities, knowledge entries, topics, sessions                                                              |
-| Memory intelligence  | None (roadmap #99)                                    | Dreamer background agent (5 min cycle), auto-consolidation, auto-archive                                                 |
-| Decay                | None                                                  | Exponential (14-day half-life) + 30d stale mark + 90d auto-archive                                                       |
-| Context window mgmt  | None                                                  | `wake_up` token-budgeted briefing (profile 15%, knowledge 40%, decisions 30%, entities 15%)                              |
-| Temporal tools       | None                                                  | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss`                                                      |
-| Session tools        | None                                                  | `wake_up`, `restore_session`, `handoff_session`                                                                          |
-| Multi-agent          | None                                                  | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast`                                                       |
-| Cross-project        | None                                                  | `promote_knowledge`, `global_search`, `find_tunnels`                                                                     |
-| Knowledge graph      | None                                                  | 9 graph tools, entity-relationship graph, graph_query, graph_neighbors                                                   |
-| Answer-as-page       | None                                                  | `ask` answers persisted as knowledge pages (self-improving cache)                                                        |
-| Dashboard            | None                                                  | Web UI at localhost:3141 (6 pages: Intelligence, Graph, Topics, Timeline, Entities, Diagnostics)                         |
-| Code execution       | None                                                  | `execute` (JS, TS, Python, Shell, Ruby, Go, Rust, PHP, Perl, R, Elixir)                                                  |
-| Vault/human-readable | None                                                  | Markdown vault, Obsidian-compatible, Context Protocol RFC v1                                                             |
-| Multi-tenancy        | userId scoping, per-user quota                        | None (single-user, filesystem-scoped)                                                                                    |
-| Auth                 | adminToken (reindex only)                             | None                                                                                                                     |
-| Horizontal scale     | Yes (stateless NestJS + Postgres + Redis)             | No                                                                                                                       |
-| Async jobs           | BullMQ with cursor resumption                         | None (synchronous except embedding)                                                                                      |
-| Evaluation harness   | Full (precision/recall/MRR/nDCG, latency p50/p95/p99) | Claims LongMemEval R@5 100% (session-retrieval recall, not end-to-end QA)                                                |
-| Observability        | Basic logs                                            | Diagnostics tool, dashboard stats                                                                                        |
-| SDK                  | None                                                  | None                                                                                                                     |
-| Privacy              | None                                                  | 9-detector privacy engine, `<private>` tag stripping                                                                     |
+| Dimension            | Engram (current)                                                           | context-mem v4.0                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| MCP tools            | 13                                                                         | 45+ (6 deprecated)                                                                                                       |
+| Storage              | Postgres + Redis + Qdrant/pgvector                                         | SQLite (FTS5 + sqlite-vec) + markdown vault                                                                              |
+| Vector embeddings    | 768-dim nomic-embed-text local by default (Ollama); OpenAI 1536-dim opt-in | 768-dim nomic-embed-text-v1.5 (local)                                                                                    |
+| Search               | Vector similarity only                                                     | 8 parallel BM25 + vector + trigram + Levenshtein, RRF fused                                                              |
+| BM25 strategies      | None                                                                       | AND, phrase, entity-focused, sanitized, relaxed-AND, OR+synonyms, keywords, synonym-tokens                               |
+| LLM reranker         | None                                                                       | Optional Claude Haiku judge (R@5: 97.8% → 100%)                                                                          |
+| Ingest pipeline      | Store → embed                                                              | 13-step pipeline (privacy, dedup, entity, topic, importance, summarize, write, log, graph, backlinks, embed, FTS, vault) |
+| Token compression    | None                                                                       | 15 content-aware summarizers, 99.1% savings (365KB → 3.2KB)                                                              |
+| Compression tiers    | None                                                                       | 4-tier age-based: verbatim (0-7d), light (7-30d), medium (30-90d), distilled (90+d)                                      |
+| Memory types         | STM (Redis/TTL) + LTM (Postgres)                                           | Observations, entities, knowledge entries, topics, sessions                                                              |
+| Memory intelligence  | None (roadmap #99)                                                         | Dreamer background agent (5 min cycle), auto-consolidation, auto-archive                                                 |
+| Decay                | None                                                                       | Exponential (14-day half-life) + 30d stale mark + 90d auto-archive                                                       |
+| Context window mgmt  | None                                                                       | `wake_up` token-budgeted briefing (profile 15%, knowledge 40%, decisions 30%, entities 15%)                              |
+| Temporal tools       | None                                                                       | `temporal_query`, `time_travel`, `explain_decision`, `predict_loss`                                                      |
+| Session tools        | None                                                                       | `wake_up`, `restore_session`, `handoff_session`                                                                          |
+| Multi-agent          | None                                                                       | `agent_register`, `agent_status`, `claim_files`, `agent_broadcast`                                                       |
+| Cross-project        | None                                                                       | `promote_knowledge`, `global_search`, `find_tunnels`                                                                     |
+| Knowledge graph      | None                                                                       | 9 graph tools, entity-relationship graph, graph_query, graph_neighbors                                                   |
+| Answer-as-page       | None                                                                       | `ask` answers persisted as knowledge pages (self-improving cache)                                                        |
+| Dashboard            | None                                                                       | Web UI at localhost:3141 (6 pages: Intelligence, Graph, Topics, Timeline, Entities, Diagnostics)                         |
+| Code execution       | None                                                                       | `execute` (JS, TS, Python, Shell, Ruby, Go, Rust, PHP, Perl, R, Elixir)                                                  |
+| Vault/human-readable | None                                                                       | Markdown vault, Obsidian-compatible, Context Protocol RFC v1                                                             |
+| Multi-tenancy        | userId scoping, per-user quota                                             | None (single-user, filesystem-scoped)                                                                                    |
+| Auth                 | adminToken (reindex only)                                                  | None                                                                                                                     |
+| Horizontal scale     | Yes (stateless NestJS + Postgres + Redis)                                  | No                                                                                                                       |
+| Async jobs           | BullMQ with cursor resumption                                              | None (synchronous except embedding)                                                                                      |
+| Evaluation harness   | Full (precision/recall/MRR/nDCG, latency p50/p95/p99)                      | Claims LongMemEval R@5 100% (session-retrieval recall, not end-to-end QA)                                                |
+| Observability        | Basic logs                                                                 | Diagnostics tool, dashboard stats                                                                                        |
+| SDK                  | None                                                                       | None                                                                                                                     |
+| Privacy              | None                                                                       | 9-detector privacy engine, `<private>` tag stripping                                                                     |
 
 ### Engram's Durable Advantages (never-match by context-mem)
 

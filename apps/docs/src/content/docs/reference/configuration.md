@@ -19,11 +19,13 @@ codebase.
 | `DATABASE_URL` | string | — | no | `lite`, `enterprise` | Conditional Postgres URL. Required for `lite` and `enterprise` profiles, optional for `memory`. The validation rule is applied in the transform below; we keep the field optional here so the same schema can parse a `memory`-profile environment without forcing an empty string. |
 | `REDIS_URL` | string | — | no | `enterprise` | Conditional Redis URL. Required only for `enterprise`. |
 | `QDRANT_URL` | string | — | no | `enterprise` | Conditional Qdrant URL. Required only for `enterprise`. |
-| `OPENAI_API_KEY` | string | — | no | all | Optional — when absent, embedding generation is silently disabled. |
-| `EMBEDDING_PROVIDER` | `openai` \| `disabled` \| `local` | `openai` | no | all | Optional embedding provider selection, defaults to OpenAI. |
+| `OPENAI_API_KEY` | string | — | no | all | Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. |
+| `EMBEDDING_PROVIDER` | `ollama` \| `openai` \| `disabled` \| `local` | `ollama` | no | all | Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. |
+| `EMBEDDING_MODEL` | string | — | no | all | Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. |
+| `OLLAMA_URL` | string | — | no | all | Base URL of the Ollama server used when `EMBEDDING_PROVIDER=ollama`. Defaults to `http://localhost:11434`. |
 | `VECTOR_BACKEND` | `qdrant` \| `pgvector` | `qdrant` | no | all | Vector backend selection. Both `qdrant` and `pgvector` are implemented. |
 | `VECTOR_COLLECTION` | string | — | no | all | Optional override for the vector collection/table name. |
-| `VECTOR_DIMENSIONS` | number | — | no | all | Optional override for embedding dimensionality (defaults to the provider's model dimension). |
+| `VECTOR_DIMENSIONS` | number | — | no | all | Optional strict pin for embedding dimensionality. When unset, dimensions are inferred from the model (if known) or from the first generated vector. |
 | `MCP_TRANSPORT` | `stdio` \| `streamable-http` | `stdio` | no | all | MCP transport selection: stdio for local clients, streamable-http for Inspector. |
 | `STM_CONSOLIDATION_ACCESS_THRESHOLD` | number | `3` | no | all | Number of times an STM memory must be accessed before it qualifies for automatic promotion to LTM. Defaults to 3. |
 | `STM_CONSOLIDATION_INTERVAL_MS` | number | `300000` | no | all | How often the consolidation job scans for promotion candidates, in milliseconds. Defaults to 5 minutes. Set to 0 to disable the scheduler. |
