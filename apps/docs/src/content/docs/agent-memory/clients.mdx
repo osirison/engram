@@ -11,11 +11,10 @@ sidebar:
 > agents read it from the repo at runtime. This page is a published mirror.
 
 How each of the five AI coding agents connects to the one persistent ENGRAM
-server ([server runbook](/docs/agent-memory/server/)) and follows the
-[agent memory contract](/docs/agent-memory/contract/). Every agent
-authenticates with its own API key
-([Provision agent API keys](/docs/how-to/provision-agent-keys/)) and uses
-`userId: "qp"`.
+server ([`agent-memory-server.md`](/docs/agent-memory/server/)) and follows the
+[Agent Memory Contract](/docs/agent-memory/contract/). Every agent authenticates
+with its own API key ([`security/agent-keys.md`](/docs/how-to/provision-agent-keys/)) and
+uses `userId: "qp"`.
 
 **Guarantee legend:** 🟢 deterministic (a hook forces recall/store) ·
 🔴 best-effort (the model must choose to follow the directive; the platform has
@@ -35,8 +34,7 @@ no memory hook). Only **Claude Code** is 🟢 today.
 > launched from — each agent gets its **own** key (mint the whole fleet in one
 > pass: `pnpm --filter mcp-server provision-agent-keys -- --agents
 claude-code,copilot,cursor,codex,gemini --user qp`, see
-> [Provision agent API keys](/docs/how-to/provision-agent-keys/)); never commit
-> a key.
+> [`security/agent-keys.md`](/docs/how-to/provision-agent-keys/)); never commit a key.
 
 ## Claude Code (CLI) — 🟢 deterministic
 
@@ -51,10 +49,9 @@ pieces, all checked in:
    recalled-memory block that Claude Code injects into context;
    `.claude/hooks/engram-capture.sh` (SessionEnd) distills the finished session
    into memories. Both shell out to the `engram` CLI
-   ([`packages/agent-bridge`](https://github.com/osirison/engram/tree/main/packages/agent-bridge))
-   and **always exit 0** — whether the CLI is missing or the server is down — so
-   a session is never blocked. `scripts/test-engram-hooks.sh` asserts this
-   contract.
+   ([`packages/agent-bridge`](https://github.com/osirison/engram/tree/main/packages/agent-bridge)) and **always exit 0** —
+   whether the CLI is missing or the server is down — so a session is never
+   blocked. `scripts/test-engram-hooks.sh` asserts this contract.
 3. **Directive** — the ENGRAM contract block is appended to `CLAUDE.md`.
 
 **This repo ships "live tools, hooks opt-in":** the `engram` MCP tools are
@@ -219,6 +216,5 @@ directive from `GEMINI.md`; ask Gemini to call `load_context` for the project.
 
 Claude Desktop is stdio-only, has no hooks, and does not read `CLAUDE.md`. It can
 only make the tools _available_ on demand via an `mcp-remote` stdio bridge in
-`claude_desktop_config.json` (see
-[MCP client setup](/docs/getting-started/mcp-client-setup/) for config-file
+`claude_desktop_config.json` (see [`SETUP.md`](/docs/getting-started/) for config-file
 locations). No automatic store/recall — not a WP5 acceptance target.

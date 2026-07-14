@@ -1,6 +1,6 @@
 ---
 title: Agent Memory Migration Runbook
-description: One-time bulk import of qp's existing native agent-memory files (Claude Code, Copilot, Cursor, Codex, Gemini, markdown) into ENGRAM using WP4's importer CLI, with local-embedding cost control and a real-embedding reindex.
+description: One-time bulk import of existing native agent-memory files (Claude Code, Copilot, Cursor, Codex, Gemini, markdown) into ENGRAM using the WP4 importer CLI, with local-embedding cost control and a real-embedding reindex.
 ---
 
 > Also published at [engram.events/docs/agent-memory/migration/](https://engram.events/docs/agent-memory/migration/). This repository copy is canonical — agents read it at runtime.

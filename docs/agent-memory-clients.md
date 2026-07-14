@@ -46,7 +46,7 @@ pieces, all checked in:
    recalled-memory block that Claude Code injects into context;
    `.claude/hooks/engram-capture.sh` (SessionEnd) distills the finished session
    into memories. Both shell out to the `engram` CLI
-   ([`packages/agent-bridge`](./agent-memory-contract.md)) and **always exit 0** —
+   ([`packages/agent-bridge`](../packages/agent-bridge)) and **always exit 0** —
    whether the CLI is missing or the server is down — so a session is never
    blocked. `scripts/test-engram-hooks.sh` asserts this contract.
 3. **Directive** — the ENGRAM contract block is appended to `CLAUDE.md`.

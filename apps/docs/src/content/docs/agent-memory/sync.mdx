@@ -22,13 +22,13 @@ On a change under a watched root, the file is mapped to its WP4 importer source
 and that source is re-imported (the importer's ledger makes re-runs idempotent —
 only changed facts update):
 
-| File(s)                                                                      | Source        |
-| ---------------------------------------------------------------------------- | ------------- |
-| `CLAUDE.md`, `CLAUDE.local.md`, `.claude/**/memory/*.md`                     | `claude-code` |
-| `AGENTS.md`                                                                  | `codex`       |
-| `GEMINI.md`                                                                  | `gemini`      |
-| `.cursor/rules/*.mdc`, `.cursorrules`                                        | `cursor`      |
-| `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`  | `copilot`     |
+| File(s)                                                                     | Source        |
+| --------------------------------------------------------------------------- | ------------- |
+| `CLAUDE.md`, `CLAUDE.local.md`, `.claude/**/memory/*.md`                    | `claude-code` |
+| `AGENTS.md`                                                                 | `codex`       |
+| `GEMINI.md`                                                                 | `gemini`      |
+| `.cursor/rules/*.mdc`, `.cursorrules`                                       | `cursor`      |
+| `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` | `copilot`     |
 
 Bursty writes (editor temp-file + rename) are debounced so one import runs after
 the writes settle, not one per raw filesystem event.
@@ -43,7 +43,7 @@ of clobbering — the file change waits for manual reconciliation. Run with
 `--force` to override. (This is one-way: files → ENGRAM. Exporting ENGRAM back to
 files is WP3's job, kept separate.)
 
-### Conflict copies — nothing is lost
+### Conflict copies — nothing is lost (#239)
 
 When the skip fires and the file has **genuinely diverged** (its content differs
 from both the last import and the memory's current content), the file's version
@@ -66,7 +66,7 @@ then re-run with `--force`. The importer detects the convergence (file content
 now equals the memory), refreshes the ledger without writing the memory
 (`reconciled` in the run summary), the conflict clears, and the copy is removed.
 
-### Multi-root ledger namespacing
+### Multi-root ledger namespacing (#236)
 
 Ledger keys are namespaced per import root
 (`<tool>@<12-hex-root-fingerprint>:<relpath>[#anchor]`), so watching two
@@ -90,7 +90,7 @@ pnpm --filter mcp-server watch -- "$PWD" --user qp --scope project:engram --once
 ```
 
 As a long-lived daemon (systemd user service, alongside the MCP server — see
-the [server runbook](/docs/agent-memory/server/)):
+[`agent-memory-server.md`](/docs/agent-memory/server/)):
 
 ```bash
 cp deploy/systemd/engram-sync.service ~/.config/systemd/user/
