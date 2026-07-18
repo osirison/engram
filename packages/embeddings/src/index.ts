@@ -20,7 +20,6 @@ export type { EmbeddingModel, EmbeddingResult, GenerateEmbeddingInput } from './
 export {
   EMBEDDING_MODELS,
   MODEL_DIMENSIONS,
-  EMBEDDING_CACHE_TTL,
   MAX_TEXT_LENGTH,
   EmbeddingValidationError,
   EmbeddingApiError,

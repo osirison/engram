@@ -959,9 +959,12 @@ export class MemoryLtmService {
         lastAccessedAt: stmMemory.updatedAt,
       });
 
-      // Step 4: Atomic quota check + insert (serialized per user via a
-      // Postgres advisory lock), preserving the org scope from STM.
-      const result = await this.createRowWithQuota(userId, {
+      // Step 4: Atomic quota check + insert-or-tier-flip (serialized per user
+      // via a Postgres advisory lock), preserving the org scope from STM.
+      // When the STM provider is Postgres-backed the source row already lives
+      // in `memories`, so promotion updates it in place instead of inserting a
+      // duplicate id.
+      const result = await this.promoteRowWithQuota(userId, {
         id: stmMemory.id,
         userId: stmMemory.userId,
         organizationId: resolvedOrgId,
@@ -976,15 +979,21 @@ export class MemoryLtmService {
         embedding,
       });
 
-      // Step 5: Delete from STM storage (only after successful LTM creation)
+      // Step 5: Delete from STM storage (only after successful LTM creation).
+      // With the Postgres STM adapter the row was flipped in place, so the
+      // source no longer exists as short-term — that not-found is expected.
       try {
         await this.stmService.delete(userId, memoryId, organizationId ?? stmMemory.organizationId);
         this.logger.debug(`Successfully promoted memory ${memoryId} from STM to LTM`);
       } catch (stmDeleteError) {
-        // Log warning but don't fail the operation since LTM creation succeeded
-        this.logger.warn(
-          `Failed to delete STM memory ${memoryId} after promotion: ${stmDeleteError}`
-        );
+        if ((stmDeleteError as Error | undefined)?.name === 'StmMemoryNotFoundError') {
+          this.logger.debug(`STM source ${memoryId} already gone after in-place promotion`);
+        } else {
+          // Log warning but don't fail the operation since LTM creation succeeded
+          this.logger.warn(
+            `Failed to delete STM memory ${memoryId} after promotion: ${stmDeleteError}`
+          );
+        }
       }
 
       const ltmMemory = this.mapToLtmMemory(result);
@@ -1044,6 +1053,56 @@ export class MemoryLtmService {
 
       if (currentCount >= this.config.maxMemoriesPerUser) {
         throw new LtmMemoryQuotaExceededError(userId, this.config.maxMemoriesPerUser);
+      }
+
+      return (await tx.memory.create({ data })) as PrismaMemory;
+    });
+  }
+
+  /**
+   * Promotion write path: same advisory-lock quota transaction as
+   * {@link createRowWithQuota}, but tier-aware. When the source short-term
+   * row already lives in `memories` (Postgres STM adapter), promotion is an
+   * in-place flip to long-term — inserting would violate the id uniqueness.
+   * When STM lives elsewhere (in-process adapter), it inserts as before.
+   * A concurrent double-promote still surfaces as P2002 on the create path,
+   * which ConsolidationService already treats as "already promoted".
+   */
+  private async promoteRowWithQuota(
+    userId: string,
+    data: LtmMemoryCreateData & { id: string; createdAt: Date; updatedAt: Date }
+  ): Promise<PrismaMemory> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await (this.prisma as any).$transaction(async (tx: any) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LTM_QUOTA_LOCK_NAMESPACE}::int4, hashtext(${userId})::int4)`;
+
+      const currentCount: number = await tx.memory.count({
+        where: {
+          userId: userId,
+          type: MemoryType.LONG_TERM,
+        },
+      });
+
+      if (currentCount >= this.config.maxMemoriesPerUser) {
+        throw new LtmMemoryQuotaExceededError(userId, this.config.maxMemoriesPerUser);
+      }
+
+      const existing = await tx.memory.findUnique({ where: { id: data.id } });
+      if (existing && existing.userId === userId && existing.type === MemoryType.SHORT_TERM) {
+        return (await tx.memory.update({
+          where: { id: data.id },
+          data: {
+            organizationId: data.organizationId,
+            scope: data.scope,
+            content: data.content,
+            metadata: data.metadata,
+            tags: data.tags,
+            type: MemoryType.LONG_TERM,
+            expiresAt: null,
+            embedding: data.embedding,
+            version: { increment: 1 },
+          },
+        })) as PrismaMemory;
       }
 
       return (await tx.memory.create({ data })) as PrismaMemory;

@@ -16,13 +16,12 @@ can continue without a vector.
 
 ## Configuration
 
-| Variable              | Required | Default                  | Purpose                                                              |
-| --------------------- | -------- | ------------------------ | -------------------------------------------------------------------- |
-| `EMBEDDING_PROVIDER`  | No       | `ollama`                 | Provider selection: `ollama`, `openai`, `local`, or `disabled`       |
-| `EMBEDDING_MODEL`     | No       | per provider             | Model id; ollama→`nomic-embed-text`, openai→`text-embedding-3-small` |
-| `OLLAMA_URL`          | No       | `http://localhost:11434` | Ollama server base URL                                               |
-| `OPENAI_API_KEY`      | No       | None                     | Required only when `EMBEDDING_PROVIDER=openai`                       |
-| `EMBEDDING_CACHE_TTL` | No       | 30 days                  | Redis cache lifetime in seconds                                      |
+| Variable             | Required | Default                  | Purpose                                                              |
+| -------------------- | -------- | ------------------------ | -------------------------------------------------------------------- |
+| `EMBEDDING_PROVIDER` | No       | `ollama`                 | Provider selection: `ollama`, `openai`, `local`, or `disabled`       |
+| `EMBEDDING_MODEL`    | No       | per provider             | Model id; ollama→`nomic-embed-text`, openai→`text-embedding-3-small` |
+| `OLLAMA_URL`         | No       | `http://localhost:11434` | Ollama server base URL                                               |
+| `OPENAI_API_KEY`     | No       | None                     | Required only when `EMBEDDING_PROVIDER=openai`                       |
 
 Default setup — install [Ollama](https://ollama.com/download) and pull the model:
 

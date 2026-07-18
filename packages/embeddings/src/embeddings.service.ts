@@ -1,10 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { createHash } from 'crypto';
-import { RedisService } from '@engram/redis';
 import {
-  EMBEDDING_CACHE_TTL,
   type EmbeddingResult,
-  type EmbeddingModel,
   type GenerateEmbeddingInput,
   generateEmbeddingSchema,
 } from './types.js';
@@ -21,12 +17,9 @@ export class EmbeddingsService {
   private readonly logger = new Logger(EmbeddingsService.name);
   private readonly counters = {
     requests: 0,
-    cacheHits: 0,
     providerSuccess: 0,
     providerErrors: 0,
     providerNull: 0,
-    cacheReadErrors: 0,
-    cacheWriteErrors: 0,
   };
 
   private static readonly METRIC_PREFIX = 'engram_embeddings';
@@ -34,7 +27,6 @@ export class EmbeddingsService {
   private readonly runtime: EmbeddingRuntime;
 
   constructor(
-    @Optional() private readonly redis?: RedisService,
     @Optional() @Inject(EMBEDDING_PROVIDER_TOKEN) private readonly provider?: EmbeddingProvider,
     @Optional() @Inject(EMBEDDING_RUNTIME_TOKEN) runtime?: EmbeddingRuntime
   ) {
@@ -59,42 +51,6 @@ export class EmbeddingsService {
     const { text } = parsed.data;
     const model = parsed.data.model ?? this.runtime.model;
 
-    const cacheKey = this.buildCacheKey(text, model);
-
-    // Try cache first
-    if (this.redis) {
-      try {
-        const cached = await this.redis.get(cacheKey);
-        if (cached) {
-          const parsedCached = this.parseCachedEmbedding(cached, model);
-          if (parsedCached) {
-            this.counters.cacheHits += 1;
-            this.logStructured('debug', 'embedding.generate.cache_hit', {
-              cacheKey,
-              counters: this.counters,
-            });
-            return {
-              embedding: parsedCached.embedding,
-              model: parsedCached.model,
-              cached: true,
-            };
-          }
-
-          this.counters.cacheReadErrors += 1;
-          this.logStructured('warn', 'embedding.generate.cache_parse_error', {
-            cacheKey,
-            counters: this.counters,
-          });
-        }
-      } catch (err) {
-        this.counters.cacheReadErrors += 1;
-        this.logStructured('warn', 'embedding.generate.cache_read_error', {
-          error: err instanceof Error ? err.message : String(err),
-          counters: this.counters,
-        });
-      }
-    }
-
     // Generate via provider
     const embedding = await this.provider?.generate(text, model).catch((error) => {
       this.counters.providerErrors += 1;
@@ -115,11 +71,6 @@ export class EmbeddingsService {
     }
 
     this.counters.providerSuccess += 1;
-
-    // Persist to cache asynchronously — don't block the response
-    if (this.redis) {
-      void this.cacheEmbedding(cacheKey, embedding, model);
-    }
 
     this.logStructured('debug', 'embedding.generate.success', {
       model,
@@ -147,67 +98,6 @@ export class EmbeddingsService {
     });
 
     return `${lines.join('\n')}\n`;
-  }
-
-  private async cacheEmbedding(
-    key: string,
-    embedding: number[],
-    model: EmbeddingModel
-  ): Promise<void> {
-    try {
-      await this.redis!.set(key, JSON.stringify({ embedding, model }), EMBEDDING_CACHE_TTL);
-      this.logStructured('debug', 'embedding.generate.cache_write_success', {
-        cacheKey: key,
-      });
-    } catch (err) {
-      this.counters.cacheWriteErrors += 1;
-      this.logStructured('warn', 'embedding.generate.cache_write_error', {
-        cacheKey: key,
-        error: err instanceof Error ? err.message : String(err),
-        counters: this.counters,
-      });
-    }
-  }
-
-  private buildCacheKey(text: string, model: EmbeddingModel): string {
-    const hash = createHash('sha256').update(text).digest('hex').slice(0, 32);
-    return `embedding:${model}:${hash}`;
-  }
-
-  private parseCachedEmbedding(
-    cachedPayload: string,
-    requestedModel: EmbeddingModel
-  ): { embedding: number[]; model: EmbeddingModel } | null {
-    const parsed = JSON.parse(cachedPayload) as unknown;
-
-    // Backward compatibility for old cache entries that stored only the vector array.
-    if (Array.isArray(parsed) && parsed.every((value) => typeof value === 'number')) {
-      return {
-        embedding: parsed,
-        model: requestedModel,
-      };
-    }
-
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
-    const model = (parsed as { model?: unknown }).model;
-    const embedding = (parsed as { embedding?: unknown }).embedding;
-
-    // The cache key already encodes the model, so a payload recorded under a
-    // different model indicates corruption — treat it as a parse error.
-    if (
-      !Array.isArray(embedding) ||
-      embedding.length === 0 ||
-      !embedding.every((value) => typeof value === 'number') ||
-      typeof model !== 'string' ||
-      model !== requestedModel
-    ) {
-      return null;
-    }
-
-    return { embedding, model };
   }
 
   private logStructured(

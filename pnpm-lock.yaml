@@ -706,9 +706,6 @@ importers:
 
   packages/embeddings:
     dependencies:
-      '@engram/redis':
-        specifier: workspace:*
-        version: link:../redis
       '@nestjs/common':
         specifier: ^11.1.24
         version: 11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2)

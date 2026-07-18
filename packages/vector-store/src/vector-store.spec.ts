@@ -77,6 +77,39 @@ describe('QdrantVectorStore', () => {
       await expect(store.ensureReady(0)).rejects.toThrow('positive integer');
     });
 
+    it('treats losing a concurrent create race (409 already exists) as success', async () => {
+      // exists-check says no, but another process creates the collection first.
+      client.createCollection = vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409 }));
+      client.getCollection = vi
+        .fn()
+        .mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } });
+
+      await expect(store.ensureReady(1536)).resolves.toBeUndefined();
+    });
+
+    it('still enforces the dimension guard after losing the create race', async () => {
+      client.createCollection = vi.fn().mockRejectedValue(
+        Object.assign(new Error('Wrong input: Collection `test_memories` already exists!'), {
+          status: 409,
+        })
+      );
+      client.getCollection = vi
+        .fn()
+        .mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } });
+
+      await expect(store.ensureReady(768)).rejects.toThrow(/1536-dimensional.*768-dim/s);
+    });
+
+    it('rethrows non-conflict create failures', async () => {
+      client.createCollection = vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('Service Unavailable'), { status: 503 }));
+
+      await expect(store.ensureReady(1536)).rejects.toThrow('Service Unavailable');
+    });
+
     it('throws an actionable error when the existing collection has different dimensions', async () => {
       client.getCollections = vi
         .fn()
