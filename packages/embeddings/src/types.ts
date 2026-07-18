@@ -26,9 +26,6 @@ export const MODEL_DIMENSIONS: Record<string, number> = {
 /** Well-known model ids (compat export; no longer a closed set). */
 export const EMBEDDING_MODELS: readonly string[] = Object.keys(MODEL_DIMENSIONS);
 
-/** Default cache TTL: 30 days in seconds. */
-export const EMBEDDING_CACHE_TTL = 60 * 60 * 24 * 30;
-
 /** Maximum text length accepted for embedding (aligned with OpenAI token limits). */
 export const MAX_TEXT_LENGTH = 8191;
 

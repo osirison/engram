@@ -80,7 +80,7 @@ The single `Memory` Prisma model (in `prisma/schema.prisma`) serves both memory 
 
 ### Memory Tiers
 
-- **STM** (`packages/memory-stm`): Redis-backed with TTL. `MemoryStmService` uses `RedisService` and `StmKeyBuilder` for namespaced keys.
+- **STM** (`packages/memory-stm`): Postgres-backed with TTL on database-bearing profiles — `PostgresStmAdapter` stores rows in the shared `memories` table (`type='short-term'`, `expiresAt`; expiry filtered on read + swept by `StmSweepService`, `STM_SWEEP_INTERVAL_MS`). Profile-memory uses the in-process `InMemoryStmAdapter`. Both bind to `STM_PROVIDER` and the `MemoryStmService` class token.
 - **LTM** (`packages/memory-ltm`): Postgres-backed via Prisma. `MemoryLtmService` handles create/read/update/delete and cursor-resumable `reindex()` for rebuilding vector embeddings.
 
 ### Vector Storage (`packages/vector-store`)
@@ -94,7 +94,7 @@ Both backends are injected via `VECTOR_STORE_TOKEN` and infer vector dimensional
 
 ### Embeddings (`packages/embeddings`)
 
-Provider selected by `EMBEDDING_PROVIDER`: `ollama` (default — local Ollama server, model `nomic-embed-text`, 768 dims, no API key), `openai` (requires `OPENAI_API_KEY`), `local` (deterministic hash, for testing), or `disabled`. `EMBEDDING_MODEL` overrides the per-provider default model; `OLLAMA_URL` points at the Ollama server (default `http://localhost:11434`). `resolveEmbeddingRuntime()` in `embedding-runtime.ts` is the single source of truth for effective provider/model/dimensions. The service returns `null` when unavailable so memory workflows continue without a vector. Embeddings are cached in Redis (`EMBEDDING_CACHE_TTL`, default 30 days; cache keys include the model id).
+Provider selected by `EMBEDDING_PROVIDER`: `ollama` (default — local Ollama server, model `nomic-embed-text`, 768 dims, no API key), `openai` (requires `OPENAI_API_KEY`), `local` (deterministic hash, for testing), or `disabled`. `EMBEDDING_MODEL` overrides the per-provider default model; `OLLAMA_URL` points at the Ollama server (default `http://localhost:11434`). `resolveEmbeddingRuntime()` in `embedding-runtime.ts` is the single source of truth for effective provider/model/dimensions. The service returns `null` when unavailable so memory workflows continue without a vector. There is no cross-request embedding cache; generated embeddings persist on memory rows (`embedding Float[]`).
 
 ### MCP Tools (`packages/core/src/mcp/tools/`)
 

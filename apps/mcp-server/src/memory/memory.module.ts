@@ -15,6 +15,7 @@ import { RedisModule } from '@engram/redis';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
+import { StmSweepService } from './stm-sweep.service';
 import { CorpusConsolidationSchedulerService } from './corpus-consolidation-scheduler.service';
 import { InsightExtractionService } from './insight-extraction.service';
 import { MemoryExportService } from './export/memory-export.service';
@@ -56,6 +57,9 @@ export class MemoryModule {
       // CorpusConsolidationService is injected @Optional().
       CorpusConsolidationSchedulerService,
       InsightExtractionService,
+      // Expired-STM sweep: no-ops unless the active STM provider exposes
+      // sweepExpired (i.e. the Postgres adapter on DB-bearing profiles).
+      StmSweepService,
     ];
 
     if (capabilities.requiresRedis) {

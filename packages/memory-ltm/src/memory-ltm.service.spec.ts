@@ -56,6 +56,7 @@ describe('MemoryLtmService', () => {
       memory: {
         create: vi.fn(),
         findFirst: vi.fn(),
+        findUnique: vi.fn(),
         update: vi.fn(),
         deleteMany: vi.fn(),
         findMany: vi.fn(),
@@ -784,6 +785,54 @@ describe('MemoryLtmService', () => {
           type: 'long-term',
           expiresAt: null,
         })
+      );
+    });
+
+    it('flips a Postgres-resident short-term row in place instead of inserting a duplicate id', async () => {
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      stmService.delete.mockResolvedValue(undefined);
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      // The source STM row already lives in `memories` (Postgres STM adapter).
+      prismaService.memory.findUnique.mockResolvedValue({
+        id: mockMemoryId,
+        userId: mockUserId,
+        type: 'short-term',
+      });
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      const result = await service.promote(mockUserId, mockMemoryId);
+
+      expect(prismaService.memory.create).not.toHaveBeenCalled();
+      expect(prismaService.memory.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockMemoryId },
+          data: expect.objectContaining({
+            type: 'long-term',
+            expiresAt: null,
+            version: { increment: 1 },
+          }),
+        })
+      );
+      expect(result).toEqual(expect.objectContaining({ type: 'long-term', expiresAt: null }));
+    });
+
+    it('treats a not-found STM delete after an in-place flip as success', async () => {
+      stmService.findById.mockResolvedValue(mockStmMemory);
+      const notFound = new Error(`STM Memory with ID ${mockMemoryId} not found`);
+      notFound.name = 'StmMemoryNotFoundError';
+      stmService.delete.mockRejectedValue(notFound);
+      prismaService.memory.count.mockResolvedValue(0);
+      prismaService.memory.findFirst.mockResolvedValue(null);
+      prismaService.memory.findUnique.mockResolvedValue({
+        id: mockMemoryId,
+        userId: mockUserId,
+        type: 'short-term',
+      });
+      prismaService.memory.update.mockResolvedValue(mockMemory);
+
+      await expect(service.promote(mockUserId, mockMemoryId)).resolves.toEqual(
+        expect.objectContaining({ type: 'long-term' })
       );
     });
 

@@ -102,8 +102,27 @@ export class QdrantVectorStore implements VectorStore {
 
     const exists = await this.qdrant.collectionExists(this.collection);
     if (!exists) {
-      await this.qdrant.createCollection(this.collection, dimensions, 'Cosine');
-      this.logger.log(`Created vector collection ${this.collection} (${dimensions} dims)`);
+      try {
+        await this.qdrant.createCollection(this.collection, dimensions, 'Cosine');
+        this.logger.log(`Created vector collection ${this.collection} (${dimensions} dims)`);
+      } catch (error) {
+        // A concurrent process can win the exists→create race (Qdrant answers
+        // 409 "already exists"). That is success for our purposes — fall
+        // through to the dimension guard below instead of failing the upsert.
+        if (!this.isAlreadyExistsError(error)) {
+          throw error;
+        }
+        this.logger.debug(`Collection ${this.collection} was created concurrently; continuing`);
+        const liveSize = await this.readCollectionSize();
+        if (liveSize !== null && liveSize !== dimensions) {
+          throw new Error(
+            `Qdrant collection "${this.collection}" is ${liveSize}-dimensional but the embedding ` +
+              `pipeline produced ${dimensions}-dim vectors. After changing the embedding model, ` +
+              `run an unscoped full reindex with recreate+regenerate ` +
+              `(CLI: pnpm --filter mcp-server reindex -- --recreate --regenerate).`
+          );
+        }
+      }
     } else {
       // Guard against an existing collection created for a different embedding
       // model: without this check, every upsert fails point-by-point with an
@@ -119,6 +138,22 @@ export class QdrantVectorStore implements VectorStore {
       }
     }
     this.ensured = true;
+  }
+
+  /**
+   * True when a createCollection failure means "another writer already
+   * created it" (HTTP 409, or Qdrant's "already exists" message).
+   */
+  private isAlreadyExistsError(error: unknown): boolean {
+    const status = (error as { status?: unknown })?.status;
+    if (status === 409) {
+      return true;
+    }
+    const message =
+      error instanceof Error
+        ? error.message
+        : String((error as { data?: { status?: { error?: unknown } } })?.data?.status?.error ?? '');
+    return /already exists/i.test(message);
   }
 
   /**

@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { RedisModule } from '@engram/redis';
 import { EmbeddingsService } from './embeddings.service.js';
 import {
   EMBEDDING_RUNTIME_TOKEN,
@@ -15,7 +14,6 @@ import type { EmbeddingProvider } from './providers/embedding-provider.interface
 import { selectEmbeddingProvider } from './providers/select-embedding-provider.js';
 
 @Module({
-  imports: [RedisModule],
   providers: [
     OllamaEmbeddingProvider,
     OpenAIEmbeddingProvider,
