@@ -10,14 +10,14 @@ import {
   OAuthService,
   SessionService,
 } from '@engram/auth';
-import { RedisModule } from '@engram/redis';
 import type { ProfileCapabilities } from '@engram/config';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { AuthController, OAUTH_REDIRECT_BASE_URL } from './auth.controller';
 import { AuthResolver } from './auth-resolver.service';
 import { UserService } from './user.service';
-import { RedisSessionStore } from './redis-session.store';
-import { RedisRateLimitStore } from './redis-rate-limit.store';
+import { PostgresSessionStore } from './postgres-session.store';
+import { PostgresRateLimitStore } from './postgres-rate-limit.store';
+import { AuthStoreSweepService } from './auth-store-sweep.service';
 import { McpAuthMiddleware } from './mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './mcp-rate-limit.middleware';
 import {
@@ -32,21 +32,20 @@ import {
  * Authentication & multi-tenancy wiring for the MCP server (Epic E4).
  *
  * Profile-gated: imported by `app.module` only when the profile has a database
- * (lite + enterprise). JWT verification and API-key auth need only Postgres, so
- * they are available in `lite`; OAuth login, Redis-backed sessions, and rate
- * limiting require Redis and are wired only in `enterprise`.
+ * (lite + enterprise). JWT verification and API-key auth need only Postgres and
+ * are available in `lite`; OAuth login, sessions, rate limiting, and the jti
+ * denylist are part of the multi-tenant stack and are wired only when
+ * `capabilities.multiTenant`. All stores are Postgres-backed
+ * (`auth_kv_entries` / `rate_limit_counters`) — no Redis.
  */
 @Module({})
 export class AuthModule {
   static forRoot(capabilities: ProfileCapabilities): DynamicModule {
     const jwtConfig = parseJwtConfig();
-    const redisEnabled = capabilities.requiresRedis;
+    const multiTenant = capabilities.multiTenant;
     const rateLimitConfig = parseRateLimitConfig();
 
     const imports: Array<Type<unknown> | DynamicModule> = [ApiKeysModule];
-    if (redisEnabled) {
-      imports.push(RedisModule.forRoot());
-    }
 
     const providers: Provider[] = [UserService, AuthResolver];
     const exports: Array<Type<unknown> | symbol> = [AuthResolver, UserService];
@@ -74,16 +73,20 @@ export class AuthModule {
     });
     exports.push(McpAuthMiddleware);
 
-    if (redisEnabled) {
-      providers.push(RedisSessionStore, RedisRateLimitStore);
+    if (multiTenant) {
+      providers.push(
+        PostgresSessionStore,
+        PostgresRateLimitStore,
+        AuthStoreSweepService,
+      );
 
       providers.push({
         provide: SessionService,
-        useFactory: (store: RedisSessionStore): SessionService =>
+        useFactory: (store: PostgresSessionStore): SessionService =>
           new SessionService(store, {
             sessionTtlSeconds: jwtConfig?.expiresInSeconds,
           }),
-        inject: [RedisSessionStore],
+        inject: [PostgresSessionStore],
       });
       providers.push({
         provide: OAuthService,
@@ -99,23 +102,23 @@ export class AuthModule {
       if (rateLimitConfig.enabled) {
         providers.push({
           provide: McpRateLimitMiddleware,
-          useFactory: (store: RedisRateLimitStore): McpRateLimitMiddleware =>
+          useFactory: (store: PostgresRateLimitStore): McpRateLimitMiddleware =>
             new McpRateLimitMiddleware(store, rateLimitConfig),
-          inject: [RedisRateLimitStore],
+          inject: [PostgresRateLimitStore],
         });
         exports.push(McpRateLimitMiddleware);
       }
 
-      // OAuth login endpoints require both sessions (Redis) and JWT issuance.
-      // The jti denylist (JWT revocation on logout) shares the Redis session
-      // store; without Redis (lite profile) JWTs are not revocable and the
-      // AuthResolver skips the denylist check.
+      // OAuth login endpoints require both sessions and JWT issuance. The jti
+      // denylist (JWT revocation on logout) shares the session store; on
+      // single-tenant profiles JWTs are not revocable and the AuthResolver
+      // skips the denylist check.
       if (jwtConfig) {
         providers.push({
           provide: JwtRevocationService,
-          useFactory: (store: RedisSessionStore): JwtRevocationService =>
+          useFactory: (store: PostgresSessionStore): JwtRevocationService =>
             new JwtRevocationService(store),
-          inject: [RedisSessionStore],
+          inject: [PostgresSessionStore],
         });
         exports.push(JwtRevocationService);
         controllers.push(AuthController);
