@@ -77,7 +77,7 @@ describe('CorpusConsolidationService (G3-T2)', () => {
       $transaction: vi.fn(),
     };
     vectorStore = {
-      backend: 'qdrant' as const,
+      backend: 'pgvector' as const,
       upsert: vi.fn(),
       delete: vi.fn(),
       ensureReady: vi.fn(),

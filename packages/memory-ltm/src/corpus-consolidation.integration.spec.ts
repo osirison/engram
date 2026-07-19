@@ -67,7 +67,7 @@ describePg('CorpusConsolidationService merge round trip (integration, G3-T2)', (
     // Mocked vector store: for any seed search, report the OTHER two rows as
     // in-band near-duplicates ([0.85, 0.97) similarity).
     const vectorStore = {
-      backend: 'qdrant' as const,
+      backend: 'pgvector' as const,
       upsert: vi.fn(),
       delete: vi.fn(),
       ensureReady: vi.fn(),

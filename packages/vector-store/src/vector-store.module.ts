@@ -1,19 +1,11 @@
 import { Module } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
-import { QdrantModule } from './qdrant.module';
-import { QdrantService } from './qdrant.service';
-import { DEFAULT_VECTOR_COLLECTION, QdrantVectorStore } from './qdrant.vector-store';
 import { PgVectorStore, type PgVectorClient, type PgVectorOptions } from './pgvector.vector-store';
-import { VECTOR_STORE_TOKEN, type VectorBackend, type VectorStore } from './vector-store.interface';
-
-function resolveBackend(): VectorBackend {
-  const raw = (process.env.VECTOR_BACKEND ?? 'qdrant').toLowerCase();
-  return raw === 'pgvector' ? 'pgvector' : 'qdrant';
-}
+import { VECTOR_STORE_TOKEN, type VectorStore } from './vector-store.interface';
 
 /**
  * Optional strict dimensionality pin from `VECTOR_DIMENSIONS`. When unset,
- * both backends infer dimensions from the first upserted vector, so the
+ * the store infers dimensions from the first upserted vector, so the
  * embedding model alone determines the index dimensionality.
  */
 function resolveDimensions(): number | undefined {
@@ -39,41 +31,34 @@ function resolvePgVectorOptions(): PgVectorOptions {
 }
 
 /**
- * Provides the active {@link VectorStore} implementation under
- * {@link VECTOR_STORE_TOKEN}, selected from the `VECTOR_BACKEND` environment
- * variable (`qdrant` by default, `pgvector` for the Postgres-backed provider).
+ * Provides the {@link VectorStore} implementation under
+ * {@link VECTOR_STORE_TOKEN}. pgvector is the only backend: vectors live in
+ * the runtime-managed `embedding_vec` column on `memories`, so the vector
+ * index needs no service beyond Postgres itself.
  *
- * The Qdrant collection name is configurable via `VECTOR_COLLECTION`. Both
- * backends infer embedding dimensionality from the first upserted vector;
- * `VECTOR_DIMENSIONS` acts as an optional strict pin for pgvector.
- * `PrismaService` is injected optionally so Qdrant-only deployments do not
- * require a database connection from this module.
+ * The store infers embedding dimensionality from the first upserted vector;
+ * `VECTOR_DIMENSIONS` acts as an optional strict pin. HNSW tuning via
+ * `PGVECTOR_HNSW_M` / `PGVECTOR_HNSW_EF_CONSTRUCTION` / `PGVECTOR_HNSW_EF_SEARCH`.
  */
 @Module({
-  imports: [QdrantModule],
   providers: [
     {
       provide: VECTOR_STORE_TOKEN,
-      inject: [QdrantService, { token: PrismaService, optional: true }],
-      useFactory: (qdrant: QdrantService, prisma?: PgVectorClient): VectorStore => {
-        const backend = resolveBackend();
-        if (backend === 'pgvector') {
-          if (!prisma) {
-            throw new Error(
-              'VECTOR_BACKEND=pgvector requires PrismaService to be available. ' +
-                'Ensure the database module is registered.'
-            );
-          }
-          return new PgVectorStore(
-            prisma,
-            resolveDimensions(),
-            undefined,
-            undefined,
-            resolvePgVectorOptions()
+      inject: [{ token: PrismaService, optional: true }],
+      useFactory: (prisma?: PgVectorClient): VectorStore => {
+        if (!prisma) {
+          throw new Error(
+            'The pgvector store requires PrismaService to be available. ' +
+              'Ensure the database module is registered.'
           );
         }
-        const collection = process.env.VECTOR_COLLECTION ?? DEFAULT_VECTOR_COLLECTION;
-        return new QdrantVectorStore(qdrant, collection);
+        return new PgVectorStore(
+          prisma,
+          resolveDimensions(),
+          undefined,
+          undefined,
+          resolvePgVectorOptions()
+        );
       },
     },
   ],

@@ -1,7 +1,4 @@
-export { QdrantModule } from './qdrant.module';
-export { QdrantService } from './qdrant.service';
 export { VectorStoreModule } from './vector-store.module';
-export { QdrantVectorStore, DEFAULT_VECTOR_COLLECTION } from './qdrant.vector-store';
 export {
   PgVectorStore,
   PGVECTOR_TABLE,

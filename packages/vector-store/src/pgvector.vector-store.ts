@@ -130,6 +130,35 @@ export class PgVectorStore implements VectorStore {
       throw new Error('dimensions must be a positive integer');
     }
 
+    // Provisioning DDL (ALTER TABLE / CREATE INDEX) takes conflicting locks,
+    // so concurrent cold-boot processes can deadlock or lose a race against
+    // each other and against in-flight writes. Every statement is IF NOT
+    // EXISTS, so a short retry converges on whichever process won.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await this.provision(dimensions);
+        this.ensured = true;
+        this.logger.log(`pgvector ready: ${this.table}.${this.column} (${dimensions} dims)`);
+        return;
+      } catch (error) {
+        // The dimension-mismatch guard is an operator error, not a race —
+        // retrying cannot fix it.
+        if (error instanceof Error && error.message.includes('recreate+regenerate')) {
+          throw error;
+        }
+        lastError = error;
+        this.logger.warn(
+          `pgvector provisioning attempt ${attempt} failed (retrying): ` +
+            `${error instanceof Error ? error.message : String(error)}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+    }
+    throw lastError;
+  }
+
+  private async provision(dimensions: number): Promise<void> {
     await this.client.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector');
     await this.client.$executeRawUnsafe(
       `ALTER TABLE "${this.table}" ADD COLUMN IF NOT EXISTS "${this.column}" vector(${dimensions})`
@@ -153,8 +182,6 @@ export class PgVectorStore implements VectorStore {
       `CREATE INDEX IF NOT EXISTS "${PGVECTOR_INDEX}" ON "${this.table}" ` +
         `USING hnsw ("${this.column}" vector_cosine_ops)${this.hnswBuildClause()}`
     );
-    this.ensured = true;
-    this.logger.log(`pgvector ready: ${this.table}.${this.column} (${dimensions} dims)`);
   }
 
   /**

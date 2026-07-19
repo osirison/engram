@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ENGRAM is a TypeScript monorepo for an MCP (Model Context Protocol) memory server. The main runtime is a NestJS app (`apps/mcp-server`) backed by PostgreSQL, Redis, and Qdrant. Turborepo orchestrates builds across pnpm workspaces.
+ENGRAM is a TypeScript monorepo for an MCP (Model Context Protocol) memory server. The main runtime is a NestJS app (`apps/mcp-server`) backed by PostgreSQL (with pgvector) and, on the enterprise profile, Redis. Turborepo orchestrates builds across pnpm workspaces.
 
 ## Commands
 
@@ -20,7 +20,7 @@ All commands run from the repository root. Use `pnpm <command>` if pnpm is insta
 ```bash
 pnpm install
 cp .env.example .env           # then edit as needed
-pnpm docker:up                 # starts PostgreSQL, Redis, Qdrant
+pnpm docker:up                 # starts PostgreSQL (pgvector), Redis
 pnpm db:generate               # generate Prisma client
 pnpm db:migrate                # run migrations
 pnpm build
@@ -85,12 +85,7 @@ The single `Memory` Prisma model (in `prisma/schema.prisma`) serves both memory 
 
 ### Vector Storage (`packages/vector-store`)
 
-Two interchangeable backends selected by `VECTOR_BACKEND` env var:
-
-- `qdrant` (default) — uses a separate Qdrant service; requires `QDRANT_URL`.
-- `pgvector` — stores vectors in the runtime-managed `embedding_vec` column on `memories`; requires `pgvector/pgvector:pg16+` Docker image. Qdrant service not needed.
-
-Both backends are injected via `VECTOR_STORE_TOKEN` and infer vector dimensionality from the first upserted vector (`VECTOR_DIMENSIONS` is an optional strict pin). Both fail loudly with reindex guidance when the existing index dimensionality no longer matches the embedding pipeline. Switch backends by changing `VECTOR_BACKEND` in `.env`.
+pgvector is the only backend: vectors live in the runtime-managed `embedding_vec` column on `memories` (requires the `pgvector/pgvector:pg16+` Docker image — no separate vector service). The store is injected via `VECTOR_STORE_TOKEN` and infers vector dimensionality from the first upserted vector (`VECTOR_DIMENSIONS` is an optional strict pin); it fails loudly with reindex guidance when the existing index dimensionality no longer matches the embedding pipeline. HNSW tuning via `PGVECTOR_HNSW_M` / `PGVECTOR_HNSW_EF_CONSTRUCTION` / `PGVECTOR_HNSW_EF_SEARCH`.
 
 ### Embeddings (`packages/embeddings`)
 
@@ -102,7 +97,7 @@ Each tool exports: a strict Zod input schema, a typed handler function, and a to
 
 ### NestJS Module Wiring (`apps/mcp-server/src/app.module.ts`)
 
-Root imports: `ConfigModule` (global, validates env via `@engram/config`), `LoggingModule`, `McpModule`, `PrismaModule` (global), `RedisModule`, `QdrantModule`, `HealthModule`, `MemoryModule`.
+Root imports: `ConfigModule` (global, validates env via `@engram/config`), `LoggingModule`, `McpModule`, `PrismaModule` (global), `RedisModule` (enterprise), `HealthModule`, `MemoryModule`.
 
 ### Reindex / Backfill
 
@@ -126,21 +121,19 @@ Dependency-free harness for scoring retrieval quality (precision@k, recall@k, MR
 
 Key variables (full list in `.env.example`):
 
-| Variable                      | Purpose                                                 |
-| ----------------------------- | ------------------------------------------------------- |
-| `DATABASE_URL`                | PostgreSQL connection string                            |
-| `REDIS_URL`                   | Redis connection string                                 |
-| `QDRANT_URL`                  | Qdrant HTTP URL (required when `VECTOR_BACKEND=qdrant`) |
-| `VECTOR_BACKEND`              | `qdrant` or `pgvector`                                  |
-| `EMBEDDING_PROVIDER`          | `ollama` (default), `openai`, `local`, or `disabled`    |
-| `EMBEDDING_MODEL`             | Model id; defaults per provider (`nomic-embed-text`)    |
-| `OLLAMA_URL`                  | Ollama server URL (default `http://localhost:11434`)    |
-| `OPENAI_API_KEY`              | Required only when `EMBEDDING_PROVIDER=openai`          |
-| `MCP_ADMIN_TOKEN`             | Required for reindex admin MCP tools                    |
-| `PGVECTOR_TEST_URL`           | Enables pgvector integration tests in CI                |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Enable OTel tracing; omit to disable (no overhead)      |
-| `BACKUP_DIR`                  | Backup archive destination (default `./backups`)        |
-| `BACKUP_RETENTION_DAYS`       | Daily backup retention window (default 30)              |
+| Variable                      | Purpose                                              |
+| ----------------------------- | ---------------------------------------------------- |
+| `DATABASE_URL`                | PostgreSQL connection string                         |
+| `REDIS_URL`                   | Redis connection string                              |
+| `EMBEDDING_PROVIDER`          | `ollama` (default), `openai`, `local`, or `disabled` |
+| `EMBEDDING_MODEL`             | Model id; defaults per provider (`nomic-embed-text`) |
+| `OLLAMA_URL`                  | Ollama server URL (default `http://localhost:11434`) |
+| `OPENAI_API_KEY`              | Required only when `EMBEDDING_PROVIDER=openai`       |
+| `MCP_ADMIN_TOKEN`             | Required for reindex admin MCP tools                 |
+| `PGVECTOR_TEST_URL`           | Enables pgvector integration tests in CI             |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Enable OTel tracing; omit to disable (no overhead)   |
+| `BACKUP_DIR`                  | Backup archive destination (default `./backups`)     |
+| `BACKUP_RETENTION_DAYS`       | Daily backup retention window (default 30)           |
 
 Read [AGENTS.md](AGENTS.md) before working in this repository.
 

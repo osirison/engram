@@ -3,7 +3,7 @@ import { PgVectorHealthIndicator } from './pgvector.health';
 describe('PgVectorHealthIndicator', () => {
   it('reports healthy and not applicable when the store has no healthCheck', async () => {
     const indicator = new PgVectorHealthIndicator({
-      backend: 'qdrant',
+      backend: 'pgvector',
     } as never);
 
     const result = await indicator.isHealthy('pgvector');

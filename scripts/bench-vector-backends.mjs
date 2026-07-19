@@ -5,7 +5,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { QdrantClient } from '@qdrant/js-client-rest';
 
 function parseArgs(argv) {
   const args = {
@@ -100,13 +99,9 @@ function vectorLiteral(vector) {
 async function run() {
   const { iterations, warmup, limit, p95, output } = parseArgs(process.argv.slice(2));
   const databaseUrl = process.env.DATABASE_URL;
-  const qdrantUrl = process.env.QDRANT_URL;
 
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is required');
-  }
-  if (!qdrantUrl) {
-    throw new Error('QDRANT_URL is required');
   }
 
   const dimensions = Number.parseInt(process.env.VECTOR_DIMENSIONS ?? '1536', 10);
@@ -115,10 +110,8 @@ async function run() {
   const userId = 'bench-user';
   const userEmail = 'bench-user@engram.local';
   const prefix = `bench-${Date.now()}`;
-  const collection = `${prefix}-qdrant`;
 
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
-  const qdrant = new QdrantClient({ url: qdrantUrl });
 
   const records = Array.from({ length: recordCount }, (_, index) => ({
     id: `${prefix}-mem-${index}`,
@@ -166,18 +159,6 @@ async function run() {
       );
     }
 
-    await qdrant.createCollection(collection, {
-      vectors: { size: dimensions, distance: 'Cosine' },
-    });
-    await qdrant.upsert(collection, {
-      wait: true,
-      points: records.map((record, index) => ({
-        id: index + 1,
-        vector: record.vector,
-        payload: { userId, tags: ['benchmark'] },
-      })),
-    });
-
     const pgStats = await benchmark('pgvector', warmup, iterations, async (i) => {
       const vector = queries[i % queries.length];
       await prisma.$queryRawUnsafe(
@@ -187,24 +168,10 @@ async function run() {
       );
     });
 
-    const qdrantStats = await benchmark('qdrant', warmup, iterations, async (i) => {
-      const vector = queries[i % queries.length];
-      await qdrant.search(collection, {
-        vector,
-        limit,
-        filter: {
-          must: [{ key: 'userId', match: { value: userId } }],
-        },
-      });
-    });
-
     const breaches = [];
     if (typeof p95 === 'number') {
       if (pgStats.p95 > p95) {
         breaches.push(`pgvector p95 ${pgStats.p95.toFixed(2)}ms > ${p95}ms`);
-      }
-      if (qdrantStats.p95 > p95) {
-        breaches.push(`qdrant p95 ${qdrantStats.p95.toFixed(2)}ms > ${p95}ms`);
       }
     }
 
@@ -212,7 +179,6 @@ async function run() {
       generatedAt: new Date().toISOString(),
       config: { iterations, warmup, limit, p95 },
       pgvector: pgStats,
-      qdrant: qdrantStats,
       breaches,
     };
 
@@ -229,23 +195,11 @@ async function run() {
     await prisma.memory.deleteMany({ where: { userId } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.$disconnect();
-
-    try {
-      await qdrant.deleteCollection(collection);
-    } catch {
-      // noop: collection may already be gone
-    }
   }
 }
 
 run().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  if (message === 'fetch failed') {
-    // Network-level failure — Qdrant service is unreachable. This is an
-    // infrastructure issue, not a latency SLA violation; skip gracefully.
-    console.warn('Vector backend benchmark skipped — Qdrant unreachable (fetch failed)');
-  } else {
-    console.error('Vector backend benchmark failed:', message);
-    process.exitCode = 1;
-  }
+  console.error('Vector backend benchmark failed:', message);
+  process.exitCode = 1;
 });

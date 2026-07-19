@@ -45,14 +45,10 @@ async function readJson(path) {
 
 function buildDelta(current, baseline, maxP95Delta) {
   const pgvectorDelta = current.pgvector.p95 - baseline.pgvector.p95;
-  const qdrantDelta = current.qdrant.p95 - baseline.qdrant.p95;
   const breaches = [];
 
   if (pgvectorDelta > maxP95Delta) {
     breaches.push(`pgvector p95 delta ${pgvectorDelta.toFixed(2)}ms > ${maxP95Delta}ms`);
-  }
-  if (qdrantDelta > maxP95Delta) {
-    breaches.push(`qdrant p95 delta ${qdrantDelta.toFixed(2)}ms > ${maxP95Delta}ms`);
   }
 
   return {
@@ -60,15 +56,12 @@ function buildDelta(current, baseline, maxP95Delta) {
     thresholdMs: maxP95Delta,
     current: {
       pgvectorP95: current.pgvector.p95,
-      qdrantP95: current.qdrant.p95,
     },
     baseline: {
       pgvectorP95: baseline.pgvector.p95,
-      qdrantP95: baseline.qdrant.p95,
     },
     deltas: {
       pgvectorP95: pgvectorDelta,
-      qdrantP95: qdrantDelta,
     },
     breaches,
     passed: breaches.length === 0,

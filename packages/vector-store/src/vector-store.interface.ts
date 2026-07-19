@@ -11,7 +11,7 @@ export const VECTOR_STORE_TOKEN = 'VECTOR_STORE';
 /**
  * Supported vector-store backends.
  */
-export type VectorBackend = 'qdrant' | 'pgvector';
+export type VectorBackend = 'pgvector';
 
 /**
  * A single vector record to store or update.

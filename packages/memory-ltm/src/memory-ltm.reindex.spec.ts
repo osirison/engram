@@ -49,7 +49,7 @@ describe('MemoryLtmService.reindex', () => {
       generate: vi.fn().mockResolvedValue({ embedding: [0.4, 0.5, 0.6] }),
     };
     vectorStore = {
-      backend: 'qdrant',
+      backend: 'pgvector',
       ensureReady: vi.fn().mockResolvedValue(undefined),
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),

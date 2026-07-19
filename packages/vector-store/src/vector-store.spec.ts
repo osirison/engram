@@ -1,329 +1,48 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import type { QdrantClient } from '@qdrant/js-client-rest';
-import { QdrantService } from './qdrant.service';
-import { QdrantVectorStore, toQdrantPointId } from './qdrant.vector-store';
 import { PgVectorStore, type PgVectorClient } from './pgvector.vector-store';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+describe('PgVectorStore provisioning race', () => {
+  function buildRaceClient(): PgVectorClient & {
+    $executeRawUnsafe: ReturnType<typeof vi.fn>;
+    $queryRawUnsafe: ReturnType<typeof vi.fn>;
+  } {
+    return {
+      $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+      $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    } as never;
+  }
 
-function buildClient(): QdrantClient {
-  return {
-    getCollections: vi.fn().mockResolvedValue({ collections: [] }),
-    getCollection: vi.fn().mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } }),
-    createCollection: vi.fn().mockResolvedValue(undefined),
-    deleteCollection: vi.fn().mockResolvedValue(undefined),
-    upsert: vi.fn().mockResolvedValue(undefined),
-    search: vi.fn().mockResolvedValue([]),
-    delete: vi.fn().mockResolvedValue(undefined),
-  } as unknown as QdrantClient;
-}
+  it('retries provisioning after a transient DDL failure (concurrent boot)', async () => {
+    const client = buildRaceClient();
+    // First ALTER TABLE loses a lock race; every statement is IF NOT EXISTS,
+    // so the retry must converge.
+    client.$executeRawUnsafe
+      .mockResolvedValueOnce(0) // CREATE EXTENSION
+      .mockRejectedValueOnce(Object.assign(new Error('deadlock detected'), { code: '40P01' }));
+    const store = new PgVectorStore(client);
 
-describe('QdrantVectorStore', () => {
-  let client: QdrantClient;
-  let store: QdrantVectorStore;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    client = buildClient();
-    store = new QdrantVectorStore(new QdrantService(client), 'test_memories');
+    await expect(store.ensureReady(768)).resolves.toBeUndefined();
+    const statements = client.$executeRawUnsafe.mock.calls.map((call) => call[0] as string);
+    expect(statements.filter((sql) => sql.includes('ADD COLUMN')).length).toBe(2);
   });
 
-  it('exposes the qdrant backend name', () => {
-    expect(store.backend).toBe('qdrant');
+  it('does not retry the dimension-mismatch operator error', async () => {
+    const client = buildRaceClient();
+    client.$queryRawUnsafe.mockResolvedValue([{ atttypmod: 1536 }]);
+    const store = new PgVectorStore(client);
+
+    await expect(store.ensureReady(768)).rejects.toThrow('recreate+regenerate');
+    // One attempt only: CREATE EXTENSION + ADD COLUMN, then the guard throws.
+    const statements = client.$executeRawUnsafe.mock.calls.map((call) => call[0] as string);
+    expect(statements.filter((sql) => sql.includes('ADD COLUMN')).length).toBe(1);
   });
 
-  describe('toQdrantPointId', () => {
-    it('passes an existing UUID through unchanged', () => {
-      const uuid = '3f9a1c2b-4d5e-4a6f-8b7c-9d0e1f2a3b4c';
-      expect(toQdrantPointId(uuid)).toBe(uuid);
-    });
+  it('gives up after exhausting retries', async () => {
+    const client = buildRaceClient();
+    client.$executeRawUnsafe.mockRejectedValue(new Error('connection refused'));
+    const store = new PgVectorStore(client);
 
-    it('maps a digit-only id to a deterministic v5 UUID (not a numeric string)', () => {
-      // Qdrant uint point ids are JSON numbers; a numeric *string* like "42"
-      // would be rejected, so digit-only ids must be mapped, not passed through.
-      const derived = toQdrantPointId('42');
-      expect(derived).toMatch(UUID_RE);
-      expect(derived).not.toBe('42');
-      expect(toQdrantPointId('42')).toBe(derived);
-    });
-
-    it('maps a CUID to a deterministic v5 UUID', () => {
-      const cuid = 'ery92gktxle82gs2czpz1ofp';
-      const first = toQdrantPointId(cuid);
-      expect(first).toMatch(UUID_RE);
-      expect(first).not.toBe(cuid);
-      // Deterministic: the same memory id always yields the same point id.
-      expect(toQdrantPointId(cuid)).toBe(first);
-      // Distinct ids yield distinct point ids.
-      expect(toQdrantPointId('cjld2cjxh0000qzrmn831i7rn')).not.toBe(first);
-    });
-  });
-
-  describe('ensureReady', () => {
-    it('creates the collection when it does not exist', async () => {
-      await store.ensureReady(1536);
-      expect(client.createCollection).toHaveBeenCalledWith('test_memories', {
-        vectors: { size: 1536, distance: 'Cosine' },
-      });
-    });
-
-    it('does not recreate the collection once ensured', async () => {
-      await store.ensureReady(1536);
-      await store.ensureReady(1536);
-      expect(client.createCollection).toHaveBeenCalledTimes(1);
-    });
-
-    it('rejects invalid dimensions', async () => {
-      await expect(store.ensureReady(0)).rejects.toThrow('positive integer');
-    });
-
-    it('treats losing a concurrent create race (409 already exists) as success', async () => {
-      // exists-check says no, but another process creates the collection first.
-      client.createCollection = vi
-        .fn()
-        .mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409 }));
-      client.getCollection = vi
-        .fn()
-        .mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } });
-
-      await expect(store.ensureReady(1536)).resolves.toBeUndefined();
-    });
-
-    it('still enforces the dimension guard after losing the create race', async () => {
-      client.createCollection = vi.fn().mockRejectedValue(
-        Object.assign(new Error('Wrong input: Collection `test_memories` already exists!'), {
-          status: 409,
-        })
-      );
-      client.getCollection = vi
-        .fn()
-        .mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } });
-
-      await expect(store.ensureReady(768)).rejects.toThrow(/1536-dimensional.*768-dim/s);
-    });
-
-    it('rethrows non-conflict create failures', async () => {
-      client.createCollection = vi
-        .fn()
-        .mockRejectedValue(Object.assign(new Error('Service Unavailable'), { status: 503 }));
-
-      await expect(store.ensureReady(1536)).rejects.toThrow('Service Unavailable');
-    });
-
-    it('throws an actionable error when the existing collection has different dimensions', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.getCollection = vi
-        .fn()
-        .mockResolvedValue({ config: { params: { vectors: { size: 1536 } } } });
-
-      await expect(store.ensureReady(768)).rejects.toThrow(/1536-dimensional.*768-dim/s);
-      await expect(store.ensureReady(768)).rejects.toThrow('recreate+regenerate');
-    });
-
-    it('accepts an existing collection whose dimensions match', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.getCollection = vi
-        .fn()
-        .mockResolvedValue({ config: { params: { vectors: { size: 768 } } } });
-
-      await expect(store.ensureReady(768)).resolves.toBeUndefined();
-      expect(client.createCollection).not.toHaveBeenCalled();
-    });
-
-    it('skips the dimension guard when the collection size cannot be determined', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.getCollection = vi.fn().mockResolvedValue({
-        config: { params: { vectors: { named: { size: 768 } } } },
-      });
-
-      await expect(store.ensureReady(768)).resolves.toBeUndefined();
-    });
-  });
-
-  describe('upsert', () => {
-    it('ensures the collection then upserts points with a derived id and memoryId payload', async () => {
-      await store.upsert([
-        {
-          id: 'mem-1',
-          vector: [0.1, 0.2, 0.3],
-          payload: { userId: 'user-1', type: 'long-term', tags: ['a'] },
-        },
-      ]);
-
-      expect(client.createCollection).toHaveBeenCalledTimes(1);
-      expect(client.upsert).toHaveBeenCalledWith('test_memories', {
-        wait: true,
-        points: [
-          {
-            id: toQdrantPointId('mem-1'),
-            vector: [0.1, 0.2, 0.3],
-            payload: { userId: 'user-1', type: 'long-term', tags: ['a'], memoryId: 'mem-1' },
-          },
-        ],
-      });
-    });
-
-    it('stores memoryId even when the record has no payload', async () => {
-      await store.upsert([{ id: 'mem-2', vector: [0.1, 0.2, 0.3] }]);
-      const call = (client.upsert as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as {
-        points: Array<{ payload: Record<string, unknown> }>;
-      };
-      expect(call.points[0]?.payload).toEqual({ memoryId: 'mem-2' });
-    });
-
-    it('is a no-op for an empty batch', async () => {
-      await store.upsert([]);
-      expect(client.upsert).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('delete', () => {
-    it('deletes points by derived id', async () => {
-      await store.delete(['mem-1', 'mem-2']);
-      expect(client.delete).toHaveBeenCalledWith('test_memories', {
-        wait: true,
-        points: [toQdrantPointId('mem-1'), toQdrantPointId('mem-2')],
-      });
-    });
-
-    it('is a no-op for an empty id list', async () => {
-      await store.delete([]);
-      expect(client.delete).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('reset', () => {
-    it('deletes the collection when it exists and forces recreation on next upsert', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValueOnce({ collections: [{ name: 'test_memories' }] }) // reset() existence check
-        .mockResolvedValue({ collections: [] }); // subsequent ensureReady check
-
-      await store.reset();
-      expect(client.deleteCollection).toHaveBeenCalledWith('test_memories');
-
-      // ensured flag was cleared, so the next upsert recreates the collection.
-      await store.upsert([{ id: 'mem-1', vector: [0.1, 0.2, 0.3] }]);
-      expect(client.createCollection).toHaveBeenCalledTimes(1);
-    });
-
-    it('is a no-op when the collection does not exist', async () => {
-      client.getCollections = vi.fn().mockResolvedValue({ collections: [] });
-      await store.reset();
-      expect(client.deleteCollection).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('search', () => {
-    it('returns an empty array when the collection is missing', async () => {
-      client.getCollections = vi.fn().mockResolvedValue({ collections: [] });
-      const results = await store.search([0.1, 0.2], { userId: 'user-1' });
-      expect(results).toEqual([]);
-      expect(client.search).not.toHaveBeenCalled();
-    });
-
-    it('builds a tenant-scoped filter and maps results', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.search = vi
-        .fn()
-        .mockResolvedValue([{ id: 'mem-9', score: 0.87, payload: { userId: 'user-1' } }]);
-
-      const results = await store.search(
-        [0.1, 0.2],
-        { userId: 'user-1', scope: 'session-1', type: 'long-term', tags: ['x', 'y'] },
-        5
-      );
-
-      expect(client.search).toHaveBeenCalledWith('test_memories', {
-        vector: [0.1, 0.2],
-        limit: 5,
-        with_payload: true,
-        filter: {
-          must: [
-            { key: 'userId', match: { value: 'user-1' } },
-            { key: 'scope', match: { value: 'session-1' } },
-            { key: 'type', match: { value: 'long-term' } },
-            { key: 'tags', match: { any: ['x', 'y'] } },
-          ],
-        },
-      });
-      expect(results).toEqual([{ id: 'mem-9', score: 0.87, payload: { userId: 'user-1' } }]);
-    });
-
-    it('returns payload.memoryId as the hit id when present (derived point id)', async () => {
-      const cuid = 'ery92gktxle82gs2czpz1ofp';
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.search = vi.fn().mockResolvedValue([
-        {
-          id: toQdrantPointId(cuid), // point id is the derived UUID, not the CUID
-          score: 0.99,
-          payload: { userId: 'user-1', memoryId: cuid },
-        },
-      ]);
-
-      const results = await store.search([0.1, 0.2], { userId: 'user-1' });
-      // Caller receives the real memory id, not the derived point id.
-      expect(results[0]?.id).toBe(cuid);
-    });
-
-    it('requires a userId for isolation', async () => {
-      await expect(store.search([0.1], { userId: '' })).rejects.toThrow('tenant isolation');
-    });
-
-    it('adds a createdAt range clause for time-range filters', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.search = vi.fn().mockResolvedValue([]);
-
-      const from = new Date('2026-01-01T00:00:00.000Z');
-      const to = new Date('2026-02-01T00:00:00.000Z');
-      await store.search([0.1, 0.2], { userId: 'user-1', createdFrom: from, createdTo: to }, 5);
-
-      expect(client.search).toHaveBeenCalledWith('test_memories', {
-        vector: [0.1, 0.2],
-        limit: 5,
-        with_payload: true,
-        filter: {
-          must: [
-            { key: 'userId', match: { value: 'user-1' } },
-            { key: 'createdAt', range: { gte: from.getTime(), lte: to.getTime() } },
-          ],
-        },
-      });
-    });
-
-    it('supports an open-ended (lower-bound only) time range', async () => {
-      client.getCollections = vi
-        .fn()
-        .mockResolvedValue({ collections: [{ name: 'test_memories' }] });
-      client.search = vi.fn().mockResolvedValue([]);
-
-      const from = new Date('2026-01-01T00:00:00.000Z');
-      await store.search([0.1], { userId: 'user-1', createdFrom: from });
-
-      expect(client.search).toHaveBeenCalledWith('test_memories', {
-        vector: [0.1],
-        limit: 10,
-        with_payload: true,
-        filter: {
-          must: [
-            { key: 'userId', match: { value: 'user-1' } },
-            { key: 'createdAt', range: { gte: from.getTime() } },
-          ],
-        },
-      });
-    });
+    await expect(store.ensureReady(768)).rejects.toThrow('connection refused');
   });
 });
 

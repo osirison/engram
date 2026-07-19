@@ -1,7 +1,7 @@
 /**
  * Latency benchmarking for retrieval backends.
  *
- * Backend-agnostic: any vector store (Qdrant, pgvector, or a fake) can be
+ * Backend-agnostic: any vector store (pgvector or a fake) can be
  * measured by implementing the small {@link LatencyTarget} contract. The
  * benchmark seeds the target, issues repeated searches, records per-call
  * wall-clock latency, and summarizes the distribution with percentiles.
