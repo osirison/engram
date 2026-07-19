@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ENGRAM is a TypeScript monorepo for an MCP (Model Context Protocol) memory server. The main runtime is a NestJS app (`apps/mcp-server`) backed by PostgreSQL (with pgvector) and, on the enterprise profile, Redis. Turborepo orchestrates builds across pnpm workspaces.
+ENGRAM is a TypeScript monorepo for an MCP (Model Context Protocol) memory server. The main runtime is a NestJS app (`apps/mcp-server`) backed by PostgreSQL (with pgvector) — the only backing service in both deployment profiles (`standard`, `lite`). Turborepo orchestrates builds across pnpm workspaces.
 
 ## Commands
 
@@ -20,7 +20,7 @@ All commands run from the repository root. Use `pnpm <command>` if pnpm is insta
 ```bash
 pnpm install
 cp .env.example .env           # then edit as needed
-pnpm docker:up                 # starts PostgreSQL (pgvector), Redis
+pnpm docker:up                 # starts PostgreSQL (pgvector); optional Ollama via --profile ollama
 pnpm db:generate               # generate Prisma client
 pnpm db:migrate                # run migrations
 pnpm build
@@ -80,7 +80,7 @@ The single `Memory` Prisma model (in `prisma/schema.prisma`) serves both memory 
 
 ### Memory Tiers
 
-- **STM** (`packages/memory-stm`): Postgres-backed with TTL on database-bearing profiles — `PostgresStmAdapter` stores rows in the shared `memories` table (`type='short-term'`, `expiresAt`; expiry filtered on read + swept by `StmSweepService`, `STM_SWEEP_INTERVAL_MS`). Profile-memory uses the in-process `InMemoryStmAdapter`. Both bind to `STM_PROVIDER` and the `MemoryStmService` class token.
+- **STM** (`packages/memory-stm`): Postgres-backed with TTL — `PostgresStmAdapter` stores rows in the shared `memories` table (`type='short-term'`, `expiresAt`; expiry filtered on read + swept by `StmSweepService`, `STM_SWEEP_INTERVAL_MS`). Consumers inject it via the `STM_PROVIDER` token.
 - **LTM** (`packages/memory-ltm`): Postgres-backed via Prisma. `MemoryLtmService` handles create/read/update/delete and cursor-resumable `reindex()` for rebuilding vector embeddings.
 
 ### Vector Storage (`packages/vector-store`)
@@ -97,7 +97,7 @@ Each tool exports: a strict Zod input schema, a typed handler function, and a to
 
 ### NestJS Module Wiring (`apps/mcp-server/src/app.module.ts`)
 
-Root imports: `ConfigModule` (global, validates env via `@engram/config`), `LoggingModule`, `McpModule`, `PrismaModule` (global), `RedisModule` (enterprise), `HealthModule`, `MemoryModule`.
+Root imports: `ConfigModule` (global, validates env via `@engram/config`), `LoggingModule`, `McpModule`, `PrismaModule` (global), `AuthModule` (multi-tenant stack gated on profile), `HealthModule`, `MemoryModule`.
 
 ### Reindex / Backfill
 
@@ -124,7 +124,6 @@ Key variables (full list in `.env.example`):
 | Variable                      | Purpose                                              |
 | ----------------------------- | ---------------------------------------------------- |
 | `DATABASE_URL`                | PostgreSQL connection string                         |
-| `REDIS_URL`                   | Redis connection string                              |
 | `EMBEDDING_PROVIDER`          | `ollama` (default), `openai`, `local`, or `disabled` |
 | `EMBEDDING_MODEL`             | Model id; defaults per provider (`nomic-embed-text`) |
 | `OLLAMA_URL`                  | Ollama server URL (default `http://localhost:11434`) |
