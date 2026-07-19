@@ -364,7 +364,10 @@ export class ReindexQueueService {
     // SET-with-TTL semantics this replaced. `payload` is the whole status
     // blob; the row is the unit of persistence, not a queue.
     const expiresAt = new Date(Date.now() + JOB_TTL_SECONDS * 1000);
-    const payload = job as unknown as Prisma.InputJsonValue;
+    // JSON round-trip: Prisma Json inputs reject `undefined` values, and
+    // optional fields (retryOfJobId, startedAt, ...) are routinely present as
+    // undefined on the in-memory object. Stringify drops those keys.
+    const payload = JSON.parse(JSON.stringify(job)) as Prisma.InputJsonValue;
     await this.prisma.reindexJob.upsert({
       where: { id: job.jobId },
       create: { id: job.jobId, payload, expiresAt },

@@ -85,6 +85,21 @@ describe('ReindexQueueService', () => {
     expect(table.get(job.jobId)?.payload.state).toBe('queued');
   });
 
+  it('persists payloads with undefined optional fields stripped (Prisma Json rejects undefined)', async () => {
+    await service.enqueue({ batchSize: 1 });
+
+    const { create } = prisma.reindexJob.upsert.mock
+      .calls[0]![0] as unknown as {
+      create: { payload: Record<string, unknown> };
+    };
+    // enqueue() without a retry sets retryOfJobId: undefined on the in-memory
+    // object; the persisted payload must not carry the key at all.
+    expect('retryOfJobId' in create.payload).toBe(false);
+    expect(
+      Object.values(create.payload).every((value) => value !== undefined),
+    ).toBe(true);
+  });
+
   it('sweeps expired job rows on enqueue', async () => {
     table.set('stale-job', {
       id: 'stale-job',
