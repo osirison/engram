@@ -57,10 +57,9 @@ describe('gen-env-table', () => {
     expect(missing, `fields without a description: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('records profile requirements for the conditional URL fields', () => {
+  it('marks DATABASE_URL as required in every profile', () => {
     const dbRow = markdown.split('\n').find((l) => l.startsWith('| `DATABASE_URL` |'));
-    expect(dbRow).toMatch(/lite/);
-    expect(dbRow).toMatch(/enterprise/);
+    expect(dbRow).toMatch(/\| all \|/);
   });
 
   it('includes the unvalidated process.env section with security-critical vars', () => {
