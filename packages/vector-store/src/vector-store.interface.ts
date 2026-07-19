@@ -3,15 +3,15 @@ import type { Logger } from '@nestjs/common';
 /**
  * Dependency injection token for the active {@link VectorStore} implementation.
  *
- * Resolves to a concrete provider (Qdrant or pgvector) selected at runtime by
- * {@link VectorStoreModule} based on the `VECTOR_BACKEND` environment variable.
+ * Resolves to the pgvector-backed store provided by {@link VectorStoreModule};
+ * vectors live in the runtime-managed `embedding_vec` column on `memories`.
  */
 export const VECTOR_STORE_TOKEN = 'VECTOR_STORE';
 
 /**
  * Supported vector-store backends.
  */
-export type VectorBackend = 'qdrant' | 'pgvector';
+export type VectorBackend = 'pgvector';
 
 /**
  * A single vector record to store or update.

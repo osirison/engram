@@ -1,11 +1,12 @@
 name: Backup verification
 
-# Nightly end-to-end verification of the backup/restore path across ALL THREE
-# stores (Postgres, Redis, Qdrant) plus the retention policy. The regular CI
+# Nightly end-to-end verification of the backup/restore path across both
+# stores (Postgres, Redis) plus the retention policy. The regular CI
 # suite (backup-restore.spec.ts) only exercises the Postgres leg; this
-# workflow proves the Redis (BGSAVE/RDB) and Qdrant (snapshot) legs actually
-# round-trip, so a broken restore path is caught within a day instead of
-# during an incident. The Postgres leg provisions the real ENGRAM schema and
+# workflow proves the Redis (BGSAVE/RDB) leg actually round-trips, so a
+# broken restore path is caught within a day instead of during an incident.
+# Vector data needs no separate leg: pgvector embeddings ride in the
+# Postgres dump. The Postgres leg provisions the real ENGRAM schema and
 # asserts the WP2-4 tables (memory_links / memory_audits / memory_import_sources)
 # round-trip too, so a dump that silently drops them is caught (G9).
 # See docs/ops/backup-runbook.md.
@@ -21,7 +22,7 @@ permissions:
 
 jobs:
   backup-restore-roundtrip:
-    name: Backup → restore round-trip (Postgres + Redis + Qdrant)
+    name: Backup → restore round-trip (Postgres + Redis)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -50,15 +51,9 @@ jobs:
         ports:
           - 6379:6379
 
-      qdrant:
-        image: qdrant/qdrant:v1.13.6
-        ports:
-          - 6333:6333
-
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_backup_verify
       REDIS_URL: redis://localhost:6379
-      QDRANT_URL: http://127.0.0.1:6333
       BACKUP_OUT: ${{ github.workspace }}/.backup-verify
 
     steps:
@@ -107,12 +102,6 @@ jobs:
           pnpm db:generate
           pnpm db:migrate:deploy
 
-      - name: Wait for Qdrant
-        run: |
-          echo "Waiting for Qdrant to be ready..."
-          timeout 60 bash -c 'until curl -sf http://127.0.0.1:6333/collections; do sleep 2; done'
-          echo "Qdrant is ready"
-
       - name: Seed Postgres
         # A synthetic sentinel table plus one FK-valid graph across the WP2-4
         # tables (G9). memory_links needs a users+memories parent chain (NOT NULL
@@ -142,22 +131,10 @@ jobs:
           redis-cli -h localhost -p 6379 SET engram:backup-verify:sentinel 'redis-round-trip-sentinel'
           redis-cli -h localhost -p 6379 RPUSH engram:backup-verify:list a b c
 
-      - name: Seed Qdrant
-        run: |
-          curl -sf -X PUT "$QDRANT_URL/collections/memories" \
-            -H 'Content-Type: application/json' \
-            -d '{"vectors":{"size":4,"distance":"Cosine"}}'
-          curl -sf -X PUT "$QDRANT_URL/collections/memories/points?wait=true" \
-            -H 'Content-Type: application/json' \
-            -d '{"points":[
-                  {"id":1,"vector":[0.1,0.2,0.3,0.4],"payload":{"content":"alpha"}},
-                  {"id":2,"vector":[0.9,0.8,0.7,0.6],"payload":{"content":"beta"}}
-                ]}'
-
-      - name: Run backup.sh (all three stores)
+      - name: Run backup.sh (both stores)
         run: ./scripts/backup.sh --out "$BACKUP_OUT"
 
-      - name: Assert archive contains all three stores
+      - name: Assert archive contains both stores
         run: |
           ARCHIVE="$(ls "$BACKUP_OUT"/engram_backup_*.tar.gz | head -1)"
           echo "archive: $ARCHIVE"
@@ -165,7 +142,6 @@ jobs:
           echo "$LISTING"
           echo "$LISTING" | grep -q 'postgres\.pgdump'
           echo "$LISTING" | grep -q 'redis\.rdb'
-          echo "$LISTING" | grep -q 'qdrant_memories\.snapshot'
 
       - name: Destroy live data (prove restore does the work)
         run: |
@@ -176,13 +152,11 @@ jobs:
           psql "$DATABASE_URL" -c "DELETE FROM memory_audits WHERE id = 'g9-audit';"
           psql "$DATABASE_URL" -c "DELETE FROM memory_import_sources WHERE id = 'g9-import';"
           redis-cli -h localhost -p 6379 FLUSHALL
-          curl -sf -X DELETE "$QDRANT_URL/collections/memories"
           # Sanity: everything is really gone.
           test "$(psql "$DATABASE_URL" -t -A -c "SELECT COUNT(*) FROM memory_links WHERE \"targetLocator\" = 'id:g9-link-sentinel'")" = "0"
           test "$(redis-cli -h localhost -p 6379 GET engram:backup-verify:sentinel)" = ""
-          test "$(curl -s -o /dev/null -w '%{http_code}' "$QDRANT_URL/collections/memories")" = "404"
 
-      - name: Run restore.sh (all three stores)
+      - name: Run restore.sh (both stores)
         run: |
           ARCHIVE="$(ls "$BACKUP_OUT"/engram_backup_*.tar.gz | head -1)"
           ./scripts/restore.sh --archive "$ARCHIVE" --no-confirm
@@ -219,19 +193,6 @@ jobs:
           echo "redis list:     $LIST"
           test "$SENTINEL" = "redis-round-trip-sentinel"
           test "$LIST" = "a b c "
-
-      - name: Verify Qdrant round-trip
-        run: |
-          COUNT="$(curl -sf -X POST "$QDRANT_URL/collections/memories/points/count" \
-            -H 'Content-Type: application/json' -d '{"exact":true}' \
-            | grep -oE '"count":[0-9]+' | cut -d: -f2)"
-          echo "qdrant point count: $COUNT"
-          test "$COUNT" = "2"
-          PAYLOADS="$(curl -sf -X POST "$QDRANT_URL/collections/memories/points/scroll" \
-            -H 'Content-Type: application/json' -d '{"limit":10,"with_payload":true}')"
-          echo "$PAYLOADS"
-          echo "$PAYLOADS" | grep -q '"content":"alpha"'
-          echo "$PAYLOADS" | grep -q '"content":"beta"'
 
       - name: Exercise retention policy (GFS pruning)
         run: |

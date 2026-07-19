@@ -52,7 +52,6 @@ const UNVALIDATED_DOCS = {
   ENGRAM_MCP_URL: 'Base URL of the MCP endpoint used by clients and the dashboard.',
   ENGRAM_DASHBOARD_DEV_AUTH: 'Dev-only flag that relaxes dashboard auth for local development.',
   METRICS_TOKEN: 'Bearer token required to scrape `/health/metrics`.',
-  QDRANT_API_KEY: 'Optional API key for an authenticated Qdrant instance.',
   WEB_DATABASE_URL: 'Postgres URL used by the Next.js dashboard (`apps/web`).',
   AUTH_GITHUB_ID: 'GitHub OAuth client id for the dashboard (Auth.js).',
   AUTH_GITHUB_SECRET: 'GitHub OAuth client secret for the dashboard (Auth.js).',
@@ -148,7 +147,6 @@ function describeField(initializer, profileEnum) {
 const PROFILE_REQUIREMENT = {
   DATABASE_URL: '`lite`, `enterprise`',
   REDIS_URL: '`enterprise`',
-  QDRANT_URL: '`enterprise`',
   JWT_SECRET: 'when `AUTH_REQUIRED=true`',
 };
 

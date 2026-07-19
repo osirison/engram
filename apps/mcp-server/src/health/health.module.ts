@@ -3,17 +3,12 @@ import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 import { EmbeddingsModule } from '@engram/embeddings';
 import { RedisModule } from '@engram/redis';
-import { QdrantModule, VectorStoreModule } from '@engram/vector-store';
-import {
-  usesPgVector,
-  usesQdrant,
-  type ProfileCapabilities,
-} from '@engram/config';
+import { VectorStoreModule } from '@engram/vector-store';
+import { usesPgVector, type ProfileCapabilities } from '@engram/config';
 import { HealthController } from './health.controller';
 import { MetricsTokenGuard } from './metrics-token.guard';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
-import { QdrantHealthIndicator } from './qdrant.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { MemoryStoreHealthIndicator } from './memory-store.health';
 import { MetricsModule } from '../metrics/metrics.module';
@@ -48,18 +43,11 @@ export class HealthModule {
       imports.push(RedisModule.forRoot());
       providers.push(RedisHealthIndicator);
     }
-    if (usesQdrant(capabilities, process.env.VECTOR_BACKEND)) {
-      // Qdrant is a remote service wired only when the profile deploys it AND
-      // it is the active vector backend. A Qdrant-bearing profile running
-      // VECTOR_BACKEND=pgvector must not gate readiness on Qdrant (#193).
-      imports.push(QdrantModule);
-      providers.push(QdrantHealthIndicator);
-    }
-    if (usesPgVector(capabilities, process.env.VECTOR_BACKEND)) {
+    if (usesPgVector(capabilities)) {
       // pgvector lives in Postgres, so it is health-checkable in any profile
-      // with a database (LITE and ENTERPRISE) — independent of requiresQdrant.
-      // VectorStoreModule provides the active VectorStore under
-      // VECTOR_STORE_TOKEN, which PgVectorHealthIndicator probes.
+      // with a database (LITE and ENTERPRISE). VectorStoreModule provides the
+      // VectorStore under VECTOR_STORE_TOKEN, which PgVectorHealthIndicator
+      // probes.
       imports.push(VectorStoreModule);
       providers.push(PgVectorHealthIndicator);
     }

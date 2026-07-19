@@ -3,7 +3,7 @@
  *
  * The eval package stays dependency free: instead of importing
  * `@engram/vector-store`, the adapter accepts a minimal structural interface
- * that both the Qdrant and pgvector backends satisfy. This keeps benchmarking
+ * that the pgvector backend satisfies. This keeps benchmarking
  * backend-agnostic while avoiding a hard package dependency.
  */
 
@@ -25,7 +25,7 @@ export interface LatencyFixtureQuery {
 
 /**
  * Minimal structural contract shared by ENGRAM vector stores. Both
- * `QdrantVectorStore` and `PgVectorStore` satisfy this shape, but neither type
+ * `PgVectorStore` satisfies this shape, but the type
  * is imported here so the eval package remains standalone.
  */
 export interface VectorStoreLike {

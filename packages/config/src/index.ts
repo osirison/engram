@@ -9,7 +9,5 @@ export {
   resolveCapabilities,
   coerceDeploymentProfile,
   usesPgVector,
-  usesQdrant,
-  DEFAULT_VECTOR_BACKEND,
   type ProfileCapabilities,
 } from './profile';

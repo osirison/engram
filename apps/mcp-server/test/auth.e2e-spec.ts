@@ -2,12 +2,12 @@
  * Auth & Multi-tenancy E2E (Epic 101)
  *
  * Proves the epic's Definition of Done — "a tenant can only read/write its own
- * memories" — against real Postgres/Redis/Qdrant. Gate with E2E_ENABLED=true.
+ * memories" — against real Postgres/Redis. Gate with E2E_ENABLED=true.
  *
  * Run (after `docker compose -f docker-compose.test.yml up -d --wait` + migrate):
  *   E2E_ENABLED=true \
  *   DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test \
- *   REDIS_URL=redis://localhost:6380 QDRANT_URL=http://localhost:6335 \
+ *   REDIS_URL=redis://localhost:6380 \
  *   NODE_ENV=test pnpm --filter mcp-server test:e2e
  */
 
@@ -16,7 +16,6 @@ process.env.DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://engram_test:test_password@localhost:5433/engram_test';
 process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
-process.env.QDRANT_URL = process.env.QDRANT_URL ?? 'http://localhost:6335';
 process.env.EMBEDDING_PROVIDER = process.env.EMBEDDING_PROVIDER ?? 'local';
 // Enable auth enforcement for this run.
 process.env.AUTH_REQUIRED = 'true';

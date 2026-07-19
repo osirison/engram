@@ -57,7 +57,7 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
       generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
     };
     vectorStore = {
-      backend: 'qdrant',
+      backend: 'pgvector',
       ensureReady: vi.fn().mockResolvedValue(undefined),
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
@@ -95,7 +95,7 @@ describe('MemoryLtmService — vector lifecycle & semantic search', () => {
 
     it('does not fail creation when the vector store upsert throws', async () => {
       prisma.memory.create.mockResolvedValue(buildMemory());
-      vectorStore.upsert.mockRejectedValue(new Error('qdrant down'));
+      vectorStore.upsert.mockRejectedValue(new Error('vector store down'));
 
       await expect(
         service.create({ userId: mockUserId, content: 'Test memory content' })

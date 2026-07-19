@@ -341,7 +341,7 @@ describe('MemoryLtmService lifecycle CAS + audit (G3-T3)', () => {
 
     const buildService = () => {
       const vectorStore = {
-        backend: 'qdrant' as const,
+        backend: 'pgvector' as const,
         upsert: vi.fn(),
         delete: vi.fn(),
         ensureReady: vi.fn(),
@@ -474,7 +474,7 @@ describe('MemoryLtmService lifecycle CAS + audit (G3-T3)', () => {
 
     const buildService = () => {
       const vectorStore = {
-        backend: 'qdrant' as const,
+        backend: 'pgvector' as const,
         upsert: vi.fn(),
         delete: vi.fn(),
         ensureReady: vi.fn(),
@@ -572,7 +572,7 @@ describe('MemoryLtmService lifecycle CAS + audit (G3-T3)', () => {
   describe('linkDuplicateAndReturn (dedup annotation via create)', () => {
     const buildService = () => {
       const vectorStore = {
-        backend: 'qdrant' as const,
+        backend: 'pgvector' as const,
         upsert: vi.fn(),
         delete: vi.fn(),
         ensureReady: vi.fn(),

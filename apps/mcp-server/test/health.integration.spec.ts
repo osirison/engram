@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthController } from '../src/health/health.controller';
 import { PrismaHealthIndicator } from '../src/health/prisma.health';
 import { RedisHealthIndicator } from '../src/health/redis.health';
-import { QdrantHealthIndicator } from '../src/health/qdrant.health';
 import { PgVectorHealthIndicator } from '../src/health/pgvector.health';
 import { MemoryStoreHealthIndicator } from '../src/health/memory-store.health';
 import { DeploymentProfile } from '@engram/config';
@@ -13,7 +12,6 @@ describe('Health Integration Tests', () => {
   let controller: HealthController;
   let prismaHealthMock: jest.Mock;
   let redisHealthMock: jest.Mock;
-  let qdrantHealthMock: jest.Mock;
   let pgVectorHealthMock: jest.Mock;
   let memoryStoreHealthMock: jest.Mock;
 
@@ -23,9 +21,6 @@ describe('Health Integration Tests', () => {
     });
     redisHealthMock = jest.fn().mockResolvedValue({
       redis: { status: 'up' },
-    });
-    qdrantHealthMock = jest.fn().mockResolvedValue({
-      qdrant: { status: 'up' },
     });
     pgVectorHealthMock = jest.fn().mockResolvedValue({
       pgvector: { status: 'up' },
@@ -57,12 +52,6 @@ describe('Health Integration Tests', () => {
           },
         },
         {
-          provide: QdrantHealthIndicator,
-          useValue: {
-            isHealthy: qdrantHealthMock,
-          },
-        },
-        {
           provide: PgVectorHealthIndicator,
           useValue: {
             isHealthy: pgVectorHealthMock,
@@ -85,7 +74,7 @@ describe('Health Integration Tests', () => {
       expect(result).toBeDefined();
       expect(prismaHealthMock).toHaveBeenCalledWith('database');
       expect(redisHealthMock).toHaveBeenCalledWith('redis');
-      expect(qdrantHealthMock).toHaveBeenCalledWith('qdrant');
+      expect(pgVectorHealthMock).toHaveBeenCalledWith('pgvector');
     });
 
     it('should handle health indicator failures', async () => {
@@ -104,17 +93,11 @@ describe('Health Integration Tests', () => {
   });
 });
 
-describe('Health Integration Tests (LITE + pgvector)', () => {
+describe('Health Integration Tests (LITE)', () => {
   let controller: HealthController;
-  let qdrantHealthMock: jest.Mock;
   let pgVectorHealthMock: jest.Mock;
-  const ORIGINAL_BACKEND = process.env.VECTOR_BACKEND;
 
   beforeEach(async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
-    qdrantHealthMock = jest
-      .fn()
-      .mockResolvedValue({ qdrant: { status: 'up' } });
     pgVectorHealthMock = jest
       .fn()
       .mockResolvedValue({ pgvector: { status: 'up' } });
@@ -140,10 +123,6 @@ describe('Health Integration Tests (LITE + pgvector)', () => {
           },
         },
         {
-          provide: QdrantHealthIndicator,
-          useValue: { isHealthy: qdrantHealthMock },
-        },
-        {
           provide: PgVectorHealthIndicator,
           useValue: { isHealthy: pgVectorHealthMock },
         },
@@ -157,20 +136,11 @@ describe('Health Integration Tests (LITE + pgvector)', () => {
     controller = module.get<HealthController>(HealthController);
   });
 
-  afterEach(() => {
-    if (ORIGINAL_BACKEND === undefined) {
-      delete process.env.VECTOR_BACKEND;
-    } else {
-      process.env.VECTOR_BACKEND = ORIGINAL_BACKEND;
-    }
-  });
-
-  it('probes pgvector through the real Terminus pipeline, never Qdrant', async () => {
+  it('probes pgvector through the real Terminus pipeline', async () => {
     const result = await controller.check();
 
     expect(result.status).toBe('ok');
     expect(pgVectorHealthMock).toHaveBeenCalledWith('pgvector');
-    expect(qdrantHealthMock).not.toHaveBeenCalled();
   });
 
   it('exposes engram_pgvector_ready 1 in the metrics endpoint', async () => {

@@ -3,7 +3,7 @@
  *
  * By default it runs against a deterministic in-memory fake target so the
  * command is runnable with no external services. Real backends can be measured
- * by wiring {@link createVectorStoreLatencyTarget} to a Qdrant or pgvector
+ * by wiring {@link createVectorStoreLatencyTarget} to a pgvector
  * store in a consumer script.
  */
 

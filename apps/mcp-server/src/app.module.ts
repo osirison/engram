@@ -16,7 +16,6 @@ import {
 import { LoggingModule, McpModule } from '@engram/core';
 import { PrismaModule } from '@engram/database';
 import { RedisModule } from '@engram/redis';
-import { QdrantModule } from '@engram/vector-store';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeysModule } from './api-keys/api-keys.module';
@@ -78,10 +77,6 @@ function buildImportsForProfile(
   if (capabilities.requiresRedis) {
     imports.push(RedisModule.forRoot());
   }
-  if (capabilities.requiresQdrant) {
-    imports.push(QdrantModule);
-  }
-
   return imports;
 }
 

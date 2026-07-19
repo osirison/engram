@@ -110,7 +110,7 @@ describe('MemoryLtmService — create/promote scope isolation', () => {
     hits: Array<{ id: string; score: number; payload?: Record<string, unknown> }>
   ): Record<string, unknown> {
     return {
-      backend: 'qdrant',
+      backend: 'pgvector',
       ensureReady: vi.fn().mockResolvedValue(undefined),
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),

@@ -4,7 +4,7 @@
  * WP2 T2/T3/T5 changed `get_memory` / `delete_memory` / `promote_memory` to put
  * a machine-readable JSON item FIRST and keep the human-readable sentence as the
  * LAST content item. Unit tests pin the shape against mocks; this spec pins the
- * prose against the REAL stack (Postgres + Redis + Qdrant via AppModule), so a
+ * prose against the REAL stack (Postgres + Redis via AppModule), so a
  * wording or ordering regression in what agents actually read fails here.
  *
  * Assertions target stable substrings (ids + key phrases), not exact full
@@ -14,7 +14,7 @@
  *   docker compose -f docker-compose.test.yml up -d --wait
  *   DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test \
  *     pnpm -w db:migrate:deploy
- *   E2E_ENABLED=true DATABASE_URL=… REDIS_URL=… QDRANT_URL=… NODE_ENV=test \
+ *   E2E_ENABLED=true DATABASE_URL=… REDIS_URL=… NODE_ENV=test \
  *     pnpm --filter mcp-server test:e2e
  */
 
@@ -24,7 +24,6 @@ process.env.DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://engram_test:test_password@localhost:5433/engram_test';
 process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
-process.env.QDRANT_URL = process.env.QDRANT_URL ?? 'http://localhost:6335';
 process.env.EMBEDDING_PROVIDER = process.env.EMBEDDING_PROVIDER ?? 'local';
 
 import { INestApplication } from '@nestjs/common';

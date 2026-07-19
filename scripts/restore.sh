@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ENGRAM restore script — Postgres, Redis, Qdrant
+# ENGRAM restore script — Postgres, Redis
 #
 # Usage:
 #   ./scripts/restore.sh --archive <engram_backup_YYYYMMDD_HHMMSS.tar.gz> [options]
@@ -9,12 +9,10 @@
 #   --compose <file>     docker-compose file (default: docker-compose.prod.yml)
 #   --pg-only            restore only postgres
 #   --redis-only         restore only redis
-#   --qdrant-only        restore only qdrant
 #   --no-confirm         skip interactive confirmation prompt
 #
 # Environment:
 #   DATABASE_URL         postgres connection string (postgres restore)
-#   QDRANT_URL           qdrant HTTP URL (default: http://localhost:6333)
 #   REDIS_CONTAINER      docker container id/name running redis; when set the
 #                        RDB is restored with docker stop/cp/start instead of
 #                        compose (CI service containers, bare `docker run`)
@@ -25,9 +23,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ARCHIVE=""
 PG_ONLY=false
 REDIS_ONLY=false
-QDRANT_ONLY=false
 NO_CONFIRM=false
-QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,7 +31,6 @@ while [[ $# -gt 0 ]]; do
     --compose)     COMPOSE_FILE="$2"; shift 2 ;;
     --pg-only)     PG_ONLY=true; shift ;;
     --redis-only)  REDIS_ONLY=true; shift ;;
-    --qdrant-only) QDRANT_ONLY=true; shift ;;
     --no-confirm)  NO_CONFIRM=true; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -68,7 +63,7 @@ tar -xzf "${ARCHIVE}" -C "${WORK_DIR}"
 BACKUP_DIR="$(find "${WORK_DIR}" -mindepth 1 -maxdepth 1 -type d | head -1)"
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
-if [[ "${REDIS_ONLY}" != "true" && "${QDRANT_ONLY}" != "true" ]]; then
+if [[ "${REDIS_ONLY}" != "true" ]]; then
   PGDUMP="${BACKUP_DIR}/postgres.pgdump"
   if [[ -f "${PGDUMP}" ]]; then
     echo "[restore] restoring postgres …"
@@ -90,7 +85,7 @@ if [[ "${REDIS_ONLY}" != "true" && "${QDRANT_ONLY}" != "true" ]]; then
 fi
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
-if [[ "${PG_ONLY}" != "true" && "${QDRANT_ONLY}" != "true" ]]; then
+if [[ "${PG_ONLY}" != "true" ]]; then
   RDB="${BACKUP_DIR}/redis.rdb"
   if [[ -f "${RDB}" ]]; then
     echo "[restore] restoring redis …"
@@ -114,29 +109,6 @@ if [[ "${PG_ONLY}" != "true" && "${QDRANT_ONLY}" != "true" ]]; then
     fi
   else
     echo "[restore] no redis RDB found in archive"
-  fi
-fi
-
-# ── Qdrant ────────────────────────────────────────────────────────────────────
-if [[ "${PG_ONLY}" != "true" && "${REDIS_ONLY}" != "true" ]]; then
-  COLLECTION="${VECTOR_COLLECTION:-memories}"
-  SNAPSHOT="$(find "${BACKUP_DIR}" -name "qdrant_*.snapshot" | head -1)"
-  if [[ -n "${SNAPSHOT}" && -f "${SNAPSHOT}" ]]; then
-    echo "[restore] restoring qdrant …"
-    # The snapshot upload endpoint requires multipart/form-data with the file
-    # in a `snapshot` field (a raw octet-stream body is rejected by Qdrant).
-    # `priority=snapshot` makes the uploaded data win over any existing
-    # collection state, and recreates the collection when it is missing.
-    if ! UPLOAD_RESP="$(curl -sf -X POST \
-      "${QDRANT_URL}/collections/${COLLECTION}/snapshots/upload?priority=snapshot" \
-      -F "snapshot=@${SNAPSHOT}")"; then
-      echo "[restore] error: qdrant snapshot upload failed (${QDRANT_URL})" >&2
-      exit 1
-    fi
-    echo "[restore] qdrant response: ${UPLOAD_RESP}"
-    echo "[restore] qdrant done ✓"
-  else
-    echo "[restore] no qdrant snapshot found in archive"
   fi
 fi
 

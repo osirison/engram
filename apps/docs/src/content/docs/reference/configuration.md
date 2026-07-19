@@ -18,13 +18,10 @@ codebase.
 | `PORT` | number | `3000` | no | all | TCP port the MCP/HTTP server listens on. |
 | `DATABASE_URL` | string | — | no | `lite`, `enterprise` | Conditional Postgres URL. Required for `lite` and `enterprise` profiles, optional for `memory`. The validation rule is applied in the transform below; we keep the field optional here so the same schema can parse a `memory`-profile environment without forcing an empty string. |
 | `REDIS_URL` | string | — | no | `enterprise` | Conditional Redis URL. Required only for `enterprise`. |
-| `QDRANT_URL` | string | — | no | `enterprise` | Conditional Qdrant URL. Required only for `enterprise`. |
 | `OPENAI_API_KEY` | string | — | no | all | Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. |
 | `EMBEDDING_PROVIDER` | `ollama` \| `openai` \| `disabled` \| `local` | `ollama` | no | all | Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. |
 | `EMBEDDING_MODEL` | string | — | no | all | Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. |
 | `OLLAMA_URL` | string | — | no | all | Base URL of the Ollama server used when `EMBEDDING_PROVIDER=ollama`. Defaults to `http://localhost:11434`. |
-| `VECTOR_BACKEND` | `qdrant` \| `pgvector` | `qdrant` | no | all | Vector backend selection. Both `qdrant` and `pgvector` are implemented. |
-| `VECTOR_COLLECTION` | string | — | no | all | Optional override for the vector collection/table name. |
 | `VECTOR_DIMENSIONS` | number | — | no | all | Optional strict pin for embedding dimensionality. When unset, dimensions are inferred from the model (if known) or from the first generated vector. |
 | `MCP_TRANSPORT` | `stdio` \| `streamable-http` | `stdio` | no | all | MCP transport selection: stdio for local clients, streamable-http for Inspector. |
 | `STM_CONSOLIDATION_ACCESS_THRESHOLD` | number | `3` | no | all | Number of times an STM memory must be accessed before it qualifies for automatic promotion to LTM. Defaults to 3. |
@@ -47,7 +44,7 @@ codebase.
 | `PGVECTOR_HNSW_M` | number | — | no | all | Optional pgvector HNSW build-time `m` (max connections per layer). |
 | `PGVECTOR_HNSW_EF_CONSTRUCTION` | number | — | no | all | Optional pgvector HNSW build-time `ef_construction` (candidate list size). |
 | `PGVECTOR_HNSW_EF_SEARCH` | number | — | no | all | Optional pgvector HNSW query-time `ef_search` (recall/latency tuning). |
-| `DEPLOYMENT_PROFILE` | `memory` \| `lite` \| `enterprise` | `enterprise` | no | all | Deployment profile ladder: - `memory`     → in-process, zero external services. - `lite`       → requires DATABASE_URL; no Redis/Qdrant. - `enterprise` → requires DATABASE_URL, REDIS_URL, QDRANT_URL. Defaults to `enterprise` for backward compatibility with existing production deployments. |
+| `DEPLOYMENT_PROFILE` | `memory` \| `lite` \| `enterprise` | `enterprise` | no | all | Deployment profile ladder: - `memory`     → in-process, zero external services. - `lite`       → requires DATABASE_URL; no Redis/Qdrant. - `enterprise` → requires DATABASE_URL, REDIS_URL. Defaults to `enterprise` for backward compatibility with existing production deployments. |
 | `JWT_SECRET` | string | — | no | when `AUTH_REQUIRED=true` | HMAC secret for issuing/verifying session JWTs. Required (≥32 chars) when `AUTH_REQUIRED=true`; otherwise optional. Never logged. |
 | `JWT_EXPIRES_IN` | string | `7d` | no | all | JWT lifetime as a duration string (`7d`, `24h`, `30m`, `3600s`) or seconds. |
 | `AUTH_REQUIRED` | boolean | `false` | no | all | When true, `/mcp` tool calls must present a valid JWT or API key, and the acting `userId` is derived from that credential — the `userId` in tool input is ignored. Default false preserves the trusted-caller behaviour. Only enforced over the streamable-http transport. |
@@ -71,7 +68,6 @@ depending on the active `DEPLOYMENT_PROFILE`:
 
 - DATABASE_URL must be a valid URL
 - REDIS_URL must be a valid URL
-- QDRANT_URL must be a valid URL
 - OLLAMA_URL must be a valid URL including a scheme (e.g. http://localhost:11434)
 - JWT_SECRET must be set and at least 32 characters when AUTH_REQUIRED=true
 
@@ -99,7 +95,6 @@ appears here automatically (add a description in the generator).
 | `METRICS_TOKEN` | Bearer token required to scrape `/health/metrics`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces. Omit to disable OpenTelemetry (no overhead). |
 | `OTEL_SERVICE_NAME` | Service name reported to OpenTelemetry. |
-| `QDRANT_API_KEY` | Optional API key for an authenticated Qdrant instance. |
 | `STM_CONSOLIDATION_IMPORTANCE_THRESHOLD` | Minimum importance an STM memory needs to qualify for promotion. |
 | `WEB_DATABASE_URL` | Postgres URL used by the Next.js dashboard (`apps/web`). |
 

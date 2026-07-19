@@ -3,7 +3,6 @@ import { HealthController } from './health.controller';
 import { HealthCheckService } from '@nestjs/terminus';
 import { PrismaHealthIndicator } from './prisma.health';
 import { RedisHealthIndicator } from './redis.health';
-import { QdrantHealthIndicator } from './qdrant.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { EmbeddingsService } from '@engram/embeddings';
 import { DeploymentProfile } from '@engram/config';
@@ -22,9 +21,6 @@ describe('HealthController', () => {
     isHealthy: jest.fn(),
   };
   const redisHealthMock = {
-    isHealthy: jest.fn(),
-  };
-  const qdrantHealthMock = {
     isHealthy: jest.fn(),
   };
   const pgVectorHealthMock = {
@@ -55,10 +51,6 @@ describe('HealthController', () => {
         {
           provide: RedisHealthIndicator,
           useValue: redisHealthMock,
-        },
-        {
-          provide: QdrantHealthIndicator,
-          useValue: qdrantHealthMock,
         },
         {
           provide: PgVectorHealthIndicator,
@@ -97,46 +89,12 @@ describe('HealthController', () => {
       memoryStoreHealthMock as unknown as MemoryStoreHealthIndicator,
       prismaHealthMock as unknown as PrismaHealthIndicator,
       redisHealthMock as unknown as RedisHealthIndicator,
-      qdrantHealthMock as unknown as QdrantHealthIndicator,
       pgVectorHealthMock as unknown as PgVectorHealthIndicator,
       undefined,
     );
 
     const metrics = await noEmbeddingsController.getMetrics();
     expect(metrics).toContain('engram_vector_backend_info');
-  });
-
-  it('includes the pgvector check only when VECTOR_BACKEND is pgvector', async () => {
-    healthServiceMock.check.mockImplementation(
-      async (indicators: Array<() => Promise<unknown>>) => {
-        await Promise.all(indicators.map((indicator) => indicator()));
-        return { status: 'ok' };
-      },
-    );
-    prismaHealthMock.isHealthy.mockResolvedValue({
-      database: { status: 'up' },
-    });
-    redisHealthMock.isHealthy.mockResolvedValue({ redis: { status: 'up' } });
-    qdrantHealthMock.isHealthy.mockResolvedValue({ qdrant: { status: 'up' } });
-    pgVectorHealthMock.isHealthy.mockResolvedValue({
-      pgvector: { status: 'up' },
-    });
-
-    const previous = process.env.VECTOR_BACKEND;
-
-    process.env.VECTOR_BACKEND = 'qdrant';
-    await controller.check();
-    expect(pgVectorHealthMock.isHealthy).not.toHaveBeenCalled();
-
-    process.env.VECTOR_BACKEND = 'pgvector';
-    await controller.check();
-    expect(pgVectorHealthMock.isHealthy).toHaveBeenCalledWith('pgvector');
-
-    if (previous === undefined) {
-      delete process.env.VECTOR_BACKEND;
-    } else {
-      process.env.VECTOR_BACKEND = previous;
-    }
   });
 
   it('readiness uses the same health indicators as the liveness endpoint', async () => {
@@ -150,16 +108,6 @@ describe('HealthController', () => {
 });
 
 describe('HealthController profile-aware vector wiring', () => {
-  const ORIGINAL_BACKEND = process.env.VECTOR_BACKEND;
-
-  afterEach(() => {
-    if (ORIGINAL_BACKEND === undefined) {
-      delete process.env.VECTOR_BACKEND;
-    } else {
-      process.env.VECTOR_BACKEND = ORIGINAL_BACKEND;
-    }
-  });
-
   // Build a controller for an explicit profile (injected via ENGRAM_PROFILE)
   // whose check() actually invokes every composed indicator, so tests can
   // assert which backends were probed.
@@ -169,7 +117,6 @@ describe('HealthController profile-aware vector wiring', () => {
       memory: jest.Mock;
       prisma: jest.Mock;
       redis: jest.Mock;
-      qdrant: jest.Mock;
       pgvector: jest.Mock;
     };
   } {
@@ -177,7 +124,6 @@ describe('HealthController profile-aware vector wiring', () => {
       memory: jest.fn().mockReturnValue({ 'memory-store': { status: 'up' } }),
       prisma: jest.fn().mockResolvedValue({ database: { status: 'up' } }),
       redis: jest.fn().mockResolvedValue({ redis: { status: 'up' } }),
-      qdrant: jest.fn().mockResolvedValue({ qdrant: { status: 'up' } }),
       pgvector: jest.fn().mockResolvedValue({ pgvector: { status: 'up' } }),
     };
     const check = jest.fn(async (indicators: Array<() => Promise<unknown>>) => {
@@ -189,7 +135,6 @@ describe('HealthController profile-aware vector wiring', () => {
       { isHealthy: probes.memory } as unknown as MemoryStoreHealthIndicator,
       { isHealthy: probes.prisma } as unknown as PrismaHealthIndicator,
       { isHealthy: probes.redis } as unknown as RedisHealthIndicator,
-      { isHealthy: probes.qdrant } as unknown as QdrantHealthIndicator,
       { isHealthy: probes.pgvector } as unknown as PgVectorHealthIndicator,
       undefined,
       undefined,
@@ -198,20 +143,17 @@ describe('HealthController profile-aware vector wiring', () => {
     return { controller, probes };
   }
 
-  it('LITE + pgvector probes pgvector and the DB, never Qdrant or Redis', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
+  it('LITE probes pgvector and the DB, never Redis', async () => {
     const { controller, probes } = makeController(DeploymentProfile.LITE);
 
     await controller.check();
 
     expect(probes.prisma).toHaveBeenCalledWith('database');
     expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
-    expect(probes.qdrant).not.toHaveBeenCalled();
     expect(probes.redis).not.toHaveBeenCalled();
   });
 
-  it('LITE + pgvector reports engram_pgvector_ready 1 when reachable', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
+  it('LITE reports engram_pgvector_ready 1 when reachable', async () => {
     const { controller, probes } = makeController(DeploymentProfile.LITE);
 
     const metrics = await controller.getMetrics();
@@ -222,8 +164,7 @@ describe('HealthController profile-aware vector wiring', () => {
     expect(metrics).toContain('engram_deployment_profile_info{profile="lite"}');
   });
 
-  it('LITE + pgvector reports engram_pgvector_ready 0 when the probe fails', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
+  it('LITE reports engram_pgvector_ready 0 when the probe fails', async () => {
     const { controller, probes } = makeController(DeploymentProfile.LITE);
     probes.pgvector.mockRejectedValueOnce(new Error('extension missing'));
 
@@ -232,60 +173,23 @@ describe('HealthController profile-aware vector wiring', () => {
     expect(metrics).toContain('engram_pgvector_ready 0');
   });
 
-  it('ENTERPRISE + qdrant probes Qdrant only and keeps the gauge at 0', async () => {
-    process.env.VECTOR_BACKEND = 'qdrant';
-    const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
-
-    await controller.check();
-    const metrics = await controller.getMetrics();
-
-    expect(probes.qdrant).toHaveBeenCalledWith('qdrant');
-    expect(probes.pgvector).not.toHaveBeenCalled();
-    expect(metrics).toContain('engram_pgvector_ready 0');
-  });
-
-  it('ENTERPRISE with no VECTOR_BACKEND defaults to qdrant and probes it', async () => {
-    delete process.env.VECTOR_BACKEND;
+  it('ENTERPRISE probes Redis, the DB, and pgvector', async () => {
     const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
 
     await controller.check();
 
-    expect(probes.qdrant).toHaveBeenCalledWith('qdrant');
-    expect(probes.pgvector).not.toHaveBeenCalled();
-  });
-
-  it('ENTERPRISE + pgvector probes pgvector only, never Qdrant (#193)', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
-    const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
-
-    await controller.check();
-
-    expect(probes.qdrant).not.toHaveBeenCalled();
+    expect(probes.prisma).toHaveBeenCalledWith('database');
+    expect(probes.redis).toHaveBeenCalledWith('redis');
     expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
   });
 
-  it('ENTERPRISE + pgvector stays healthy when Qdrant is down (#193)', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
-    const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
-    probes.qdrant.mockRejectedValue(new Error('qdrant unreachable'));
-
-    // check() awaits every composed indicator, so a probed-but-down Qdrant
-    // would reject here. Readiness must compose the same indicator set.
-    await expect(controller.check()).resolves.toEqual({ status: 'ok' });
-    await expect(controller.readiness()).resolves.toEqual({ status: 'ok' });
-    expect(probes.qdrant).not.toHaveBeenCalled();
-    expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
-  });
-
-  it('MEMORY probes no external vector store', async () => {
-    process.env.VECTOR_BACKEND = 'pgvector';
+  it('MEMORY probes no external services', async () => {
     const { controller, probes } = makeController(DeploymentProfile.MEMORY);
 
     await controller.check();
     const metrics = await controller.getMetrics();
 
     expect(probes.prisma).not.toHaveBeenCalled();
-    expect(probes.qdrant).not.toHaveBeenCalled();
     expect(probes.pgvector).not.toHaveBeenCalled();
     expect(metrics).toContain('engram_pgvector_ready 0');
   });

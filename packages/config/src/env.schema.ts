@@ -56,8 +56,6 @@ export const baseSchema = z.object({
   DATABASE_URL: z.string().url().optional(),
   /** Conditional Redis URL. Required only for `enterprise`. */
   REDIS_URL: z.string().url().optional(),
-  /** Conditional Qdrant URL. Required only for `enterprise`. */
-  QDRANT_URL: z.string().url().optional(),
   /** Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. */
   OPENAI_API_KEY: z.string().optional(),
   /** Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. */
@@ -69,10 +67,6 @@ export const baseSchema = z.object({
   EMBEDDING_MODEL: emptyStringAsUndefined(z.string().min(1).optional()),
   /** Base URL of the Ollama server used when `EMBEDDING_PROVIDER=ollama`. Defaults to `http://localhost:11434`. */
   OLLAMA_URL: emptyStringAsUndefined(z.string().url().optional()),
-  /** Vector backend selection. Both `qdrant` and `pgvector` are implemented. */
-  VECTOR_BACKEND: z.enum(['qdrant', 'pgvector']).default('qdrant'),
-  /** Optional override for the vector collection/table name. */
-  VECTOR_COLLECTION: z.string().min(1).optional(),
   /** Optional strict pin for embedding dimensionality. When unset, dimensions are inferred from the model (if known) or from the first generated vector. */
   VECTOR_DIMENSIONS: z.coerce.number().int().positive().optional(),
   /** MCP transport selection: stdio for local clients, streamable-http for Inspector. */
@@ -138,7 +132,7 @@ export const baseSchema = z.object({
    * Deployment profile ladder:
    *   - `memory`     → in-process, zero external services.
    *   - `lite`       → requires DATABASE_URL; no Redis/Qdrant.
-   *   - `enterprise` → requires DATABASE_URL, REDIS_URL, QDRANT_URL.
+   *   - `enterprise` → requires DATABASE_URL, REDIS_URL.
    *
    * Defaults to `enterprise` for backward compatibility with existing
    * production deployments.
@@ -247,26 +241,8 @@ export const envSchema: z.ZodType<Env> = baseSchema.transform((value, ctx) => {
       });
       return z.NEVER;
     }
-
-    if (typeof value.QDRANT_URL !== 'string' || value.QDRANT_URL.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['QDRANT_URL'],
-        message: `QDRANT_URL is required when DEPLOYMENT_PROFILE='${profile}'`,
-      });
-      return z.NEVER;
-    }
-    if (!isLikelyUrl(value.QDRANT_URL)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['QDRANT_URL'],
-        message: 'QDRANT_URL must be a valid URL',
-      });
-      return z.NEVER;
-    }
   } else {
     value.REDIS_URL = undefined;
-    value.QDRANT_URL = undefined;
   }
 
   // Fail fast on a malformed RATE_LIMIT_TOOL_OVERRIDES rather than silently
@@ -394,13 +370,10 @@ export type Env = {
   DEPLOYMENT_PROFILE: DeploymentProfile;
   DATABASE_URL?: string;
   REDIS_URL?: string;
-  QDRANT_URL?: string;
   OPENAI_API_KEY?: string;
   EMBEDDING_PROVIDER: 'ollama' | 'openai' | 'disabled' | 'local';
   EMBEDDING_MODEL?: string;
   OLLAMA_URL?: string;
-  VECTOR_BACKEND: 'qdrant' | 'pgvector';
-  VECTOR_COLLECTION?: string;
   VECTOR_DIMENSIONS?: number;
   MCP_TRANSPORT: 'stdio' | 'streamable-http';
   STM_CONSOLIDATION_ACCESS_THRESHOLD: number;

@@ -10,7 +10,6 @@ describe('envSchema', () => {
         PORT: '3000',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       const result = envSchema.parse(config);
@@ -21,10 +20,8 @@ describe('envSchema', () => {
         DEPLOYMENT_PROFILE: 'enterprise',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
         EMBEDDING_PROVIDER: 'ollama',
         MCP_TRANSPORT: 'stdio',
-        VECTOR_BACKEND: 'qdrant',
         STM_CONSOLIDATION_ACCESS_THRESHOLD: 3,
         STM_CONSOLIDATION_INTERVAL_MS: 300_000,
         STM_SWEEP_INTERVAL_MS: 600_000,
@@ -56,7 +53,6 @@ describe('envSchema', () => {
       const base = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(envSchema.parse(base).EMBEDDING_PROVIDER).toBe('ollama');
@@ -82,7 +78,6 @@ describe('envSchema', () => {
       const base = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(() => envSchema.parse({ ...base, OLLAMA_URL: 'not-a-url' })).toThrow(ZodError);
@@ -101,7 +96,6 @@ describe('envSchema', () => {
       const config = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       const result = envSchema.parse(config);
@@ -115,7 +109,6 @@ describe('envSchema', () => {
         PORT: '8080',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       const result = envSchema.parse(config);
@@ -129,7 +122,6 @@ describe('envSchema', () => {
         NODE_ENV: 'production',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       const result = envSchema.parse(config);
@@ -142,7 +134,6 @@ describe('envSchema', () => {
         NODE_ENV: 'test',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       const result = envSchema.parse(config);
@@ -155,26 +146,11 @@ describe('envSchema', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
       REDIS_URL: 'redis://localhost:6379',
-      QDRANT_URL: 'http://localhost:6333',
     };
-
-    it('should default VECTOR_BACKEND to qdrant', () => {
-      const result = envSchema.parse(base);
-      expect(result.VECTOR_BACKEND).toBe('qdrant');
-    });
-
-    it('should accept pgvector as a backend', () => {
-      const result = envSchema.parse({ ...base, VECTOR_BACKEND: 'pgvector' });
-      expect(result.VECTOR_BACKEND).toBe('pgvector');
-    });
 
     it('should accept streamable-http as an MCP transport', () => {
       const result = envSchema.parse({ ...base, MCP_TRANSPORT: 'streamable-http' });
       expect(result.MCP_TRANSPORT).toBe('streamable-http');
-    });
-
-    it('should reject an unknown backend', () => {
-      expect(() => envSchema.parse({ ...base, VECTOR_BACKEND: 'pinecone' })).toThrow(ZodError);
     });
 
     it('should coerce VECTOR_DIMENSIONS to a positive integer', () => {
@@ -184,11 +160,6 @@ describe('envSchema', () => {
 
     it('should reject a non-positive VECTOR_DIMENSIONS', () => {
       expect(() => envSchema.parse({ ...base, VECTOR_DIMENSIONS: '0' })).toThrow(ZodError);
-    });
-
-    it('should accept a custom VECTOR_COLLECTION', () => {
-      const result = envSchema.parse({ ...base, VECTOR_COLLECTION: 'custom' });
-      expect(result.VECTOR_COLLECTION).toBe('custom');
     });
 
     it('should coerce pgvector HNSW tuning values', () => {
@@ -224,7 +195,6 @@ describe('envSchema', () => {
     it('should throw error when DATABASE_URL is missing', () => {
       const config = {
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -234,7 +204,6 @@ describe('envSchema', () => {
       const config = {
         DATABASE_URL: 'not-a-url',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -243,7 +212,6 @@ describe('envSchema', () => {
     it('should throw error when REDIS_URL is missing', () => {
       const config = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -253,26 +221,6 @@ describe('envSchema', () => {
       const config = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'invalid-url',
-        QDRANT_URL: 'http://localhost:6333',
-      };
-
-      expect(() => envSchema.parse(config)).toThrow(ZodError);
-    });
-
-    it('should throw error when QDRANT_URL is missing', () => {
-      const config = {
-        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
-      };
-
-      expect(() => envSchema.parse(config)).toThrow(ZodError);
-    });
-
-    it('should throw error when QDRANT_URL is not a valid URL', () => {
-      const config = {
-        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'not-a-url',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -283,7 +231,6 @@ describe('envSchema', () => {
         NODE_ENV: 'invalid',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -294,7 +241,6 @@ describe('envSchema', () => {
         PORT: 'not-a-number',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -305,7 +251,6 @@ describe('envSchema', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
       REDIS_URL: 'redis://localhost:6379',
-      QDRANT_URL: 'http://localhost:6333',
     };
 
     const secret = 'a-very-long-secret-key-of-at-least-32-characters';
@@ -389,7 +334,6 @@ describe('envSchema', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
       REDIS_URL: 'redis://localhost:6379',
-      QDRANT_URL: 'http://localhost:6333',
     };
 
     it('applies defaults matching the services inline fallbacks', () => {
@@ -513,7 +457,6 @@ describe('envSchema', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
       REDIS_URL: 'redis://localhost:6379',
-      QDRANT_URL: 'http://localhost:6333',
     };
 
     it('is optional and stays undefined when unset (runtime falls back to the home dir)', () => {
@@ -548,7 +491,6 @@ describe('envSchema', () => {
       const config = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
         REDIS_URL: 'redis://localhost:6379',
-        QDRANT_URL: 'http://localhost:6333',
       };
 
       const result = validateEnv(config);

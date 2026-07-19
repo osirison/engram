@@ -439,7 +439,7 @@ describe('MemoryLtmService', () => {
         .mockResolvedValue(embedding ? { embedding, model: 'm', cached: false } : null),
     });
     const stubVectorStore = () => ({
-      backend: 'qdrant' as const,
+      backend: 'pgvector' as const,
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
       search: vi.fn().mockResolvedValue([]),
@@ -1058,7 +1058,7 @@ describe('MemoryLtmService', () => {
         generate: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       };
       vectorStore = {
-        backend: 'qdrant' as const,
+        backend: 'pgvector' as const,
         upsert: vi.fn().mockResolvedValue(undefined),
         delete: vi.fn().mockResolvedValue(undefined),
         search: vi.fn().mockResolvedValue([]),
@@ -1171,7 +1171,7 @@ describe('MemoryLtmService', () => {
       const importanceService = new ImportanceScoringService();
       const duplicateService = new DuplicateDetectionService();
       const vectorStore = {
-        backend: 'qdrant' as const,
+        backend: 'pgvector' as const,
         upsert: vi.fn(),
         delete: vi.fn(),
         ensureReady: vi.fn(),
@@ -1357,7 +1357,7 @@ describe('MemoryLtmService', () => {
       const importanceService = new ImportanceScoringService();
       const duplicateService = new DuplicateDetectionService();
       const vectorStore = {
-        backend: 'qdrant' as const,
+        backend: 'pgvector' as const,
         upsert: vi.fn(),
         delete: vi.fn(),
         ensureReady: vi.fn(),
@@ -1411,7 +1411,7 @@ describe('MemoryLtmService', () => {
         const duplicateService = new DuplicateDetectionService();
         const contradictionService = new ContradictionDetectionService();
         const vectorStore = {
-          backend: 'qdrant' as const,
+          backend: 'pgvector' as const,
           upsert: vi.fn(),
           delete: vi.fn(),
           ensureReady: vi.fn(),
@@ -1499,7 +1499,7 @@ describe('MemoryLtmService', () => {
         const duplicateService = new DuplicateDetectionService();
         const contradictionService = new ContradictionDetectionService();
         const vectorStore = {
-          backend: 'qdrant' as const,
+          backend: 'pgvector' as const,
           upsert: vi.fn(),
           delete: vi.fn(),
           ensureReady: vi.fn(),
@@ -1548,7 +1548,7 @@ describe('MemoryLtmService', () => {
         const importanceService = new ImportanceScoringService();
         const duplicateService = new DuplicateDetectionService();
         const vectorStore = {
-          backend: 'qdrant' as const,
+          backend: 'pgvector' as const,
           upsert: vi.fn(),
           delete: vi.fn(),
           ensureReady: vi.fn(),
@@ -1600,7 +1600,7 @@ describe('MemoryLtmService', () => {
         const duplicateService = new DuplicateDetectionService();
         const contradictionService = new ContradictionDetectionService();
         const vectorStore = {
-          backend: 'qdrant' as const,
+          backend: 'pgvector' as const,
           upsert: vi.fn(),
           delete: vi.fn(),
           ensureReady: vi.fn(),

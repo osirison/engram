@@ -44,7 +44,7 @@ describe('MemoryLtmModule integration', () => {
     };
 
     vectorStore = {
-      backend: 'qdrant' as const,
+      backend: 'pgvector' as const,
       upsert: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
       search: vi.fn().mockResolvedValue([]),
