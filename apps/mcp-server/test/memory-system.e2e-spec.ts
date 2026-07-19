@@ -11,7 +11,6 @@
  * Run:
  *   E2E_ENABLED=true \
  *   DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test \
- *   REDIS_URL=redis://localhost:6380 \
  *   NODE_ENV=test \
  *   pnpm --filter mcp-server test:e2e
  *
@@ -25,7 +24,6 @@ process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://engram_test:test_password@localhost:5433/engram_test';
-process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
 // Use the deterministic local hash provider so E2E recall tests do not require
 // an OpenAI API key. The provider produces a stable 1536-dim vector for any
 // given text, guaranteeing a cosine score of 1.0 when query === stored content.

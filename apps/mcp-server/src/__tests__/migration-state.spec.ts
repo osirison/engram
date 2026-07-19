@@ -48,7 +48,7 @@ describe('FileCheckpointBackend', () => {
     const checkpoint = {
       id: DEFAULT_MIGRATION_ID,
       sourceProfile: 'lite' as const,
-      targetProfile: 'enterprise' as const,
+      targetProfile: 'standard' as const,
       state: 'preparing' as const,
       cursor: null,
       progress: 0,
@@ -74,7 +74,7 @@ describe('FileCheckpointBackend', () => {
     const checkpoint = {
       id: DEFAULT_MIGRATION_ID,
       sourceProfile: 'lite' as const,
-      targetProfile: 'enterprise' as const,
+      targetProfile: 'standard' as const,
       state: 'preparing' as const,
       cursor: 'mem-1',
       progress: 10,
@@ -279,12 +279,9 @@ describe('MigrationStateService without a backend', () => {
 });
 
 describe('selectCheckpointBackend', () => {
-  const enterpriseCapabilities = {
-    profile: DeploymentProfile.ENTERPRISE,
+  const standardCapabilities = {
+    profile: DeploymentProfile.STANDARD,
     requiresDatabase: true,
-    requiresRedis: true,
-    requiresQdrant: true,
-    inProcessAdapters: false,
     persistent: true,
     multiTenant: true,
   };
@@ -292,9 +289,6 @@ describe('selectCheckpointBackend', () => {
   const liteCapabilities = {
     profile: DeploymentProfile.LITE,
     requiresDatabase: true,
-    requiresRedis: false,
-    requiresQdrant: false,
-    inProcessAdapters: false,
     persistent: true,
     multiTenant: false,
   };
@@ -307,7 +301,7 @@ describe('selectCheckpointBackend', () => {
   it('returns a PostgresCheckpointBackend for enterprise profile with prisma', () => {
     const prisma = {} as never;
     const result = selectCheckpointBackend({
-      capabilities: enterpriseCapabilities,
+      capabilities: standardCapabilities,
       prisma,
     });
     expect(result).toBeInstanceOf(PostgresCheckpointBackend);
@@ -315,8 +309,8 @@ describe('selectCheckpointBackend', () => {
 
   it('throws for enterprise profile without prisma', () => {
     expect(() =>
-      selectCheckpointBackend({ capabilities: enterpriseCapabilities }),
-    ).toThrow(/enterprise profile requires a PrismaService/);
+      selectCheckpointBackend({ capabilities: standardCapabilities }),
+    ).toThrow(/standard profile requires a PrismaService/);
   });
 
   it('returns a FileCheckpointBackend for lite profile with dataDir', () => {

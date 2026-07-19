@@ -2,13 +2,11 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 import { EmbeddingsModule } from '@engram/embeddings';
-import { RedisModule } from '@engram/redis';
 import { VectorStoreModule } from '@engram/vector-store';
 import { usesPgVector, type ProfileCapabilities } from '@engram/config';
 import { HealthController } from './health.controller';
 import { MetricsTokenGuard } from './metrics-token.guard';
 import { PrismaHealthIndicator } from './prisma.health';
-import { RedisHealthIndicator } from './redis.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { MemoryStoreHealthIndicator } from './memory-store.health';
 import { MetricsModule } from '../metrics/metrics.module';
@@ -38,10 +36,6 @@ export class HealthModule {
       // PrismaModule is @Global() — no re-import needed; PrismaService is
       // available from the root context already.
       providers.push(PrismaHealthIndicator);
-    }
-    if (capabilities.requiresRedis) {
-      imports.push(RedisModule.forRoot());
-      providers.push(RedisHealthIndicator);
     }
     if (usesPgVector(capabilities)) {
       // pgvector lives in Postgres, so it is health-checkable in any profile

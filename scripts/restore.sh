@@ -1,36 +1,24 @@
 #!/usr/bin/env bash
-# ENGRAM restore script — Postgres, Redis
+# ENGRAM restore script — Postgres
 #
 # Usage:
 #   ./scripts/restore.sh --archive <engram_backup_YYYYMMDD_HHMMSS.tar.gz> [options]
 #
 # Options:
 #   --archive <file>     backup archive produced by backup.sh (required)
-#   --compose <file>     docker-compose file (default: docker-compose.prod.yml)
-#   --pg-only            restore only postgres
-#   --redis-only         restore only redis
 #   --no-confirm         skip interactive confirmation prompt
 #
 # Environment:
 #   DATABASE_URL         postgres connection string (postgres restore)
-#   REDIS_CONTAINER      docker container id/name running redis; when set the
-#                        RDB is restored with docker stop/cp/start instead of
-#                        compose (CI service containers, bare `docker run`)
 
 set -euo pipefail
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ARCHIVE=""
-PG_ONLY=false
-REDIS_ONLY=false
 NO_CONFIRM=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --archive)     ARCHIVE="$2"; shift 2 ;;
-    --compose)     COMPOSE_FILE="$2"; shift 2 ;;
-    --pg-only)     PG_ONLY=true; shift ;;
-    --redis-only)  REDIS_ONLY=true; shift ;;
     --no-confirm)  NO_CONFIRM=true; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -63,53 +51,23 @@ tar -xzf "${ARCHIVE}" -C "${WORK_DIR}"
 BACKUP_DIR="$(find "${WORK_DIR}" -mindepth 1 -maxdepth 1 -type d | head -1)"
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
-if [[ "${REDIS_ONLY}" != "true" ]]; then
-  PGDUMP="${BACKUP_DIR}/postgres.pgdump"
-  if [[ -f "${PGDUMP}" ]]; then
-    echo "[restore] restoring postgres …"
-    if [[ -n "${DATABASE_URL:-}" ]]; then
-      # Drop and recreate the public schema so existing objects are removed.
-      psql "${DATABASE_URL}" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-      pg_restore -d "${DATABASE_URL}" \
-        --no-acl \
-        --no-owner \
-        --single-transaction \
-        "${PGDUMP}"
-      echo "[restore] postgres done ✓"
-    else
-      echo "[restore] DATABASE_URL not set — skipping postgres"
-    fi
+PGDUMP="${BACKUP_DIR}/postgres.pgdump"
+if [[ -f "${PGDUMP}" ]]; then
+  echo "[restore] restoring postgres …"
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    # Drop and recreate the public schema so existing objects are removed.
+    psql "${DATABASE_URL}" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+    pg_restore -d "${DATABASE_URL}" \
+      --no-acl \
+      --no-owner \
+      --single-transaction \
+      "${PGDUMP}"
+    echo "[restore] postgres done ✓"
   else
-    echo "[restore] no postgres dump found in archive"
+    echo "[restore] DATABASE_URL not set — skipping postgres"
   fi
-fi
-
-# ── Redis ─────────────────────────────────────────────────────────────────────
-if [[ "${PG_ONLY}" != "true" ]]; then
-  RDB="${BACKUP_DIR}/redis.rdb"
-  if [[ -f "${RDB}" ]]; then
-    echo "[restore] restoring redis …"
-    # Precedence: explicit REDIS_CONTAINER → running compose service.
-    if [[ -n "${REDIS_CONTAINER:-}" ]]; then
-      # Stop first so redis does not overwrite the restored RDB on shutdown,
-      # then load it on the next start. `docker cp` works on stopped containers.
-      docker stop "${REDIS_CONTAINER}" >/dev/null
-      docker cp "${RDB}" "${REDIS_CONTAINER}:/data/dump.rdb"
-      docker start "${REDIS_CONTAINER}" >/dev/null
-      echo "[restore] redis done ✓"
-    elif [[ -n "$(docker compose -f "${COMPOSE_FILE}" ps -q redis 2>/dev/null)" ]]; then
-      # `ps -q` prints a container id only when the service is actually
-      # running (`ps <service>` exits 0 even when nothing is up).
-      docker compose -f "${COMPOSE_FILE}" stop redis
-      docker compose -f "${COMPOSE_FILE}" cp "${RDB}" redis:/data/dump.rdb
-      docker compose -f "${COMPOSE_FILE}" start redis
-      echo "[restore] redis done ✓"
-    else
-      echo "[restore] docker-compose redis service not running — copy ${RDB} manually"
-    fi
-  else
-    echo "[restore] no redis RDB found in archive"
-  fi
+else
+  echo "[restore] no postgres dump found in archive"
 fi
 
 echo "[restore] complete ✓"

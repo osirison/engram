@@ -1,7 +1,7 @@
 name: Epic
 description: Create a high-level feature epic
-title: "epic: "
-labels: ["type:epic", "status:planning"]
+title: 'epic: '
+labels: ['type:epic', 'status:planning']
 body:
   - type: markdown
     attributes:
@@ -14,7 +14,7 @@ body:
     attributes:
       label: Epic Name
       description: Short name for this epic (will be used as label)
-      placeholder: "core-memory, vector-search, auth-system"
+      placeholder: 'core-memory, vector-search, auth-system'
     validations:
       required: true
 
@@ -49,13 +49,10 @@ body:
         - @engram/api
 
         **Infrastructure:**
-        - PostgreSQL for metadata
-        - Qdrant for vector storage
-        - Redis for caching
+        - PostgreSQL (pgvector) for metadata and vector storage
 
         **External Dependencies:**
-        - OpenAI embeddings API
-        - BullMQ for async processing
+        - Ollama or OpenAI embeddings
     validations:
       required: true
 
@@ -121,7 +118,7 @@ body:
         - Unit tests
 
         **Phase 2: Vector Search (Week 3-4)**
-        - Qdrant integration
+        - pgvector integration
         - Semantic search
         - Performance tuning
 
@@ -144,7 +141,6 @@ body:
         - Cost of embedding generation
 
         **Dependencies:**
-        - Qdrant cloud account setup
         - OpenAI API key
         - PostgreSQL 15+ with pgvector extension
     validations:
@@ -155,6 +151,6 @@ body:
     attributes:
       label: Epic Owner
       description: Who is leading this epic?
-      placeholder: "@username"
+      placeholder: '@username'
     validations:
       required: false

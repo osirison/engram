@@ -1,7 +1,7 @@
 # ENGRAM file-watcher sync bridge — systemd *user* unit (WP5 T11).
 # Watches native agent-memory files and syncs changes into ENGRAM via the WP4
 # importer, honoring the D7 newest-wins conflict rule. Runs alongside the MCP
-# server (needs the same DB/Redis env). Adjust the roots/--user/--scope below.
+# server (needs the same DB env). Adjust the roots/--user/--scope below.
 # Install:  cp deploy/systemd/engram-sync.service ~/.config/systemd/user/
 #           systemctl --user daemon-reload && systemctl --user enable --now engram-sync.service
 [Unit]

@@ -5,7 +5,8 @@ import { MemoryService } from '../src/memory/memory.service';
 import { ReindexQueueService } from '../src/memory/reindex-queue.service';
 import { ConsolidationService } from '../src/memory/consolidation.service';
 import {
-  MemoryStmService,
+  PostgresStmAdapter,
+  STM_PROVIDER,
   StmMemory,
   StmMemoryNotFoundError,
 } from '@engram/memory-stm';
@@ -114,7 +115,7 @@ const prose = (response: ToolTextResponse): string =>
 // ---------------------------------------------------------------------------
 describe('MCP Tools Integration', () => {
   let controller: MemoryController;
-  let stmService: jest.Mocked<MemoryStmService>;
+  let stmService: jest.Mocked<PostgresStmAdapter>;
   let ltmService: jest.Mocked<MemoryLtmService>;
   let reindexQueue: jest.Mocked<ReindexQueueService>;
 
@@ -127,7 +128,7 @@ describe('MCP Tools Integration', () => {
   beforeEach(async () => {
     process.env.MCP_ADMIN_TOKEN = ADMIN_TOKEN;
 
-    const stmMock: Partial<jest.Mocked<MemoryStmService>> = {
+    const stmMock: Partial<jest.Mocked<PostgresStmAdapter>> = {
       create: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
@@ -161,7 +162,7 @@ describe('MCP Tools Integration', () => {
       controllers: [MemoryController],
       providers: [
         MemoryService,
-        { provide: MemoryStmService, useValue: stmMock },
+        { provide: STM_PROVIDER, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
         { provide: ReindexQueueService, useValue: queueMock },
         { provide: ConsolidationService, useValue: consolidationMock },
@@ -169,7 +170,7 @@ describe('MCP Tools Integration', () => {
     }).compile();
 
     controller = module.get<MemoryController>(MemoryController);
-    stmService = module.get<jest.Mocked<MemoryStmService>>(MemoryStmService);
+    stmService = module.get<jest.Mocked<PostgresStmAdapter>>(STM_PROVIDER);
     ltmService = module.get<jest.Mocked<MemoryLtmService>>(MemoryLtmService);
     reindexQueue =
       module.get<jest.Mocked<ReindexQueueService>>(ReindexQueueService);

@@ -5,8 +5,9 @@
 # Survive logout/reboot:  loginctl enable-linger "$USER"
 # Logs:     journalctl --user -u engram-mcp -f
 #
-# Config (secrets, DB/Redis/Qdrant URLs, AUTH_REQUIRED, MCP_ADMIN_TOKEN, profile)
+# Config (secrets, DATABASE_URL, AUTH_REQUIRED, MCP_ADMIN_TOKEN, profile)
 # lives in the EnvironmentFile below — never commit it. See docs/agent-memory-server.md.
+# DEPLOYMENT_PROFILE: standard (default) or lite; legacy 'enterprise' = standard.
 [Unit]
 Description=ENGRAM MCP memory server (Streamable HTTP, loopback)
 After=network-online.target

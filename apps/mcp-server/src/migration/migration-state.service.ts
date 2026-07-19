@@ -61,10 +61,10 @@ export function selectCheckpointBackend(
     return options.forceBackend;
   }
   const profile = options.capabilities?.profile;
-  if (profile === DeploymentProfile.ENTERPRISE) {
+  if (profile === DeploymentProfile.STANDARD) {
     if (!options.prisma) {
       throw new Error(
-        'selectCheckpointBackend: enterprise profile requires a PrismaService instance.',
+        'selectCheckpointBackend: standard profile requires a PrismaService instance.',
       );
     }
     return new PostgresCheckpointBackend(options.prisma);
@@ -159,7 +159,7 @@ export class MigrationStateService {
       const seeded: MigrationCheckpoint = {
         id,
         sourceProfile: 'lite',
-        targetProfile: 'enterprise',
+        targetProfile: 'standard',
         state,
         cursor: input.cursor,
         progress: input.progress,

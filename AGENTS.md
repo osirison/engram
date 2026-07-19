@@ -14,7 +14,7 @@ IMPORTANT: Always prioritize token efficiency in your responses and explanations
 ## Project Summary
 
 ENGRAM is a TypeScript monorepo for an MCP memory server. The main app is a
-NestJS server backed by PostgreSQL, Redis, Qdrant, Prisma, and Turborepo.
+NestJS server backed by PostgreSQL (with pgvector), Prisma, and Turborepo.
 
 Start with [README.md](README.md) for setup commands.
 
@@ -36,8 +36,7 @@ Start with [README.md](README.md) for setup commands.
 | [apps/docs](apps/docs)                         | Docs app workspace                    |
 | [packages/core](packages/core)                 | MCP types, registry, and tools        |
 | [packages/database](packages/database)         | Prisma database module                |
-| [packages/redis](packages/redis)               | Redis client module                   |
-| [packages/vector-store](packages/vector-store) | Qdrant vector store module            |
+| [packages/vector-store](packages/vector-store) | pgvector vector index module          |
 | [packages/embeddings](packages/embeddings)     | Embedding providers and cache support |
 | [prisma](prisma)                               | Prisma schema and migrations          |
 
@@ -88,7 +87,7 @@ npm exec --yes pnpm@11.4.0 -- docs:check
 - Use NestJS modules, services, controllers, providers, and dependency injection.
 - Use Prisma for database access.
 - Use Zod or NestJS DTO validation for inputs.
-- Use Redis, Qdrant, BullMQ, and OpenAI through existing packages.
+- Use Postgres (Prisma), pgvector, and embedding providers through existing packages.
 - Keep logs structured and avoid logging secrets.
 - Keep package boundaries clear. Shared behavior belongs in `packages/*`.
 
@@ -105,7 +104,7 @@ Useful branch examples:
 ```text
 docs/simplify-onboarding-docs
 feat/mcp-tools-#24
-fix/health-qdrant-timeout-#19
+fix/health-timeout-#19
 ```
 
 ## Documentation Rules

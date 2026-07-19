@@ -21,23 +21,6 @@ services:
     networks:
       - engram-network
 
-  redis:
-    image: redis:latest
-    container_name: engram-redis
-    command: redis-server --appendonly yes
-    ports:
-      - '${REDIS_PORT:-6379}:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - engram-network
-
   ollama:
     image: ollama/ollama:latest
     container_name: engram-ollama
@@ -58,8 +41,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   ollama_data:
     driver: local

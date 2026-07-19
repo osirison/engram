@@ -65,7 +65,7 @@ describe('consolidate_corpus tool wiring (G3-T2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.MCP_ADMIN_TOKEN = ADMIN_TOKEN;
-    delete process.env.DEPLOYMENT_PROFILE; // enterprise
+    delete process.env.DEPLOYMENT_PROFILE; // standard (default)
     corpusRun.mockResolvedValue(summary);
   });
 
@@ -174,24 +174,13 @@ describe('consolidate_corpus tool wiring (G3-T2)', () => {
       expect(tool!.description).toContain('consolidate_memories');
     });
 
-    it('hides consolidate_corpus when the service is absent (memory/lite wiring)', async () => {
+    it('hides consolidate_corpus when the service is absent', async () => {
       const controller = await buildController(false);
       const names = controller.getMcpTools().map((t) => t.name);
 
       expect(names).not.toContain('consolidate_corpus');
       // The unrelated STM→LTM promotion tool is still there.
       expect(names).toContain('consolidate_memories');
-    });
-
-    it('hides consolidate_corpus under the memory profile even if the service were provided', async () => {
-      process.env.DEPLOYMENT_PROFILE = 'memory';
-      try {
-        const controller = await buildController();
-        const names = controller.getMcpTools().map((t) => t.name);
-        expect(names).not.toContain('consolidate_corpus');
-      } finally {
-        delete process.env.DEPLOYMENT_PROFILE;
-      }
     });
   });
 });

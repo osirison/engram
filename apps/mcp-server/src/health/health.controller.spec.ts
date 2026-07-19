@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthController } from './health.controller';
 import { HealthCheckService } from '@nestjs/terminus';
 import { PrismaHealthIndicator } from './prisma.health';
-import { RedisHealthIndicator } from './redis.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { EmbeddingsService } from '@engram/embeddings';
 import { DeploymentProfile } from '@engram/config';
@@ -18,9 +17,6 @@ describe('HealthController', () => {
     isHealthy: jest.fn(),
   };
   const prismaHealthMock = {
-    isHealthy: jest.fn(),
-  };
-  const redisHealthMock = {
     isHealthy: jest.fn(),
   };
   const pgVectorHealthMock = {
@@ -47,10 +43,6 @@ describe('HealthController', () => {
         {
           provide: PrismaHealthIndicator,
           useValue: prismaHealthMock,
-        },
-        {
-          provide: RedisHealthIndicator,
-          useValue: redisHealthMock,
         },
         {
           provide: PgVectorHealthIndicator,
@@ -88,7 +80,6 @@ describe('HealthController', () => {
       healthServiceMock as unknown as HealthCheckService,
       memoryStoreHealthMock as unknown as MemoryStoreHealthIndicator,
       prismaHealthMock as unknown as PrismaHealthIndicator,
-      redisHealthMock as unknown as RedisHealthIndicator,
       pgVectorHealthMock as unknown as PgVectorHealthIndicator,
       undefined,
     );
@@ -107,23 +98,21 @@ describe('HealthController', () => {
   });
 });
 
-describe('HealthController profile-aware vector wiring', () => {
+describe('HealthController profile-aware wiring', () => {
   // Build a controller for an explicit profile (injected via ENGRAM_PROFILE)
   // whose check() actually invokes every composed indicator, so tests can
-  // assert which backends were probed.
+  // assert which stores were probed.
   function makeController(profile: DeploymentProfile): {
     controller: HealthController;
     probes: {
       memory: jest.Mock;
       prisma: jest.Mock;
-      redis: jest.Mock;
       pgvector: jest.Mock;
     };
   } {
     const probes = {
       memory: jest.fn().mockReturnValue({ 'memory-store': { status: 'up' } }),
       prisma: jest.fn().mockResolvedValue({ database: { status: 'up' } }),
-      redis: jest.fn().mockResolvedValue({ redis: { status: 'up' } }),
       pgvector: jest.fn().mockResolvedValue({ pgvector: { status: 'up' } }),
     };
     const check = jest.fn(async (indicators: Array<() => Promise<unknown>>) => {
@@ -134,7 +123,6 @@ describe('HealthController profile-aware vector wiring', () => {
       { check } as unknown as HealthCheckService,
       { isHealthy: probes.memory } as unknown as MemoryStoreHealthIndicator,
       { isHealthy: probes.prisma } as unknown as PrismaHealthIndicator,
-      { isHealthy: probes.redis } as unknown as RedisHealthIndicator,
       { isHealthy: probes.pgvector } as unknown as PgVectorHealthIndicator,
       undefined,
       undefined,
@@ -143,17 +131,19 @@ describe('HealthController profile-aware vector wiring', () => {
     return { controller, probes };
   }
 
-  it('LITE probes pgvector and the DB, never Redis', async () => {
-    const { controller, probes } = makeController(DeploymentProfile.LITE);
+  it.each([DeploymentProfile.LITE, DeploymentProfile.STANDARD])(
+    'profile %s probes the DB and pgvector',
+    async (profile) => {
+      const { controller, probes } = makeController(profile);
 
-    await controller.check();
+      await controller.check();
 
-    expect(probes.prisma).toHaveBeenCalledWith('database');
-    expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
-    expect(probes.redis).not.toHaveBeenCalled();
-  });
+      expect(probes.prisma).toHaveBeenCalledWith('database');
+      expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
+    },
+  );
 
-  it('LITE reports engram_pgvector_ready 1 when reachable', async () => {
+  it('reports engram_pgvector_ready 1 when reachable', async () => {
     const { controller, probes } = makeController(DeploymentProfile.LITE);
 
     const metrics = await controller.getMetrics();
@@ -164,33 +154,12 @@ describe('HealthController profile-aware vector wiring', () => {
     expect(metrics).toContain('engram_deployment_profile_info{profile="lite"}');
   });
 
-  it('LITE reports engram_pgvector_ready 0 when the probe fails', async () => {
-    const { controller, probes } = makeController(DeploymentProfile.LITE);
+  it('reports engram_pgvector_ready 0 when the probe fails', async () => {
+    const { controller, probes } = makeController(DeploymentProfile.STANDARD);
     probes.pgvector.mockRejectedValueOnce(new Error('extension missing'));
 
     const metrics = await controller.getMetrics();
 
-    expect(metrics).toContain('engram_pgvector_ready 0');
-  });
-
-  it('ENTERPRISE probes Redis, the DB, and pgvector', async () => {
-    const { controller, probes } = makeController(DeploymentProfile.ENTERPRISE);
-
-    await controller.check();
-
-    expect(probes.prisma).toHaveBeenCalledWith('database');
-    expect(probes.redis).toHaveBeenCalledWith('redis');
-    expect(probes.pgvector).toHaveBeenCalledWith('pgvector');
-  });
-
-  it('MEMORY probes no external services', async () => {
-    const { controller, probes } = makeController(DeploymentProfile.MEMORY);
-
-    await controller.check();
-    const metrics = await controller.getMetrics();
-
-    expect(probes.prisma).not.toHaveBeenCalled();
-    expect(probes.pgvector).not.toHaveBeenCalled();
     expect(metrics).toContain('engram_pgvector_ready 0');
   });
 });

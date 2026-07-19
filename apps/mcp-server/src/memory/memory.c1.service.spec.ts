@@ -9,7 +9,7 @@ import {
   compressContextToolSchema,
   loadContextToolSchema,
 } from './dto/context.dto';
-import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
+import { STM_PROVIDER, StmMemoryNotFoundError } from '@engram/memory-stm';
 import { MemoryLtmService, ImportanceScoringService } from '@engram/memory-ltm';
 import type { LtmMemory } from '@engram/memory-ltm';
 import type { Memory } from '@engram/database';
@@ -71,7 +71,7 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MemoryService,
-        { provide: MemoryStmService, useValue: mockStmService },
+        { provide: STM_PROVIDER, useValue: mockStmService },
         { provide: MemoryLtmService, useValue: mockLtmService },
         { provide: ImportanceScoringService, useValue: mockImportanceService },
       ],
@@ -722,7 +722,7 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
     const module = await Test.createTestingModule({
       providers: [
         MemoryService,
-        { provide: MemoryStmService, useValue: mockStmService },
+        { provide: STM_PROVIDER, useValue: mockStmService },
         { provide: MemoryLtmService, useValue: mockLtmService },
         { provide: ImportanceScoringService, useValue: mockImportanceService },
       ],

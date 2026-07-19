@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConsolidationService } from './consolidation.service';
-import { MemoryStmService } from '@engram/memory-stm';
+import { PostgresStmAdapter, STM_PROVIDER } from '@engram/memory-stm';
 import {
   MemoryLtmService,
   LtmMemoryQuotaExceededError,
@@ -45,7 +45,7 @@ const makeLtmMemory = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
 
 describe('ConsolidationService', () => {
   let service: ConsolidationService;
-  let stmService: jest.Mocked<MemoryStmService>;
+  let stmService: jest.Mocked<PostgresStmAdapter>;
   let ltmService: jest.Mocked<MemoryLtmService>;
   let importanceService: jest.Mocked<ImportanceScoringService>;
 
@@ -53,7 +53,7 @@ describe('ConsolidationService', () => {
     delete process.env.STM_CONSOLIDATION_ACCESS_THRESHOLD;
     delete process.env.STM_CONSOLIDATION_INTERVAL_MS;
 
-    const stmMock: Partial<jest.Mocked<MemoryStmService>> = {
+    const stmMock: Partial<jest.Mocked<PostgresStmAdapter>> = {
       findCandidates: jest.fn(),
     };
     const ltmMock: Partial<jest.Mocked<MemoryLtmService>> = {
@@ -78,14 +78,14 @@ describe('ConsolidationService', () => {
       imports: [ScheduleModule.forRoot()],
       providers: [
         ConsolidationService,
-        { provide: MemoryStmService, useValue: stmMock },
+        { provide: STM_PROVIDER, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
         { provide: ImportanceScoringService, useValue: importanceMock },
       ],
     }).compile();
 
     service = module.get<ConsolidationService>(ConsolidationService);
-    stmService = module.get(MemoryStmService);
+    stmService = module.get(STM_PROVIDER);
     ltmService = module.get(MemoryLtmService);
     importanceService = module.get(ImportanceScoringService);
   });
@@ -181,7 +181,7 @@ describe('ConsolidationService', () => {
         providers: [
           ConsolidationService,
           { provide: MemoryLtmService, useValue: ltmService },
-          // No MemoryStmService provided
+          // No PostgresStmAdapter provided
         ],
       }).compile();
 
@@ -279,7 +279,7 @@ describe('ConsolidationService', () => {
         imports: [ScheduleModule.forRoot()],
         providers: [
           ConsolidationService,
-          { provide: MemoryStmService, useValue: stmService },
+          { provide: STM_PROVIDER, useValue: stmService },
           { provide: MemoryLtmService, useValue: ltmService },
           { provide: ImportanceScoringService, useValue: importanceService },
         ],
@@ -299,7 +299,7 @@ describe('ConsolidationService', () => {
         imports: [ScheduleModule.forRoot()],
         providers: [
           ConsolidationService,
-          { provide: MemoryStmService, useValue: stmService },
+          { provide: STM_PROVIDER, useValue: stmService },
           { provide: MemoryLtmService, useValue: ltmService },
           { provide: ImportanceScoringService, useValue: importanceService },
         ],
@@ -321,7 +321,7 @@ describe('ConsolidationService', () => {
         imports: [ScheduleModule.forRoot()],
         providers: [
           ConsolidationService,
-          { provide: MemoryStmService, useValue: stmService },
+          { provide: STM_PROVIDER, useValue: stmService },
           { provide: MemoryLtmService, useValue: ltmService },
           { provide: ImportanceScoringService, useValue: importanceService },
         ],

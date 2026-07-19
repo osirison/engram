@@ -1,12 +1,8 @@
 name: Backup verification
 
-# Nightly end-to-end verification of the backup/restore path across both
-# stores (Postgres, Redis) plus the retention policy. The regular CI
-# suite (backup-restore.spec.ts) only exercises the Postgres leg; this
-# workflow proves the Redis (BGSAVE/RDB) leg actually round-trips, so a
-# broken restore path is caught within a day instead of during an incident.
-# Vector data needs no separate leg: pgvector embeddings ride in the
-# Postgres dump. The Postgres leg provisions the real ENGRAM schema and
+# Nightly end-to-end verification of the backup/restore path (Postgres)
+# plus the retention policy, against the real ENGRAM schema. Vector data
+# needs no separate leg: pgvector embeddings ride in the Postgres dump. The Postgres leg provisions the real ENGRAM schema and
 # asserts the WP2-4 tables (memory_links / memory_audits / memory_import_sources)
 # round-trip too, so a dump that silently drops them is caught (G9).
 # See docs/ops/backup-runbook.md.
@@ -22,7 +18,7 @@ permissions:
 
 jobs:
   backup-restore-roundtrip:
-    name: Backup → restore round-trip (Postgres + Redis)
+    name: Backup → restore round-trip (Postgres)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -41,43 +37,24 @@ jobs:
         ports:
           - 5432:5432
 
-      redis:
-        image: redis:7
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_backup_verify
-      REDIS_URL: redis://localhost:6379
       BACKUP_OUT: ${{ github.workspace }}/.backup-verify
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Resolve redis service container id
-        # backup.sh / restore.sh copy the RDB through `docker exec` /
-        # `docker stop|cp|start` on this container (there is no compose project
-        # on the runner — service containers are plain docker containers). The
-        # `job` context is unavailable in job-level env, so export it in a step.
-        run: echo "REDIS_CONTAINER=${{ job.services.redis.id }}" >> "$GITHUB_ENV"
-
-      - name: Install PostgreSQL 17 client + redis-cli
+      - name: Install PostgreSQL 17 client
         # The runner ships pg_dump 16, but the postgres service is pg17 and
         # pg_dump/pg_restore refuse a newer server (same rationale as ci.yml).
-        # redis-tools provides the redis-cli that backup.sh drives BGSAVE with.
         run: |
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
             | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
           echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-17 redis-tools
+          sudo apt-get install -y postgresql-client-17
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
       - name: Setup pnpm
@@ -126,22 +103,16 @@ jobs:
             VALUES ('g9-import', 'g9-user', 'g9-mem', 'markdown', '/g9/sentinel.md', 'g9-import-sentinel', 'g9-content-hash', 'g9-batch', now(), now());
           SQL
 
-      - name: Seed Redis
-        run: |
-          redis-cli -h localhost -p 6379 SET engram:backup-verify:sentinel 'redis-round-trip-sentinel'
-          redis-cli -h localhost -p 6379 RPUSH engram:backup-verify:list a b c
-
-      - name: Run backup.sh (both stores)
+      - name: Run backup.sh
         run: ./scripts/backup.sh --out "$BACKUP_OUT"
 
-      - name: Assert archive contains both stores
+      - name: Assert archive contains the Postgres dump
         run: |
           ARCHIVE="$(ls "$BACKUP_OUT"/engram_backup_*.tar.gz | head -1)"
           echo "archive: $ARCHIVE"
           LISTING="$(tar -tzf "$ARCHIVE")"
           echo "$LISTING"
           echo "$LISTING" | grep -q 'postgres\.pgdump'
-          echo "$LISTING" | grep -q 'redis\.rdb'
 
       - name: Destroy live data (prove restore does the work)
         run: |
@@ -151,12 +122,10 @@ jobs:
           psql "$DATABASE_URL" -c "DELETE FROM memory_links WHERE id = 'g9-link';"
           psql "$DATABASE_URL" -c "DELETE FROM memory_audits WHERE id = 'g9-audit';"
           psql "$DATABASE_URL" -c "DELETE FROM memory_import_sources WHERE id = 'g9-import';"
-          redis-cli -h localhost -p 6379 FLUSHALL
           # Sanity: everything is really gone.
           test "$(psql "$DATABASE_URL" -t -A -c "SELECT COUNT(*) FROM memory_links WHERE \"targetLocator\" = 'id:g9-link-sentinel'")" = "0"
-          test "$(redis-cli -h localhost -p 6379 GET engram:backup-verify:sentinel)" = ""
 
-      - name: Run restore.sh (both stores)
+      - name: Run restore.sh
         run: |
           ARCHIVE="$(ls "$BACKUP_OUT"/engram_backup_*.tar.gz | head -1)"
           ./scripts/restore.sh --archive "$ARCHIVE" --no-confirm
@@ -178,21 +147,6 @@ jobs:
           test "$LINK" = "1"
           test "$AUDIT" = "1"
           test "$IMPORT" = "1"
-
-      - name: Verify Redis round-trip
-        run: |
-          # restore.sh restarted the redis container — wait for it to accept
-          # connections again before asserting.
-          for _ in $(seq 1 30); do
-            redis-cli -h localhost -p 6379 ping >/dev/null 2>&1 && break
-            sleep 1
-          done
-          SENTINEL="$(redis-cli -h localhost -p 6379 GET engram:backup-verify:sentinel)"
-          LIST="$(redis-cli -h localhost -p 6379 LRANGE engram:backup-verify:list 0 -1 | tr '\n' ' ')"
-          echo "redis sentinel: $SENTINEL"
-          echo "redis list:     $LIST"
-          test "$SENTINEL" = "redis-round-trip-sentinel"
-          test "$LIST" = "a b c "
 
       - name: Exercise retention policy (GFS pruning)
         run: |

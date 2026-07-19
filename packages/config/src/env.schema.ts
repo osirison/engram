@@ -30,9 +30,7 @@ const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T): z.ZodType<z.
 /**
  * Environment validation schema for ENGRAM.
  *
- * URL requirements are conditional on the active deployment profile so that
- * profile-memory can boot with zero external services while profile-enterprise
- * still enforces the full set of dependencies. Profile is resolved once via
+ * URL requirements are validated per deployment profile. Profile is resolved once via
  * {@link coerceDeploymentProfile} and the conditional rules are applied
  * inside a single transform pass instead of duplicating per-profile schemas.
  */
@@ -48,14 +46,10 @@ export const baseSchema = z.object({
   /** TCP port the MCP/HTTP server listens on. */
   PORT: z.coerce.number().default(3000),
   /**
-   * Conditional Postgres URL. Required for `lite` and `enterprise` profiles,
-   * optional for `memory`. The validation rule is applied in the transform
-   * below; we keep the field optional here so the same schema can parse a
-   * `memory`-profile environment without forcing an empty string.
+   * Postgres URL. Required in every profile; the requirement is enforced in
+   * the transform below so the error message can name the active profile.
    */
   DATABASE_URL: z.string().url().optional(),
-  /** Conditional Redis URL. Required only for `enterprise`. */
-  REDIS_URL: z.string().url().optional(),
   /** Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. */
   OPENAI_API_KEY: z.string().optional(),
   /** Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. */
@@ -130,17 +124,16 @@ export const baseSchema = z.object({
   PGVECTOR_HNSW_EF_SEARCH: z.coerce.number().int().min(1).max(1000).optional(),
   /**
    * Deployment profile ladder:
-   *   - `memory`     → in-process, zero external services.
-   *   - `lite`       → requires DATABASE_URL; no Redis/Qdrant.
-   *   - `enterprise` → requires DATABASE_URL, REDIS_URL.
+   *   - `lite`     → single-user; auth/organization stack not wired.
+   *   - `standard` → default; multi-tenant auth stack.
    *
-   * Defaults to `enterprise` for backward compatibility with existing
-   * production deployments.
+   * Both require only DATABASE_URL (pgvector lives in Postgres). The legacy
+   * `enterprise` value is accepted as an alias for `standard`.
    */
   DEPLOYMENT_PROFILE: z
-    .enum(['memory', 'lite', 'enterprise'])
+    .enum(['lite', 'standard', 'enterprise'])
     .optional()
-    .default(DeploymentProfile.ENTERPRISE),
+    .default(DeploymentProfile.STANDARD),
 
   // ──────────────────────────────────────────────────────────────────────────
   // Authentication & multi-tenancy (Epic E4)
@@ -175,7 +168,7 @@ export const baseSchema = z.object({
   // ──────────────────────────────────────────────────────────────────────────
   // Rate limiting (Epic E4 / #132)
   // ──────────────────────────────────────────────────────────────────────────
-  /** Master switch for the Redis-backed rate limiter (enterprise only). */
+  /** Master switch for the Postgres-backed rate limiter (standard profile only). */
   RATE_LIMIT_ENABLED: booleanFlag(false),
   /** Fixed-window length in seconds. Default 60 → the `*_RPM` limits are per minute. */
   RATE_LIMIT_WINDOW_SEC: z.coerce.number().int().min(1).default(60),
@@ -198,51 +191,26 @@ export const baseSchema = z.object({
  * the resulting {@link Env} type is fully typed.
  */
 export const envSchema: z.ZodType<Env> = baseSchema.transform((value, ctx) => {
-  const profile = coerceDeploymentProfile(value.DEPLOYMENT_PROFILE, DeploymentProfile.ENTERPRISE);
+  const profile = coerceDeploymentProfile(value.DEPLOYMENT_PROFILE, DeploymentProfile.STANDARD);
+  // Normalise the legacy `enterprise` alias so downstream consumers only ever
+  // see the two-profile ladder.
+  value.DEPLOYMENT_PROFILE = profile;
 
-  if (profile !== DeploymentProfile.MEMORY) {
-    if (typeof value.DATABASE_URL !== 'string' || value.DATABASE_URL.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['DATABASE_URL'],
-        message: `DATABASE_URL is required when DEPLOYMENT_PROFILE='${profile}'`,
-      });
-      return z.NEVER;
-    }
-    if (!isLikelyUrl(value.DATABASE_URL)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['DATABASE_URL'],
-        message: 'DATABASE_URL must be a valid URL',
-      });
-      return z.NEVER;
-    }
-  } else {
-    // Normalise optional URLs to undefined in profile-memory so downstream
-    // modules never see stale connection strings from a previous enterprise
-    // environment.
-    value.DATABASE_URL = undefined;
+  if (typeof value.DATABASE_URL !== 'string' || value.DATABASE_URL.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message: `DATABASE_URL is required when DEPLOYMENT_PROFILE='${profile}'`,
+    });
+    return z.NEVER;
   }
-
-  if (profile === DeploymentProfile.ENTERPRISE) {
-    if (typeof value.REDIS_URL !== 'string' || value.REDIS_URL.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['REDIS_URL'],
-        message: `REDIS_URL is required when DEPLOYMENT_PROFILE='${profile}'`,
-      });
-      return z.NEVER;
-    }
-    if (!isLikelyUrl(value.REDIS_URL)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['REDIS_URL'],
-        message: 'REDIS_URL must be a valid URL',
-      });
-      return z.NEVER;
-    }
-  } else {
-    value.REDIS_URL = undefined;
+  if (!isLikelyUrl(value.DATABASE_URL)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message: 'DATABASE_URL must be a valid URL',
+    });
+    return z.NEVER;
   }
 
   // Fail fast on a malformed RATE_LIMIT_TOOL_OVERRIDES rather than silently
@@ -369,7 +337,6 @@ export type Env = {
   PORT: number;
   DEPLOYMENT_PROFILE: DeploymentProfile;
   DATABASE_URL?: string;
-  REDIS_URL?: string;
   OPENAI_API_KEY?: string;
   EMBEDDING_PROVIDER: 'ollama' | 'openai' | 'disabled' | 'local';
   EMBEDDING_MODEL?: string;

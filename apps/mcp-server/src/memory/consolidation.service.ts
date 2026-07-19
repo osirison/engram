@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -6,7 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { MemoryStmService } from '@engram/memory-stm';
+import { PostgresStmAdapter, STM_PROVIDER } from '@engram/memory-stm';
 import {
   MemoryLtmService,
   LtmMemoryQuotaExceededError,
@@ -31,7 +32,9 @@ export class ConsolidationService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly schedulerRegistry: SchedulerRegistry,
-    @Optional() private readonly stmService?: MemoryStmService,
+    @Optional()
+    @Inject(STM_PROVIDER)
+    private readonly stmService?: PostgresStmAdapter,
     @Optional() private readonly ltmService?: MemoryLtmService,
     @Optional() private readonly importanceService?: ImportanceScoringService,
     @Optional() private readonly metricsService?: MetricsService,

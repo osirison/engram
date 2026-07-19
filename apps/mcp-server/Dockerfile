@@ -22,7 +22,6 @@ COPY packages/eval/package.json packages/eval/
 COPY packages/memory-lite/package.json packages/memory-lite/
 COPY packages/memory-ltm/package.json packages/memory-ltm/
 COPY packages/memory-stm/package.json packages/memory-stm/
-COPY packages/redis/package.json packages/redis/
 COPY packages/typescript-config/package.json packages/typescript-config/
 COPY packages/ui/package.json packages/ui/
 COPY packages/vector-store/package.json packages/vector-store/

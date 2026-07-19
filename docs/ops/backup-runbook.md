@@ -1,6 +1,6 @@
 ---
 title: ENGRAM Backup & Restore Runbook
-description: Procedures for backup, restore, and data retention across all ENGRAM stores
+description: Procedures for backup, restore, and data retention for the ENGRAM Postgres store (vector data included)
 ---
 
 This page has moved. See

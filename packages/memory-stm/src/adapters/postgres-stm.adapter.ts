@@ -418,8 +418,7 @@ export class PostgresStmAdapter {
 
   /**
    * Promotion hand-off: return the source memory so callers can chain into
-   * the LTM service, which performs the durable transfer (parity with
-   * InMemoryStmAdapter).
+   * the LTM service, which performs the durable transfer.
    */
   async promote(userId: string, memoryId: string, organizationId?: string): Promise<StmMemory> {
     return this.findById(userId, memoryId, organizationId);

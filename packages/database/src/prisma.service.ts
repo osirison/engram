@@ -10,16 +10,18 @@ import { PrismaClient } from '@prisma/client';
  * (config → app → packages). Reading the env directly keeps the
  * service decoupled while still respecting the profile contract.
  */
-function resolveDeploymentProfile(): 'memory' | 'lite' | 'enterprise' {
+function resolveDeploymentProfile(): 'lite' | 'standard' {
   const raw = process.env['DEPLOYMENT_PROFILE'];
   if (raw === undefined || raw === null || raw === '') {
-    return 'enterprise';
+    return 'standard';
   }
   const value = String(raw).toLowerCase();
-  if (value === 'memory' || value === 'lite' || value === 'enterprise') {
+  if (value === 'lite') {
     return value;
   }
-  return 'enterprise';
+  // 'enterprise' is the legacy alias for the default profile; anything else
+  // falls back to standard (env validation rejects it upstream).
+  return 'standard';
 }
 
 function getDatabaseUrl(): string | undefined {
@@ -38,16 +40,12 @@ const logger = new Logger('PrismaService');
  * Profile-aware Prisma client.
  *
  * Boot semantics:
- *  - profile=memory: never attempts to connect. The client is built but
- *    no queries are made; calling a method without a backing store
- *    throws a clear runtime error.
- *  - profile=lite:    the client is built, and `$connect()` is invoked
+ *  - profile=lite:     the client is built, and `$connect()` is invoked
  *    on first DB op (lazy). The profile expects Postgres to be
  *    reachable at runtime, so the constructor does not throw when
  *    `DATABASE_URL` is missing — it is validated lazily on first use.
- *  - profile=enterprise (default): eager `$connect()` so misconfigured
- *    deployments fail loudly at startup. This is the historical
- *    behavior.
+ *  - profile=standard (default): eager `$connect()` so misconfigured
+ *    deployments fail loudly at startup.
  *
  * The eager/lazy toggle is driven entirely by the `DEPLOYMENT_PROFILE`
  * env var so callers do not need to know about the toggle; the service
@@ -66,15 +64,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const profile = resolveDeploymentProfile();
     const databaseUrl = getDatabaseUrl();
     const adapterConfig = ((): { connectionString: string } => {
-      if (profile === 'memory') {
-        // profile=memory: placeholder adapter. The in-memory LTM
-        // adapter is the sanctioned path; we never call $connect()
-        // in this mode, and any direct consumer call will throw a
-        // clear error from `ensureConnected()`.
-        return {
-          connectionString: 'postgresql://invalid:invalid@127.0.0.1:65535/invalid',
-        };
-      }
       if (!databaseUrl) {
         logger.warn(
           `Profile=${profile}: DATABASE_URL is not set. ` +
@@ -92,20 +81,19 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
 
     this.profile = profile;
-    // Profile=enterprise expects eager connect; the flag is set
+    // Profile=standard expects eager connect; the flag is set
     // up-front so onModuleDestroy() can safely call $disconnect even
     // if onModuleInit() never ran (test harness pattern).
-    if (profile === 'enterprise') {
+    if (profile === 'standard') {
       this.hasConnected = true;
     }
   }
 
   /**
-   * Module init: connect eagerly on profile-enterprise, defer
-   * everywhere else.
+   * Module init: connect eagerly on profile-standard, defer on lite.
    */
   async onModuleInit(): Promise<void> {
-    if (this.profile === 'enterprise') {
+    if (this.profile === 'standard') {
       await this.$connect();
       return;
     }
@@ -115,29 +103,20 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleDestroy(): Promise<void> {
-    // Always disconnect for database-capable profiles; $disconnect() is
-    // safe to call even when no connection was established (e.g. profile=lite
-    // with lazy connect that never fired).
-    if (this.profile !== 'memory') {
-      await this.$disconnect();
-    }
+    // $disconnect() is safe to call even when no connection was established
+    // (e.g. profile=lite with lazy connect that never fired).
+    await this.$disconnect();
   }
 
   /**
    * Optional pre-flight check: verifies DB connectivity before a batch
    * operation. In profile=lite Prisma lazy-connects on the first query, so
    * calling this is not required for correctness but lets callers fail-fast
-   * before a long operation. Throws in profile=memory (Postgres is forbidden).
+   * before a long operation.
    */
   async ensureConnected(): Promise<void> {
-    if (this.profile === 'enterprise' || this.hasConnected) {
+    if (this.profile === 'standard' || this.hasConnected) {
       return;
-    }
-    if (this.profile === 'memory') {
-      throw new Error(
-        'PrismaService: profile=memory forbids Postgres access. ' +
-          'Use the in-memory LTM adapter for memory storage in this profile.'
-      );
     }
     if (!this.connectPromise) {
       this.connectPromise = this.$connect()

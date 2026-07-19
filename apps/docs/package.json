@@ -30,7 +30,6 @@
     "@engram/embeddings": "workspace:*",
     "@engram/vector-store": "workspace:*",
     "@engram/database": "workspace:*",
-    "@engram/redis": "workspace:*",
     "@engram/auth": "workspace:*",
     "@engram/eval": "workspace:*",
     "@engram/client": "workspace:*"

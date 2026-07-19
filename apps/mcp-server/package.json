@@ -25,7 +25,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --no-cache",
-    "test:e2e:docker": "pnpm -w exec turbo run build --ui=stream && docker compose -f ../../docker-compose.test.yml up -d --wait && DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test pnpm -w db:migrate:deploy && DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test REDIS_URL=redis://localhost:6380 NODE_ENV=test E2E_ENABLED=true jest --config ./test/jest-e2e.json --no-cache; status=$?; docker compose -f ../../docker-compose.test.yml down -v || status=$?; exit $status"
+    "test:e2e:docker": "pnpm -w exec turbo run build --ui=stream && docker compose -f ../../docker-compose.test.yml up -d --wait && DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test pnpm -w db:migrate:deploy && DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test NODE_ENV=test E2E_ENABLED=true jest --config ./test/jest-e2e.json --no-cache; status=$?; docker compose -f ../../docker-compose.test.yml down -v || status=$?; exit $status"
   },
   "dependencies": {
     "@engram/auth": "workspace:^",
@@ -38,7 +38,6 @@
     "@engram/memory-lite": "workspace:^",
     "@engram/memory-ltm": "workspace:^",
     "@engram/memory-stm": "workspace:^",
-    "@engram/redis": "workspace:^",
     "@engram/vector-store": "workspace:^",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/axios": "^4.0.1",
@@ -143,7 +142,6 @@
       "^@engram/memory-import$": "<rootDir>/../../packages/memory-import/src/index.ts",
       "^@engram/memory-interchange$": "<rootDir>/../../packages/memory-interchange/src/index.ts",
       "^@engram/memory-lite$": "<rootDir>/../../packages/memory-lite/src/index.ts",
-      "^@engram/redis$": "<rootDir>/src/__mocks__/@engram/redis.ts",
       "^@engram/vector-store$": "<rootDir>/../../packages/vector-store/src/index.ts",
       "^@engram/config$": "<rootDir>/../../packages/config/src/index.ts",
       "^@engram/core$": "<rootDir>/../../packages/core/src/index.ts",

@@ -56,8 +56,8 @@ over for everything after.
 ## Prerequisites
 
 - **Server, database, and dependencies up.** The importer writes through the LTM
-  service, which needs Postgres (and Redis) reachable. Bring up services and
-  build the workspace:
+  service, which needs Postgres reachable (the only backing service). Bring up
+  services and build the workspace:
 
   ```bash
   pnpm docker:up
@@ -328,9 +328,9 @@ resumable via a STATE index and incremental commits).
 
 All three facts above come from the Claude Code **user auto-memory** run
 (`--scope global`), so query them at `global`. To also verify repo-scoped facts,
-query `project:engram` — for example "which vector backends does ENGRAM support"
-should surface pgvector vs Qdrant selected by `VECTOR_BACKEND`, imported from the
-repo `CLAUDE.md`.
+query `project:engram` — for example "how does ENGRAM store vectors" should
+surface that pgvector is the only backend, with vectors in the runtime-managed
+`embedding_vec` column, imported from the repo `CLAUDE.md`.
 
 If these return empty or off-topic, the most likely cause is that Step 3 did not
 regenerate — the hash vectors from Step 2 are still in place (they are not

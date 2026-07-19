@@ -76,6 +76,21 @@ jobs:
             type=semver,pattern={{major}}
             type=sha,format=long
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 11.5.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        # Needed for `pnpm db:migrate:deploy` in the smoke test below.
+        run: pnpm install --frozen-lockfile
+
       - name: Build image for smoke test
         # Separate load-only build: buildx cannot `load` a manifest list
         # that carries provenance/SBOM attestations, so boot-test a plain
@@ -91,12 +106,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke-test image (memory profile)
+      - name: Smoke-test image (lite profile)
         # Same boot check as ci.yml's docker-build job: never publish an
         # image that cannot even start and serve /health.
         run: |
-          docker run -d \
-            -e DEPLOYMENT_PROFILE=memory \
+          docker network create engram-smoke
+          docker run -d --network engram-smoke --name smoke-pg \
+            -e POSTGRES_DB=engram -e POSTGRES_USER=engram -e POSTGRES_PASSWORD=engram \
+            -p 15432:5432 \
+            pgvector/pgvector:pg17
+          for _ in $(seq 1 30); do
+            docker exec smoke-pg pg_isready -U engram >/dev/null 2>&1 && break
+            sleep 1
+          done
+          # Apply the real schema so the Prisma health gate (memory.count)
+          # passes — the same migrate step every deployment runs.
+          DATABASE_URL=postgresql://engram:engram@localhost:15432/engram \
+            pnpm db:migrate:deploy
+          docker run -d --network engram-smoke \
+            -e DEPLOYMENT_PROFILE=lite \
+            -e DATABASE_URL=postgresql://engram:engram@smoke-pg:5432/engram \
             -e MCP_TRANSPORT=streamable-http \
             -e EMBEDDING_PROVIDER=local \
             -p 13000:3000 \
@@ -110,7 +139,8 @@ jobs:
           echo
           echo "--- container logs ---"
           docker logs engram-release-smoke
-          docker rm -f engram-release-smoke || true
+          docker rm -f engram-release-smoke smoke-pg || true
+          docker network rm engram-smoke || true
           test -n "$ok"
 
       - name: Build and push image (provenance + SBOM)

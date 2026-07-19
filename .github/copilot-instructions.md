@@ -10,7 +10,9 @@ changes focused on the user's request.
 
 ## Project Basics
 
-- ENGRAM is a TypeScript, NestJS, Prisma, Redis, Qdrant, and Turborepo monorepo.
+- ENGRAM is a TypeScript, NestJS, Prisma (PostgreSQL + pgvector), and Turborepo
+  monorepo. Postgres is the only backing service; two deployment profiles exist:
+  `standard` (default, multi-tenant) and `lite` (single-user).
 - The main runtime is [apps/mcp-server](../apps/mcp-server).
 - Local setup starts from [README.md](../README.md) and [docs/SETUP.md](../docs/SETUP.md).
 - Use existing workspace packages before adding new dependencies or abstractions.

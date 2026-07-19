@@ -50,7 +50,9 @@ export const migrationCheckpointSchema = z
   .object({
     id: z.string().min(1),
     sourceProfile: z.enum(['memory', 'lite']),
-    targetProfile: z.enum(['enterprise']),
+    // 'enterprise' is the legacy name persisted by pre-simplification
+    // checkpoints; new checkpoints write 'standard'.
+    targetProfile: z.enum(['standard', 'enterprise']),
     state: z.enum(MIGRATION_STATES),
     cursor: z.string().nullable(),
     progress: z.number().int().min(0),
