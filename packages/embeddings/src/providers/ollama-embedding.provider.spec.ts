@@ -8,6 +8,7 @@ function mockFetchResponse(body: unknown, ok = true, status = 200): Response {
     ok,
     status,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   } as unknown as Response;
 }
 
@@ -39,6 +40,7 @@ describe('OllamaEmbeddingProvider', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       model: 'nomic-embed-text',
       input: 'hello world',
+      truncate: true,
     });
   });
 
@@ -57,6 +59,52 @@ describe('OllamaEmbeddingProvider', () => {
     const provider = new OllamaEmbeddingProvider();
 
     expect(await provider.generate('hi', 'missing-model')).toBeNull();
+  });
+
+  it('retries a context-length rejection with a halved input and flags truncation', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        mockFetchResponse({ error: 'the input length exceeds the context length' }, false, 500)
+      )
+      .mockResolvedValueOnce(mockFetchResponse({ embeddings: [VECTOR_768] }));
+    const provider = new OllamaEmbeddingProvider();
+    const text = 'x'.repeat(6000);
+
+    const result = await provider.generate(text, 'nomic-embed-text');
+
+    expect(result).toEqual(VECTOR_768);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string) as {
+      input: string;
+      truncate: boolean;
+    };
+    expect(secondBody.input.length).toBe(3000);
+    expect(secondBody.truncate).toBe(true);
+  });
+
+  it('gives up on persistent context-length rejections', async () => {
+    fetchMock.mockResolvedValue(
+      mockFetchResponse({ error: 'the input length exceeds the context length' }, false, 500)
+    );
+    const provider = new OllamaEmbeddingProvider();
+
+    const result = await provider.generate('x'.repeat(8000), 'nomic-embed-text');
+
+    expect(result).toBeNull();
+    // full → 1/2 → 1/4, then stop.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry below the minimum useful prefix', async () => {
+    fetchMock.mockResolvedValue(
+      mockFetchResponse({ error: 'the input length exceeds the context length' }, false, 500)
+    );
+    const provider = new OllamaEmbeddingProvider();
+
+    const result = await provider.generate('x'.repeat(1500), 'nomic-embed-text');
+
+    expect(result).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns null on network errors', async () => {
