@@ -15,7 +15,6 @@ import {
 } from '@engram/config';
 import { LoggingModule, McpModule } from '@engram/core';
 import { PrismaModule } from '@engram/database';
-import { RedisModule } from '@engram/redis';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeysModule } from './api-keys/api-keys.module';
@@ -71,11 +70,8 @@ function buildImportsForProfile(
   if (capabilities.requiresDatabase) {
     imports.push(PrismaModule);
     // Auth needs Postgres (API keys, user upsert). OAuth/sessions/rate-limiting
-    // inside AuthModule are further gated on Redis (enterprise) internally.
+    // inside AuthModule are further gated on multiTenant internally.
     imports.push(AuthModule.forRoot(capabilities));
-  }
-  if (capabilities.requiresRedis) {
-    imports.push(RedisModule.forRoot());
   }
   return imports;
 }

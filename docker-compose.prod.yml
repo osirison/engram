@@ -25,30 +25,6 @@ services:
       - engram-network
     # Do not expose ports in production — mcp-server connects internally.
 
-  redis:
-    image: redis:7-alpine
-    container_name: engram-redis
-    environment:
-      # Consumed only by the healthcheck (via REDISCLI_AUTH); the server
-      # password is set through --requirepass below.
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-    command: >
-      redis-server
-      --appendonly yes
-      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      # REDISCLI_AUTH keeps the password out of argv (visible in `ps`) and out
-      # of redis-cli's own "-a is insecure" warning.
-      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - engram-network
-
   mcp-server:
     image: ghcr.io/osirison/engram/mcp-server:${IMAGE_TAG:-latest}
     build:
@@ -58,9 +34,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-enterprise}
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-standard}
       DATABASE_URL: postgresql://${POSTGRES_USER:-engram}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-engram}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       # Local-first embeddings: point OLLAMA_URL at a host install, or start
       # the bundled service with `--profile ollama` (service DNS name below).
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
@@ -86,8 +61,6 @@ services:
       - '${MCP_BIND_ADDR:-127.0.0.1}:${PORT:-3000}:3000'
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
@@ -143,8 +116,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   ollama_data:
     driver: local

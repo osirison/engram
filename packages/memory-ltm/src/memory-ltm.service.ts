@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
 import { MemoryType, PaginatedResult } from '@engram/database';
-import { MemoryStmService } from '@engram/memory-stm';
+import { PostgresStmAdapter, STM_PROVIDER } from '@engram/memory-stm';
 import { EmbeddingsService } from '@engram/embeddings';
 import {
   VECTOR_STORE_TOKEN,
@@ -15,7 +15,6 @@ import { DuplicateDetectionService } from './duplicate-detection.service';
 import { ContradictionDetectionService } from './contradiction-detection.service';
 import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
 import { buildIngestContext } from './ingest/types.js';
-import { HybridTransientRetriever } from './retrieval/hybrid-transient-retriever.js';
 import {
   LtmMemory,
   CreateLtmMemoryData,
@@ -82,7 +81,9 @@ export class MemoryLtmService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly stmService?: MemoryStmService,
+    @Optional()
+    @Inject(STM_PROVIDER)
+    private readonly stmService?: PostgresStmAdapter,
     @Optional() private readonly embeddingsService?: EmbeddingsService,
     @Optional()
     @Inject(VECTOR_STORE_TOKEN)
@@ -90,8 +91,7 @@ export class MemoryLtmService {
     @Optional() private readonly importanceService?: ImportanceScoringService,
     @Optional() private readonly duplicateDetectionService?: DuplicateDetectionService,
     @Optional() private readonly ingestPipeline?: IngestPipelineService,
-    @Optional() private readonly contradictionDetectionService?: ContradictionDetectionService,
-    @Optional() private readonly transientRetriever?: HybridTransientRetriever
+    @Optional() private readonly contradictionDetectionService?: ContradictionDetectionService
   ) {
     this.config = { ...DEFAULT_LTM_CONFIG };
     // Use prisma to avoid unused variable warning
@@ -1142,10 +1142,6 @@ export class MemoryLtmService {
    * hydrates the matching memories from Postgres and attaches similarity scores.
    * Returns an empty array when embeddings or the vector store are unavailable.
    *
-   * When the vector store is absent (profile-memory / profile-lite without a
-   * remote vector backend) the call is transparently routed through
-   * {@link HybridTransientRetriever} so the recall contract is preserved
-   * across profiles.
    */
   async semanticSearch(
     userId: string,
@@ -1155,13 +1151,6 @@ export class MemoryLtmService {
     this.logger.debug(`Semantic search for user: ${userId}`);
 
     if (!this.vectorStore) {
-      // Profile-memory / profile-lite: fall back to the in-process
-      // hybrid retriever. The transient retriever is only registered
-      // in profiles that don't pull a remote vector store, so the
-      // presence check below is also a safety guard.
-      if (this.transientRetriever) {
-        return this.recallWithTransientRetriever(userId, query, options);
-      }
       this.logger.warn('Semantic search requested but no vector store is configured');
       return [];
     }
@@ -1265,71 +1254,6 @@ export class MemoryLtmService {
         error instanceof Error ? error.message : String(error)
       );
     }
-  }
-
-  /**
-   * Profile-memory / profile-lite semantic recall via the
-   * {@link HybridTransientRetriever}. Pulls every long-term memory for the
-   * user from Postgres, indexes it in the retriever, and returns the
-   * top-k matches.
-   *
-   * Org and tag filters are applied client-side after the retriever
-   * produces candidates because the transient index is a single-user
-   * snapshot (no remote coordination).
-   */
-  private async recallWithTransientRetriever(
-    userId: string,
-    query: string,
-    options?: SemanticSearchOptions
-  ): Promise<SemanticSearchResult[]> {
-    const retriever = this.transientRetriever;
-    if (!retriever) {
-      return [];
-    }
-    const trimmedQuery = query?.trim();
-    if (!trimmedQuery) {
-      return [];
-    }
-    const limit = options?.limit ?? 10;
-
-    const where: Record<string, unknown> = {
-      userId,
-      type: MemoryType.LONG_TERM,
-    };
-    if (options?.organizationId) {
-      where.organizationId = options.organizationId;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows: PrismaMemory[] = await (this.prisma as any).memory.findMany({ where });
-    const includeSuperseded = options?.includeSuperseded === true;
-    const memories = rows
-      .map((row) => this.mapToLtmMemory(row))
-      // Mirror the vector-store path: superseded memories are excluded from
-      // recall pre-index unless the caller explicitly opts in.
-      .filter((m) => includeSuperseded || !this.isSuperseded(m.metadata));
-
-    // Apply tag scope filter pre-index so the retriever's postings reflect
-    // only eligible memories.
-    const filtered =
-      options?.tags && options.tags.length > 0
-        ? memories.filter((m) => options.tags!.some((t) => m.tags.includes(t)))
-        : memories;
-
-    retriever.index(filtered);
-
-    // Best-effort query embedding for the semantic half of the search.
-    let queryEmbedding: number[] | undefined;
-    if (this.embeddingsService) {
-      const result = await this.embeddingsService
-        .generate({ text: trimmedQuery })
-        .catch(() => null);
-      queryEmbedding =
-        result?.embedding && result.embedding.length > 0 ? result.embedding : undefined;
-    }
-
-    const results = retriever.search(trimmedQuery, queryEmbedding, limit);
-    void this.recordAccessMany(results.map((r) => r.memory));
-    return results;
   }
 
   /**

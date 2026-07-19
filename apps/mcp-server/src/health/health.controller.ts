@@ -21,7 +21,6 @@ import {
   DeploymentProfile,
 } from '@engram/config';
 import { PrismaHealthIndicator } from './prisma.health';
-import { RedisHealthIndicator } from './redis.health';
 import { PgVectorHealthIndicator } from './pgvector.health';
 import { MemoryStoreHealthIndicator } from './memory-store.health';
 import { MetricsTokenGuard } from './metrics-token.guard';
@@ -41,7 +40,6 @@ export class HealthController {
     private readonly health: HealthCheckService,
     private readonly memoryStoreHealth: MemoryStoreHealthIndicator,
     @Optional() private readonly prismaHealth?: PrismaHealthIndicator,
-    @Optional() private readonly redisHealth?: RedisHealthIndicator,
     @Optional() private readonly pgVectorHealth?: PgVectorHealthIndicator,
     @Optional() private readonly embeddingsService?: EmbeddingsService,
     @Optional() private readonly metricsService?: MetricsService,
@@ -71,14 +69,6 @@ export class HealthController {
       if (prisma) {
         indicators.push(
           (): Promise<HealthIndicatorResult> => prisma.isHealthy('database'),
-        );
-      }
-    }
-    if (capabilities.requiresRedis) {
-      const redis = this.redisHealth;
-      if (redis) {
-        indicators.push(
-          (): Promise<HealthIndicatorResult> => redis.isHealthy('redis'),
         );
       }
     }

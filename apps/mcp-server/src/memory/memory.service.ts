@@ -1,12 +1,14 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
 import {
-  MemoryStmService,
+  PostgresStmAdapter,
+  STM_PROVIDER,
   StmMemoryExpiredError,
   StmMemoryNotFoundError,
 } from '@engram/memory-stm';
@@ -336,7 +338,8 @@ export class MemoryService {
   private readonly ltm: LtmServiceContract;
 
   constructor(
-    private readonly stmService: MemoryStmService,
+    @Inject(STM_PROVIDER)
+    private readonly stmService: PostgresStmAdapter,
     private readonly ltmService: MemoryLtmService,
     @Optional() private readonly importanceService?: ImportanceScoringService,
     @Optional() private readonly metricsService?: MetricsService,

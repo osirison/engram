@@ -1,7 +1,11 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@engram/database';
 import { MemoryLtmService, type LtmMemory } from '@engram/memory-ltm';
-import { MemoryStmService, type StmMemory } from '@engram/memory-stm';
+import {
+  PostgresStmAdapter,
+  STM_PROVIDER,
+  type StmMemory,
+} from '@engram/memory-stm';
 import { MemoryAuditService } from '../memory-audit.service';
 import {
   MEMORY_INTERCHANGE_VERSION,
@@ -100,7 +104,9 @@ export class MemoryExportService {
 
   constructor(
     private readonly ltm: MemoryLtmService,
-    @Optional() private readonly stm?: MemoryStmService,
+    @Optional()
+    @Inject(STM_PROVIDER)
+    private readonly stm?: PostgresStmAdapter,
     @Optional() private readonly audit?: MemoryAuditService,
     @Optional() private readonly prisma?: PrismaService,
   ) {}

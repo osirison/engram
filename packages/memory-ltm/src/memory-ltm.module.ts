@@ -12,8 +12,6 @@ import { ContradictionDetectionService } from './contradiction-detection.service
 import { IngestPipelineService } from './ingest/ingest-pipeline.service.js';
 import { PrivacyFilterStep } from './ingest/privacy-filter.step.js';
 import { TopicDetectorStep } from './ingest/topic-detector.step.js';
-import { InMemoryLtmAdapter } from './adapters/inmemory-ltm.adapter.js';
-import { HybridTransientRetriever } from './retrieval/hybrid-transient-retriever.js';
 
 /**
  * Token that resolves to whichever LTM implementation is active for the
@@ -37,55 +35,31 @@ const logger = new Logger('MemoryLtmModule');
 @Module({})
 export class MemoryLtmModule {
   static forRoot(capabilities: ProfileCapabilities): DynamicModule {
-    const useInProcess = capabilities.profile === 'memory';
-
-    if (useInProcess) {
-      logger.log('Profile=memory: wiring in-process LTM adapter (no Postgres required)');
-    }
+    logger.log(`Profile=${capabilities.profile}: wiring Postgres LTM service`);
 
     return {
       module: MemoryLtmModule,
-      imports: useInProcess
-        ? [MemoryStmModule.forRoot(capabilities), EmbeddingsModule, VectorStoreModule]
-        : [
-            PrismaModule,
-            EmbeddingsModule,
-            VectorStoreModule,
-            MemoryStmModule.forRoot(capabilities),
-          ],
-      providers: useInProcess
-        ? [
-            InMemoryLtmAdapter,
-            HybridTransientRetriever,
-            {
-              provide: LTM_PROVIDER,
-              useExisting: InMemoryLtmAdapter,
-            },
-            {
-              provide: MemoryLtmService,
-              useExisting: InMemoryLtmAdapter,
-            },
-          ]
-        : [
-            MemoryLtmService,
-            ImportanceScoringService,
-            DuplicateDetectionService,
-            ContradictionDetectionService,
-            IngestPipelineService,
-            PrivacyFilterStep,
-            TopicDetectorStep,
-            // Corpus consolidation (G3-T2) is Postgres-backed, so it exists
-            // only in this branch; consumers inject it @Optional() and hide
-            // the admin tool when it is absent (profile-memory).
-            CorpusConsolidationService,
-            {
-              provide: LTM_PROVIDER,
-              useExisting: MemoryLtmService,
-            },
-          ],
-      exports: useInProcess
-        ? [LTM_PROVIDER, MemoryLtmService, InMemoryLtmAdapter, HybridTransientRetriever]
-        : [LTM_PROVIDER, MemoryLtmService, CorpusConsolidationService],
+      imports: [
+        PrismaModule,
+        EmbeddingsModule,
+        VectorStoreModule,
+        MemoryStmModule.forRoot(capabilities),
+      ],
+      providers: [
+        MemoryLtmService,
+        ImportanceScoringService,
+        DuplicateDetectionService,
+        ContradictionDetectionService,
+        IngestPipelineService,
+        PrivacyFilterStep,
+        TopicDetectorStep,
+        CorpusConsolidationService,
+        {
+          provide: LTM_PROVIDER,
+          useExisting: MemoryLtmService,
+        },
+      ],
+      exports: [LTM_PROVIDER, MemoryLtmService, CorpusConsolidationService],
     };
   }
 }

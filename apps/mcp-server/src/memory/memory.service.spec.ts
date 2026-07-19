@@ -2,7 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MemoryService } from './memory.service';
 import {
-  MemoryStmService,
+  PostgresStmAdapter,
+  STM_PROVIDER,
   StmMemory,
   StmMemoryNotFoundError,
 } from '@engram/memory-stm';
@@ -16,7 +17,7 @@ import {
 
 describe('MemoryService', () => {
   let service: MemoryService;
-  let stmService: jest.Mocked<MemoryStmService>;
+  let stmService: jest.Mocked<PostgresStmAdapter>;
   let ltmService: jest.Mocked<MemoryLtmService>;
 
   const mockStmMemory: StmMemory = {
@@ -74,7 +75,7 @@ describe('MemoryService', () => {
       providers: [
         MemoryService,
         {
-          provide: MemoryStmService,
+          provide: STM_PROVIDER,
           useValue: mockStmService,
         },
         {
@@ -85,7 +86,7 @@ describe('MemoryService', () => {
     }).compile();
 
     service = module.get<MemoryService>(MemoryService);
-    stmService = module.get<jest.Mocked<MemoryStmService>>(MemoryStmService);
+    stmService = module.get<jest.Mocked<PostgresStmAdapter>>(STM_PROVIDER);
     ltmService = module.get<jest.Mocked<MemoryLtmService>>(MemoryLtmService);
   });
 
@@ -999,7 +1000,7 @@ describe('MemoryService', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           MemoryService,
-          { provide: MemoryStmService, useValue: { create: jest.fn() } },
+          { provide: STM_PROVIDER, useValue: { create: jest.fn() } },
           { provide: MemoryLtmService, useValue: realLtmService },
         ],
       }).compile();

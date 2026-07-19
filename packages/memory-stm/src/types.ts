@@ -6,7 +6,6 @@ export interface StmConfig {
   defaultTtl: number; // Default TTL in seconds (24 hours)
   maxTtl: number; // Maximum TTL in seconds (7 days)
   minTtl: number; // Minimum TTL in seconds (1 minute)
-  keyPrefix: string; // Redis key prefix
 }
 
 // STM creation options
@@ -170,90 +169,9 @@ export class StmTtlValidationError extends Error {
   }
 }
 
-// Redis key helpers
-export class StmKeyBuilder {
-  constructor(private readonly prefix: string = 'memory:stm') {}
-
-  /**
-   * Build Redis key for a memory.
-   *
-   * Key format:
-   * - Org-scoped:  `{prefix}:{orgId}:{userId}:{memoryId}` (prefixParts + 3 segments)
-   * - Personal:    `{prefix}:{userId}:{memoryId}` (prefixParts + 2 segments)
-   */
-  buildMemoryKey(userId: string, memoryId: string, organizationId?: string): string {
-    if (organizationId) {
-      return `${this.prefix}:${organizationId}:${userId}:${memoryId}`;
-    }
-    return `${this.prefix}:${userId}:${memoryId}`;
-  }
-
-  /**
-   * Build Redis SCAN pattern for a user's memories.
-   *
-   * - With `organizationId`: matches only keys in that org's namespace.
-   * - Without: matches only the user's personal (non-org) keys.
-   *
-   * To scan across both namespaces, call `buildGlobalPattern()` and
-   * filter the results by `extractUserId`.
-   */
-  buildUserPattern(userId: string, organizationId?: string): string {
-    if (organizationId) {
-      return `${this.prefix}:${organizationId}:${userId}:*`;
-    }
-    return `${this.prefix}:${userId}:*`;
-  }
-
-  /**
-   * Build Redis key pattern matching all STM memories across all users.
-   * Used by the consolidation job to scan for promotion candidates.
-   */
-  buildGlobalPattern(): string {
-    return `${this.prefix}:*`;
-  }
-
-  /**
-   * Extract memory ID from Redis key (last segment).
-   * Works for both 4-segment and 5-segment key formats.
-   */
-  extractMemoryId(key: string): string | null {
-    const parts = key.split(':');
-    const memoryId = parts[parts.length - 1];
-    return memoryId && memoryId.length > 0 ? memoryId : null;
-  }
-
-  /**
-   * Extract user ID from Redis key (second-to-last segment).
-   * Works for both 4-segment and 5-segment key formats.
-   */
-  extractUserId(key: string): string | null {
-    const parts = key.split(':');
-    const userId = parts[parts.length - 2];
-    return userId && userId.length > 0 ? userId : null;
-  }
-
-  /**
-   * Extract organization ID from Redis key.
-   * Returns null for personal (prefixParts + 2 segment) keys.
-   *
-   * Uses the prefix colon-count to determine the expected segment lengths so
-   * a prefix containing extra `:` characters does not cause misclassification.
-   */
-  extractOrgId(key: string): string | null {
-    const prefixParts = this.prefix.split(':').length;
-    const parts = key.split(':');
-    // Org-scoped key: prefixParts + orgId + userId + memId = prefixParts + 3
-    if (parts.length === prefixParts + 3) {
-      return parts[prefixParts] ?? null;
-    }
-    return null;
-  }
-}
-
 // Default STM configuration
 export const DEFAULT_STM_CONFIG: StmConfig = {
   defaultTtl: 86400, // 24 hours
   maxTtl: 604800, // 7 days
   minTtl: 60, // 1 minute
-  keyPrefix: 'memory:stm',
 };

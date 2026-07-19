@@ -3,7 +3,7 @@
  *
  * Verifies that:
  *   1. backup.sh produces a valid archive containing a postgres dump.
- *   2. restore.sh --pg-only --no-confirm replays that dump into a fresh schema.
+ *   2. restore.sh --no-confirm replays that dump into a fresh schema.
  *   3. The restored data matches what was originally written — including the
  *      WP2-4 tables (memory_links / memory_audits / memory_import_sources), so a
  *      future dump narrowing to a table allowlist that omits them is caught (G9).
@@ -105,16 +105,12 @@ const COUNT_IMPORT = `SELECT COUNT(*) FROM memory_import_sources WHERE "sourceKe
 
 /**
  * Environment for the backup/restore scripts scoped to Postgres only.
- * REDIS_URL and QDRANT_URL are stripped so the scripts skip those stores —
- * the CI runner has no redis-cli, and this suite only asserts on the postgres
- * dump, so it must not depend on redis/qdrant being reachable.
+ * Postgres is the only store the scripts touch; the suite asserts on the
+ * postgres dump alone.
  */
 function pgOnlyEnv(): NodeJS.ProcessEnv {
   // Annotate as ProcessEnv so the index signature survives (object spread
-  // drops it), keeping REDIS_URL / QDRANT_URL deletable under strict tsc.
   const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: TEST_URL };
-  delete env.REDIS_URL;
-  delete env.QDRANT_URL;
   return env;
 }
 
@@ -170,7 +166,7 @@ describe('backup / restore (postgres)', () => {
     expect(listing).toContain('postgres.pgdump');
   });
 
-  itIfPg('restore.sh --pg-only replays the dump and data survives', () => {
+  itIfPg('restore.sh replays the dump and data survives', () => {
     const archives = readdirSync(backupDir).filter((f) =>
       f.endsWith('.tar.gz'),
     );
@@ -193,7 +189,7 @@ describe('backup / restore (postgres)', () => {
     expect(pexec(COUNT_IMPORT)).toBe('0');
 
     execSync(
-      `bash "${RESTORE_SCRIPT}" --archive "${archivePath}" --pg-only --no-confirm`,
+      `bash "${RESTORE_SCRIPT}" --archive "${archivePath}" --no-confirm`,
       { env: pgOnlyEnv(), stdio: 'pipe' },
     );
 

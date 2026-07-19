@@ -15,10 +15,9 @@ permissions:
   contents: read
 
 # The profile matrix exercises every deployment profile that ENGRAM
-# supports and surfaces a per-profile smoke test alongside the standard
-# build / lint / typecheck / test gates. All jobs run on
-# ubuntu-latest and reuse the same Postgres + Redis services
-# for the profiles that need them.
+# supports (lite, standard) and surfaces a per-profile smoke test
+# alongside the standard build / lint / typecheck / test gates. All jobs
+# run on ubuntu-latest against a single Postgres (pgvector) service.
 
 jobs:
   # ─── build across all profiles ────────────────────────────────────────
@@ -28,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [memory, lite, enterprise]
+        profile: [lite, standard]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -99,18 +98,8 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      redis:
-        image: redis:latest
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-      REDIS_URL: redis://localhost:6379
       PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
     steps:
       - uses: actions/checkout@v4
@@ -137,56 +126,6 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm db:migrate:deploy
       - run: pnpm test
-
-  # ─── smoke: profile-memory (no external services) ────────────────────
-  smoke-profile-memory:
-    name: Smoke (profile=memory)
-    runs-on: ubuntu-latest
-    needs: [build, typecheck]
-    env:
-      DEPLOYMENT_PROFILE: memory
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-        with:
-          version: 11.5.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm db:generate
-      - run: pnpm build
-      - name: Boot profile-memory
-        run: |
-          pnpm --filter mcp-server start:prod &
-          SERVER_PID=$!
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-            if curl -sf http://127.0.0.1:3000/health; then
-              echo "profile-memory up after ${i}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "profile-memory failed to start within 15s"
-          kill $SERVER_PID 2>/dev/null || true
-          exit 1
-      - name: Health endpoint contract
-        run: |
-          set -euo pipefail
-          response=$(curl -s http://127.0.0.1:3000/health)
-          echo "$response" | jq -e '.status == "ok"' >/dev/null
-          echo "$response" | jq -e '.info["memory-store"].status == "up"' >/dev/null
-          echo "$response" | jq -e '.info["database"] == null' >/dev/null
-          echo "$response" | jq -e '.info["redis"] == null' >/dev/null
-          echo "$response" | jq -e '.info["qdrant"] == null' >/dev/null
-      - name: Profile label in metrics
-        run: |
-          curl -sf http://127.0.0.1:3000/health/metrics \
-            | grep -E '^engram_deployment_profile_info\{profile="memory"\} 1$'
-      - name: Cleanup
-        if: always()
-        run: pkill -f 'apps/mcp-server/dist/main.js' || true
 
   # ─── smoke: profile-lite (Postgres + encrypted local store) ───────────
   smoke-profile-lite:
@@ -249,8 +188,7 @@ jobs:
           echo "$response" | jq -e '.status == "ok"' >/dev/null
           echo "$response" | jq -e '.info["memory-store"].status == "up"' >/dev/null
           echo "$response" | jq -e '.info["database"].status == "up"' >/dev/null
-          echo "$response" | jq -e '.info["redis"] == null' >/dev/null
-          echo "$response" | jq -e '.info["qdrant"] == null' >/dev/null
+          echo "$response" | jq -e '.info["pgvector"].status == "up"' >/dev/null
       - name: Profile label in metrics
         run: |
           curl -sf http://127.0.0.1:3000/health/metrics \
@@ -264,9 +202,9 @@ jobs:
           pkill -f 'apps/mcp-server/dist/main.js' || true
           rm -rf "$LOCAL_DATA_DIR"
 
-  # ─── smoke: profile-enterprise (Postgres + Redis) ─────────────────────
-  smoke-profile-enterprise:
-    name: Smoke (profile=enterprise)
+  # ─── smoke: profile-standard (Postgres only) ──────────────────────────
+  smoke-profile-standard:
+    name: Smoke (profile=standard)
     runs-on: ubuntu-latest
     needs: [build, typecheck]
     services:
@@ -283,19 +221,9 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      redis:
-        image: redis:latest
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
     env:
-      DEPLOYMENT_PROFILE: enterprise
+      DEPLOYMENT_PROFILE: standard
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-      REDIS_URL: redis://localhost:6379
       MCP_ADMIN_TOKEN: smoke-test-admin-token
     steps:
       - uses: actions/checkout@v4
@@ -310,18 +238,18 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm db:migrate:deploy
       - run: pnpm build
-      - name: Boot profile-enterprise
+      - name: Boot profile-standard
         run: |
           pnpm --filter mcp-server start:prod &
           SERVER_PID=$!
           for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
             if curl -sf http://127.0.0.1:3000/health; then
-              echo "profile-enterprise up after ${i}s"
+              echo "profile-standard up after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "profile-enterprise failed to start within 20s"
+          echo "profile-standard failed to start within 20s"
           kill $SERVER_PID 2>/dev/null || true
           exit 1
       - name: Health endpoint contract
@@ -331,7 +259,6 @@ jobs:
           echo "$response" | jq -e '.status == "ok"' >/dev/null
           echo "$response" | jq -e '.info["memory-store"].status == "up"' >/dev/null
           echo "$response" | jq -e '.info["database"].status == "up"' >/dev/null
-          echo "$response" | jq -e '.info["redis"].status == "up"' >/dev/null
           echo "$response" | jq -e '.info["pgvector"].status == "up"' >/dev/null
       - name: Reindex CLI smoke
         run: |
@@ -340,9 +267,9 @@ jobs:
         if: always()
         run: pkill -f 'apps/mcp-server/dist/main.js' || true
 
-  # ─── migration: profile-lite → profile-enterprise (unit + integration) ─
-  migration-lite-to-enterprise:
-    name: Migration (lite → enterprise)
+  # ─── migration: profile-lite → profile-standard (unit + integration) ──
+  migration-lite-to-standard:
+    name: Migration (lite → standard)
     runs-on: ubuntu-latest
     needs: [build, typecheck]
     services:
@@ -359,18 +286,8 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      redis:
-        image: redis:latest
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-      REDIS_URL: redis://localhost:6379
       PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
       MCP_ADMIN_TOKEN: migration-smoke-admin-token
     steps:

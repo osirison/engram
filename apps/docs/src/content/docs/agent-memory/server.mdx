@@ -25,7 +25,7 @@ The server runs as a persistent process configured for shared HTTP access:
 | `PORT`               | `3000`                           |                                                    |
 | `HOST`               | `127.0.0.1`                      | Loopback only — per-machine (see caveat below)     |
 | `AUTH_REQUIRED`      | `true`                           | Per-agent API keys enforced                        |
-| `DEPLOYMENT_PROFILE` | `memory` / `lite` / `enterprise` | Pick per durability needs (see below)              |
+| `DEPLOYMENT_PROFILE` | `standard` (default) / `lite`    | Pick per tenancy needs (see below)                 |
 
 - **MCP endpoint:** `http://127.0.0.1:3000/mcp` — a single route that handles
   `POST` (JSON-RPC requests), `GET` (server-to-client SSE stream), and `DELETE`
@@ -43,7 +43,7 @@ wiring lives in [agent-memory-clients.md](/docs/agent-memory/clients/).
 
 ENGRAM's **default** transport is stdio: each MCP client spawns its own server
 subprocess. Five agents would mean five independent processes, five lifecycles,
-and five separate pools of connections to Postgres/Redis/Qdrant — with no shared
+and five separate pools of connections to Postgres — with no shared
 in-process session state.
 
 WP5 D1 chooses a single shared HTTP server instead. All five agents open MCP
@@ -51,8 +51,8 @@ sessions against the same `http://127.0.0.1:3000/mcp` endpoint, so they share:
 
 - **One process and one memory store** — the whole point of "primary memory."
 - **One lifecycle** — started once at login, supervised, restarted on crash.
-- **One set of backing-service connections** — Postgres, Redis, and Qdrant are
-  opened once, not once per agent.
+- **One pool of backing-service connections** — Postgres (the only backing
+  service) is opened once, not once per agent.
 
 The rest of this document shows how to run that one server durably (systemd
 user service or Docker Compose) and how to verify it.
@@ -121,17 +121,16 @@ and host are **not** set here — the unit fixes those.
 ```bash
 # ~/.engram/engram-mcp.env — placeholders only, never commit real secrets
 
-# Datastores (enterprise profile). For VECTOR_BACKEND=pgvector, drop QDRANT_URL.
+# Datastore — Postgres (pgvector image) is the only backing service; vectors,
+# STM, sessions, and rate limits all live here.
 DATABASE_URL=postgresql://engram:CHANGE_ME@127.0.0.1:5432/engram
-REDIS_URL=redis://127.0.0.1:6379
-QDRANT_URL=http://127.0.0.1:6333
-# VECTOR_BACKEND=pgvector   # alternative to a separate Qdrant service
 
 # Auth gate — every agent authenticates with a per-agent API key.
 AUTH_REQUIRED=true
 
-# Durability profile: memory | lite | enterprise (see docs/SETUP.md).
-DEPLOYMENT_PROFILE=enterprise
+# Deployment profile: standard (default, multi-tenant) | lite (single-user).
+# The legacy value 'enterprise' is accepted as an alias for 'standard'.
+DEPLOYMENT_PROFILE=standard
 
 # Admin-only operations (reindex, backfill). Not an agent key.
 MCP_ADMIN_TOKEN=CHANGE_ME_ADMIN_TOKEN
@@ -146,12 +145,11 @@ EMBEDDING_PROVIDER=ollama
 # OPENAI_API_KEY=sk-CHANGE_ME
 ```
 
-Choose `DEPLOYMENT_PROFILE` for your durability and infrastructure needs — the
-profile table and per-profile setup live in [SETUP.md](/docs/getting-started/). A single-user
-machine can run `memory` (no external services, data lost on exit) or `lite`
-(Postgres only, encrypted at rest); the sample above shows the full-stack
-`enterprise` variables. Leaner profiles need fewer of the datastore URLs, so
-delete the ones that profile does not use.
+Choose `DEPLOYMENT_PROFILE` for your tenancy needs — the profile table and
+per-profile setup live in [SETUP.md](/docs/getting-started/). Both profiles run on Postgres
+alone: `standard` (the default) wires the multi-tenant auth/organization
+stack, while `lite` is the single-user variant with that stack left unwired.
+The same `DATABASE_URL` is all either profile needs.
 
 Generating and rotating the per-agent API keys (and turning the `AUTH_REQUIRED`
 gate on) is covered in [security/agent-keys.md](/docs/how-to/provision-agent-keys/).

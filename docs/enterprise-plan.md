@@ -3,6 +3,14 @@ title: Engram Enterprise Implementation Plan
 description: Comprehensive gap analysis vs context-mem and parallel implementation streams for enterprise-grade agentic memory
 ---
 
+> **Superseded (2026-07-19).** The `enterprise` profile described below has been
+> renamed `standard` (the default; the old name is still accepted as an alias),
+> and the stack has been simplified to **Postgres-only**: Redis and Qdrant were
+> removed. Short-term memory, auth sessions, rate limits, reindex job state, and
+> vectors (pgvector) all live in Postgres now. This document is kept as a
+> historical planning snapshot — stack and profile references below reflect the
+> pre-simplification architecture.
+
 ## Overview
 
 This plan closes the gap between Engram's current state and both context-mem's feature set and

@@ -16,8 +16,7 @@ codebase.
 | -------- | ---- | ------- | -------- | ------- | ----------- |
 | `NODE_ENV` | `development` \| `production` \| `test` | `development` | no | all | Runtime environment. Controls dev-only behaviours and log verbosity. |
 | `PORT` | number | `3000` | no | all | TCP port the MCP/HTTP server listens on. |
-| `DATABASE_URL` | string | — | no | `lite`, `enterprise` | Conditional Postgres URL. Required for `lite` and `enterprise` profiles, optional for `memory`. The validation rule is applied in the transform below; we keep the field optional here so the same schema can parse a `memory`-profile environment without forcing an empty string. |
-| `REDIS_URL` | string | — | no | `enterprise` | Conditional Redis URL. Required only for `enterprise`. |
+| `DATABASE_URL` | string | — | no | `lite`, `enterprise` | Postgres URL. Required in every profile; the requirement is enforced in the transform below so the error message can name the active profile. |
 | `OPENAI_API_KEY` | string | — | no | all | Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. |
 | `EMBEDDING_PROVIDER` | `ollama` \| `openai` \| `disabled` \| `local` | `ollama` | no | all | Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. |
 | `EMBEDDING_MODEL` | string | — | no | all | Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. |
@@ -44,7 +43,7 @@ codebase.
 | `PGVECTOR_HNSW_M` | number | — | no | all | Optional pgvector HNSW build-time `m` (max connections per layer). |
 | `PGVECTOR_HNSW_EF_CONSTRUCTION` | number | — | no | all | Optional pgvector HNSW build-time `ef_construction` (candidate list size). |
 | `PGVECTOR_HNSW_EF_SEARCH` | number | — | no | all | Optional pgvector HNSW query-time `ef_search` (recall/latency tuning). |
-| `DEPLOYMENT_PROFILE` | `memory` \| `lite` \| `enterprise` | `enterprise` | no | all | Deployment profile ladder: - `memory`     → in-process, zero external services. - `lite`       → requires DATABASE_URL; no Redis/Qdrant. - `enterprise` → requires DATABASE_URL, REDIS_URL. Defaults to `enterprise` for backward compatibility with existing production deployments. |
+| `DEPLOYMENT_PROFILE` | `lite` \| `standard` \| `enterprise` | `standard` | no | all | Deployment profile ladder: - `lite`     → single-user; auth/organization stack not wired. - `standard` → default; multi-tenant auth stack. Both require only DATABASE_URL (pgvector lives in Postgres). The legacy `enterprise` value is accepted as an alias for `standard`. |
 | `JWT_SECRET` | string | — | no | when `AUTH_REQUIRED=true` | HMAC secret for issuing/verifying session JWTs. Required (≥32 chars) when `AUTH_REQUIRED=true`; otherwise optional. Never logged. |
 | `JWT_EXPIRES_IN` | string | `7d` | no | all | JWT lifetime as a duration string (`7d`, `24h`, `30m`, `3600s`) or seconds. |
 | `AUTH_REQUIRED` | boolean | `false` | no | all | When true, `/mcp` tool calls must present a valid JWT or API key, and the acting `userId` is derived from that credential — the `userId` in tool input is ignored. Default false preserves the trusted-caller behaviour. Only enforced over the streamable-http transport. |
@@ -54,7 +53,7 @@ codebase.
 | `GITHUB_CLIENT_SECRET` | string | — | no | all | GitHub OAuth client secret (pairs with `GITHUB_CLIENT_ID`). Never logged. |
 | `GOOGLE_CLIENT_ID` | string | — | no | all | Google OAuth app credentials. Both must be set to enable Google login. |
 | `GOOGLE_CLIENT_SECRET` | string | — | no | all | Google OAuth client secret (pairs with `GOOGLE_CLIENT_ID`). Never logged. |
-| `RATE_LIMIT_ENABLED` | boolean | `false` | no | all | Master switch for the Redis-backed rate limiter (enterprise only). |
+| `RATE_LIMIT_ENABLED` | boolean | `false` | no | all | Master switch for the Postgres-backed rate limiter (standard profile only). |
 | `RATE_LIMIT_WINDOW_SEC` | number | `60` | no | all | Fixed-window length in seconds. Default 60 → the `*_RPM` limits are per minute. |
 | `RATE_LIMIT_USER_RPM` | number | `120` | no | all | Max requests per window for an authenticated user. |
 | `RATE_LIMIT_ORG_RPM` | number | `6000` | no | all | Max requests per window aggregated across an organization. |
@@ -67,7 +66,6 @@ Some variables are optional in the base schema but enforced at load time
 depending on the active `DEPLOYMENT_PROFILE`:
 
 - DATABASE_URL must be a valid URL
-- REDIS_URL must be a valid URL
 - OLLAMA_URL must be a valid URL including a scheme (e.g. http://localhost:11434)
 - JWT_SECRET must be set and at least 32 characters when AUTH_REQUIRED=true
 
@@ -95,6 +93,7 @@ appears here automatically (add a description in the generator).
 | `METRICS_TOKEN` | Bearer token required to scrape `/health/metrics`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces. Omit to disable OpenTelemetry (no overhead). |
 | `OTEL_SERVICE_NAME` | Service name reported to OpenTelemetry. |
+| `REDIS_URL` | — |
 | `STM_CONSOLIDATION_IMPORTANCE_THRESHOLD` | Minimum importance an STM memory needs to qualify for promotion. |
 | `WEB_DATABASE_URL` | Postgres URL used by the Next.js dashboard (`apps/web`). |
 
@@ -114,4 +113,3 @@ Set only to enable integration test suites; never required at runtime.
 | `MEMORY_SYNC_TEST_URL` | Enables an integration test suite. |
 | `MEMORY_VERSION_TEST_URL` | Enables an integration test suite. |
 | `PGVECTOR_TEST_URL` | Enables an integration test suite. |
-| `STM_SCAN_TEST_URL` | Enables an integration test suite. |

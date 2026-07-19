@@ -14,7 +14,6 @@ export default defineConfig({
       ),
       '@engram/memory-ltm': path.resolve(__dirname, '../../packages/memory-ltm/src/index.ts'),
       '@engram/memory-stm': path.resolve(__dirname, '../../packages/memory-stm/src/index.ts'),
-      '@engram/redis': path.resolve(__dirname, '../../packages/redis/src/index.ts'),
       '@engram/vector-store': path.resolve(__dirname, '../../packages/vector-store/src/index.ts'),
     },
   },

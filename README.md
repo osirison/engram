@@ -6,15 +6,18 @@ description: Developer setup and project entry points for the ENGRAM MCP memory 
 ## Overview
 
 ENGRAM is a TypeScript monorepo for an MCP memory server. The main runtime is a
-NestJS app that connects to PostgreSQL, Redis, and Qdrant for agent memory,
-semantic search, and health checks.
+NestJS app that connects to PostgreSQL (with the pgvector extension) for agent
+memory, semantic search, and health checks. Postgres is the only backing
+service — vectors, short-term memory, auth sessions, and rate limits all live
+there.
 
 ## Prerequisites
 
 - Node.js 20 or newer with npm
 - Git
 - Optional: pnpm 11.5.0 on your `PATH`
-- Optional: Docker and Docker Compose v2 (only for `profile-enterprise`)
+- Optional: Docker and Docker Compose v2 (to run the bundled PostgreSQL
+  container — image `pgvector/pgvector:pg16+`)
 
 ENGRAM pins `pnpm@11.5.0` in [package.json](package.json). The quick start
 uses npm to run that pinned pnpm version, so it works even when `pnpm` is not
@@ -22,36 +25,43 @@ installed globally.
 
 ## Choose Your Profile
 
-ENGRAM ships three deployment profiles. Pick the one that matches the
-durability, scale, and infrastructure you want. The MCP server reads
-`DEPLOYMENT_PROFILE` to decide which modules, health checks, and tools to
-expose.
+ENGRAM ships two deployment profiles. Both run on Postgres alone — the same
+storage, vectors (pgvector), and durability — and both expose the full MCP tool
+set, including the queued reindex / cancel / retry maintenance tools. The MCP
+server reads `DEPLOYMENT_PROFILE` to decide which modules, health checks, and
+tools to expose; when it is unset, `standard` is the default.
 
-| Profile              | Setup Friction | Durability                             | Scale          | MCP Tool Set                                |
-| -------------------- | -------------- | -------------------------------------- | -------------- | ------------------------------------------- |
-| `profile-memory`     | Instant        | None (in-process)                      | Single-process | Subset (no reindex or backfill tools)       |
-| `profile-lite`       | Medium         | Encrypted-at-rest (AES-256-GCM)        | Single-host    | Subset + synchronous reindex                |
-| `profile-enterprise` | Heavy          | Replicated (Postgres + Redis + Qdrant) | Cluster        | Full (sync + queued reindex + cancel/retry) |
+| Profile    | Default | Tenancy                                                   | Backing services      |
+| ---------- | ------- | --------------------------------------------------------- | --------------------- |
+| `lite`     | No      | Single user — auth/organization stack not wired           | PostgreSQL (pgvector) |
+| `standard` | Yes     | Multi-tenant — auth, API keys, organizations, rate limits | PostgreSQL (pgvector) |
 
-The full MCP surface is 26 tools, defined in
+The legacy value `enterprise` is accepted as an alias for `standard`; the old
+`memory` profile was removed (every profile now runs on Postgres).
+
+The full MCP surface is defined in
 [apps/mcp-server/src/memory/tools-manifest.ts](apps/mcp-server/src/memory/tools-manifest.ts)
-(the single source of truth for the tool registry). All three profiles share
-the same 19-tool core for memory CRUD, promotion, hybrid recall, and the
-`remember`/`forget`/`reflect`/`compress_context` helpers; the reindex / queue /
-cancel / retry maintenance tools and the Postgres-backed
-`export_memories`/`import_agent_memory` tools are profile-gated per the table
-above.
+(the single source of truth for the tool registry). Both profiles expose the
+same tools — memory CRUD, promotion, hybrid recall, the
+`remember`/`forget`/`reflect`/`compress_context` helpers, and the reindex /
+queue / cancel / retry maintenance tools (admin tools additionally require
+`MCP_ADMIN_TOKEN`).
 
-### profile-memory — zero-dependency quickstart
+### lite — single-user local
 
-In-process memory, no Docker, no Postgres, no Redis, no Qdrant. Best for
-demos, CI smoke tests, and exploring the MCP tool surface. Data is lost when
-the process exits.
+Postgres-backed single-user profile. Same durable storage as `standard`, but
+the multi-tenant auth/organization stack is not wired, so there is no login or
+API-key surface to configure. Best for a personal machine running a local
+memory server.
 
 ```bash
 npm exec --yes pnpm@11.5.0 -- install
-DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- build
-DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
+test -f .env || cp .env.example .env
+npm exec --yes pnpm@11.5.0 -- docker:up
+npm exec --yes pnpm@11.5.0 -- db:generate
+npm exec --yes pnpm@11.5.0 -- db:migrate
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- build
+DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000`. Check it with:
@@ -60,32 +70,12 @@ The MCP server starts on `http://localhost:3000`. Check it with:
 curl http://localhost:3000/health
 ```
 
-### profile-lite — encrypted local durability
+### standard — default multi-tenant
 
-AES-256-GCM encrypted file store under `LOCAL_DATA_DIR` (default
-`~/.engram/data`). Postgres is the source of truth; Redis and Qdrant are
-absent. Best for single-host deployments that need at-rest encryption by
-default.
-
-```bash
-npm exec --yes pnpm@11.5.0 -- install
-# Generate the encryption key once and persist it — reusing the same key
-# across commands ensures previously-written records remain decryptable.
-echo "LOCAL_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
-DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- db:migrate
-DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- build
-DEPLOYMENT_PROFILE=lite npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
-```
-
-The server refuses to start in production without `LOCAL_ENCRYPTION_KEY`;
-in development it derives an ephemeral key with a loud warning.
-
-### profile-enterprise — full stack
-
-Postgres + Redis + Qdrant with cluster-scale durability, hybrid lexical +
-semantic retrieval, and queued reindex / cancel / retry maintenance
-tools. Best for production deployments that need horizontal scale,
-background jobs, and zero-downtime backfill.
+The default when `DEPLOYMENT_PROFILE` is unset. Adds the multi-tenant auth
+stack — JWT sessions, per-agent API keys, organizations, and Postgres-backed
+rate limiting — on top of the same Postgres storage. Best for shared or
+production deployments.
 
 ```bash
 npm exec --yes pnpm@11.5.0 -- install
@@ -93,8 +83,8 @@ test -f .env || cp .env.example .env
 npm exec --yes pnpm@11.5.0 -- docker:up
 npm exec --yes pnpm@11.5.0 -- db:generate
 npm exec --yes pnpm@11.5.0 -- db:migrate
-DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.5.0 -- build
-DEPLOYMENT_PROFILE=enterprise npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
+npm exec --yes pnpm@11.5.0 -- build
+npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
 ```
 
 The MCP server starts on `http://localhost:3000` by default. Check it with:
@@ -122,24 +112,24 @@ Release SLO and quality gates live in [docs/RELEASE_GATES.md](docs/RELEASE_GATES
 
 ## Common Commands
 
-| Task                                           | Command                        |
-| ---------------------------------------------- | ------------------------------ |
-| Start PostgreSQL, Redis, and Qdrant, then wait | `pnpm docker:up`               |
-| Start full Inspector stack                     | `pnpm docker:inspector:up`     |
-| Stop full Inspector stack                      | `pnpm docker:inspector:down`   |
-| Tail Inspector stack logs                      | `pnpm docker:inspector:logs`   |
-| Start the MCP server                           | `pnpm --filter mcp-server dev` |
-| Start the web app                              | `pnpm --filter web dev`        |
-| Start the docs app                             | `pnpm --filter docs dev`       |
-| Generate Prisma client                         | `pnpm db:generate`             |
-| Run Prisma migrations                          | `pnpm db:migrate`              |
-| Open Prisma Studio                             | `pnpm db:studio`               |
-| Build all workspaces                           | `pnpm build`                   |
-| Lint all workspaces                            | `pnpm lint`                    |
-| Type-check all workspaces                      | `pnpm typecheck`               |
-| Test all workspaces                            | `pnpm test`                    |
-| Check documentation links                      | `pnpm docs:check`              |
-| Format source files                            | `pnpm format`                  |
+| Task                                   | Command                        |
+| -------------------------------------- | ------------------------------ |
+| Start PostgreSQL (pgvector), then wait | `pnpm docker:up`               |
+| Start full Inspector stack             | `pnpm docker:inspector:up`     |
+| Stop full Inspector stack              | `pnpm docker:inspector:down`   |
+| Tail Inspector stack logs              | `pnpm docker:inspector:logs`   |
+| Start the MCP server                   | `pnpm --filter mcp-server dev` |
+| Start the web app                      | `pnpm --filter web dev`        |
+| Start the docs app                     | `pnpm --filter docs dev`       |
+| Generate Prisma client                 | `pnpm db:generate`             |
+| Run Prisma migrations                  | `pnpm db:migrate`              |
+| Open Prisma Studio                     | `pnpm db:studio`               |
+| Build all workspaces                   | `pnpm build`                   |
+| Lint all workspaces                    | `pnpm lint`                    |
+| Type-check all workspaces              | `pnpm typecheck`               |
+| Test all workspaces                    | `pnpm test`                    |
+| Check documentation links              | `pnpm docs:check`              |
+| Format source files                    | `pnpm format`                  |
 
 ## Project Layout
 
@@ -152,8 +142,7 @@ Release SLO and quality gates live in [docs/RELEASE_GATES.md](docs/RELEASE_GATES
 | [packages/core](packages/core)                                   | Core MCP types, registry, and tools          |
 | [packages/config](packages/config)                               | Environment validation and types             |
 | [packages/database](packages/database)                           | Prisma database module                       |
-| [packages/redis](packages/redis)                                 | Redis client module                          |
-| [packages/vector-store](packages/vector-store)                   | Qdrant vector store module                   |
+| [packages/vector-store](packages/vector-store)                   | pgvector vector store module                 |
 | [packages/embeddings](packages/embeddings)                       | Embedding generation and caching             |
 | [packages/memory-stm](packages/memory-stm)                       | Short-term memory package                    |
 | [packages/memory-ltm](packages/memory-ltm)                       | Long-term memory package                     |
@@ -176,7 +165,6 @@ Release SLO and quality gates live in [docs/RELEASE_GATES.md](docs/RELEASE_GATES
 | MCP tool development                      | [packages/core/src/mcp/tools/README.md](packages/core/src/mcp/tools/README.md)       |
 | Database package                          | [packages/database/README.md](packages/database/README.md)                           |
 | Database usage examples                   | [packages/database/USAGE.md](packages/database/USAGE.md)                             |
-| Redis package                             | [packages/redis/README.md](packages/redis/README.md)                                 |
 | Embeddings package                        | [packages/embeddings/README.md](packages/embeddings/README.md)                       |
 | Agent and contributor instructions        | [AGENTS.md](AGENTS.md)                                                               |
 
@@ -185,11 +173,10 @@ Release SLO and quality gates live in [docs/RELEASE_GATES.md](docs/RELEASE_GATES
 Local defaults live in [.env.example](.env.example). Docker Compose uses these
 host port settings by default:
 
-| Service    | Host port setting                         | Purpose                             |
-| ---------- | ----------------------------------------- | ----------------------------------- |
-| PostgreSQL | `POSTGRES_PORT`, defaults to `5432`       | Primary relational database         |
-| Redis      | `REDIS_PORT`, defaults to `6379`          | Cache and short-term memory support |
-| Qdrant     | `QDRANT_HTTP_PORT` and `QDRANT_GRPC_PORT` | Vector search storage               |
+| Service           | Host port setting                   | Purpose                                            |
+| ----------------- | ----------------------------------- | -------------------------------------------------- |
+| PostgreSQL        | `POSTGRES_PORT`, defaults to `5432` | Primary datastore (memories, vectors, auth state)  |
+| Ollama (optional) | `OLLAMA_PORT`, defaults to `11434`  | Local embeddings (`--profile ollama` compose flag) |
 
 When a host port is already in use, update the matching port value and URL in
 `.env` before starting Docker. For PostgreSQL, change both `POSTGRES_PORT` and

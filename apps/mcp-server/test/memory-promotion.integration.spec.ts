@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MemoryService } from '../src/memory/memory.service';
-import { MemoryStmService, StmMemoryNotFoundError } from '@engram/memory-stm';
+import {
+  PostgresStmAdapter,
+  STM_PROVIDER,
+  StmMemoryNotFoundError,
+} from '@engram/memory-stm';
 import {
   MemoryLtmService,
   LtmMemory,
@@ -35,7 +39,7 @@ const makePromotedLtm = (overrides: Partial<LtmMemory> = {}): LtmMemory => ({
 // ---------------------------------------------------------------------------
 describe('MemoryService Promotion Integration', () => {
   let service: MemoryService;
-  let stmService: jest.Mocked<MemoryStmService>;
+  let stmService: jest.Mocked<PostgresStmAdapter>;
   let ltmService: jest.Mocked<MemoryLtmService>;
 
   beforeEach(() => {
@@ -45,7 +49,7 @@ describe('MemoryService Promotion Integration', () => {
   afterEach(() => jest.restoreAllMocks());
 
   beforeEach(async () => {
-    const stmMock: Partial<jest.Mocked<MemoryStmService>> = {
+    const stmMock: Partial<jest.Mocked<PostgresStmAdapter>> = {
       create: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
@@ -65,13 +69,13 @@ describe('MemoryService Promotion Integration', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MemoryService,
-        { provide: MemoryStmService, useValue: stmMock },
+        { provide: STM_PROVIDER, useValue: stmMock },
         { provide: MemoryLtmService, useValue: ltmMock },
       ],
     }).compile();
 
     service = module.get<MemoryService>(MemoryService);
-    stmService = module.get(MemoryStmService);
+    stmService = module.get(STM_PROVIDER);
     ltmService = module.get(MemoryLtmService);
   });
 

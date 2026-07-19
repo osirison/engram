@@ -35,7 +35,6 @@
   "setupFiles": ["<rootDir>/node_modules/reflect-metadata/Reflect.js"],
   "moduleNameMapper": {
     "^reflect-metadata$": "<rootDir>/node_modules/reflect-metadata/Reflect.js",
-    "^@engram/redis$": "<rootDir>/../../packages/redis/dist/index.js",
     "^(\\..+)\\.js$": "$1"
   },
   "testTimeout": 30000

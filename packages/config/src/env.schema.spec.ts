@@ -9,7 +9,6 @@ describe('envSchema', () => {
         NODE_ENV: 'development',
         PORT: '3000',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       const result = envSchema.parse(config);
@@ -17,9 +16,8 @@ describe('envSchema', () => {
       expect(result).toEqual({
         NODE_ENV: 'development',
         PORT: 3000,
-        DEPLOYMENT_PROFILE: 'enterprise',
+        DEPLOYMENT_PROFILE: 'standard',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
         EMBEDDING_PROVIDER: 'ollama',
         MCP_TRANSPORT: 'stdio',
         STM_CONSOLIDATION_ACCESS_THRESHOLD: 3,
@@ -52,7 +50,6 @@ describe('envSchema', () => {
     it('defaults EMBEDDING_PROVIDER to ollama and accepts the new embedding vars', () => {
       const base = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       expect(envSchema.parse(base).EMBEDDING_PROVIDER).toBe('ollama');
@@ -77,7 +74,6 @@ describe('envSchema', () => {
     it('rejects an invalid OLLAMA_URL and provider; treats empty strings as unset', () => {
       const base = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       expect(() => envSchema.parse({ ...base, OLLAMA_URL: 'not-a-url' })).toThrow(ZodError);
@@ -95,7 +91,6 @@ describe('envSchema', () => {
     it('should use default values for NODE_ENV and PORT', () => {
       const config = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       const result = envSchema.parse(config);
@@ -108,7 +103,6 @@ describe('envSchema', () => {
       const config = {
         PORT: '8080',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       const result = envSchema.parse(config);
@@ -121,7 +115,6 @@ describe('envSchema', () => {
       const config = {
         NODE_ENV: 'production',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       const result = envSchema.parse(config);
@@ -133,7 +126,6 @@ describe('envSchema', () => {
       const config = {
         NODE_ENV: 'test',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       const result = envSchema.parse(config);
@@ -145,7 +137,6 @@ describe('envSchema', () => {
   describe('vector backend configuration', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-      REDIS_URL: 'redis://localhost:6379',
     };
 
     it('should accept streamable-http as an MCP transport', () => {
@@ -193,9 +184,7 @@ describe('envSchema', () => {
 
   describe('invalid configurations', () => {
     it('should throw error when DATABASE_URL is missing', () => {
-      const config = {
-        REDIS_URL: 'redis://localhost:6379',
-      };
+      const config = {};
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
     });
@@ -203,24 +192,6 @@ describe('envSchema', () => {
     it('should throw error when DATABASE_URL is not a valid URL', () => {
       const config = {
         DATABASE_URL: 'not-a-url',
-        REDIS_URL: 'redis://localhost:6379',
-      };
-
-      expect(() => envSchema.parse(config)).toThrow(ZodError);
-    });
-
-    it('should throw error when REDIS_URL is missing', () => {
-      const config = {
-        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-      };
-
-      expect(() => envSchema.parse(config)).toThrow(ZodError);
-    });
-
-    it('should throw error when REDIS_URL is not a valid URL', () => {
-      const config = {
-        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'invalid-url',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -230,7 +201,6 @@ describe('envSchema', () => {
       const config = {
         NODE_ENV: 'invalid',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -240,7 +210,6 @@ describe('envSchema', () => {
       const config = {
         PORT: 'not-a-number',
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       expect(() => envSchema.parse(config)).toThrow(ZodError);
@@ -250,7 +219,6 @@ describe('envSchema', () => {
   describe('auth & rate limiting', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-      REDIS_URL: 'redis://localhost:6379',
     };
 
     const secret = 'a-very-long-secret-key-of-at-least-32-characters';
@@ -333,7 +301,6 @@ describe('envSchema', () => {
   describe('LTM lifecycle configuration', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-      REDIS_URL: 'redis://localhost:6379',
     };
 
     it('applies defaults matching the services inline fallbacks', () => {
@@ -456,7 +423,6 @@ describe('envSchema', () => {
   describe('import path allowlist (IMPORT_ALLOWED_ROOT, A18)', () => {
     const base = {
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-      REDIS_URL: 'redis://localhost:6379',
     };
 
     it('is optional and stays undefined when unset (runtime falls back to the home dir)', () => {
@@ -490,7 +456,6 @@ describe('envSchema', () => {
     it('should validate valid configuration', () => {
       const config = {
         DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
-        REDIS_URL: 'redis://localhost:6379',
       };
 
       const result = validateEnv(config);

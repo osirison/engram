@@ -8,11 +8,6 @@ import {
 import type { Tool, ToolCallContext } from '@engram/core';
 import { MetricsService } from '../metrics/metrics.service';
 import {
-  DeploymentProfile,
-  resolveCapabilities,
-  coerceDeploymentProfile,
-} from '@engram/config';
-import {
   MemoryService,
   CreateMemoryDto,
   UpdateMemoryDto,
@@ -146,7 +141,6 @@ import {
 @Injectable()
 export class MemoryController {
   private readonly logger = new Logger(MemoryController.name);
-  private readonly activeProfile: DeploymentProfile;
 
   constructor(
     private readonly memoryService: MemoryService,
@@ -177,12 +171,7 @@ export class MemoryController {
     @Optional()
     @Inject(CorpusConsolidationService)
     private readonly corpusConsolidation: CorpusConsolidationService | null = null,
-  ) {
-    this.activeProfile = coerceDeploymentProfile(
-      process.env['DEPLOYMENT_PROFILE'],
-      DeploymentProfile.ENTERPRISE,
-    );
-  }
+  ) {}
 
   /**
    * Capture the auditable pre-image of a memory (WP2 T5/D6). Returns null when
@@ -1785,38 +1774,13 @@ export class MemoryController {
   /**
    * Filter the full tool list by the active deployment profile.
    *
-   *   - profile=memory: hide `reindex_memories`, `queue_reindex_memories`,
-   *     `get_reindex_status`, `cancel_reindex_job`, `retry_reindex_job`,
-   *     `consolidate_corpus`. All reindex/queue maintenance and vector-driven
-   *     consolidation tools are excluded (in-process LTM has no vector store).
-   *   - profile=lite: hide `queue_reindex_memories`, `get_reindex_status`,
-   *     `cancel_reindex_job`, `retry_reindex_job` (they require a BullMQ
-   *     worker). Keep `reindex_memories` as a synchronous in-process
-   *     operation.
-   *   - profile=enterprise: expose every tool.
+   * Both profiles are Postgres-backed, so every tool — including the async
+   * reindex queue (status rows live in Postgres since WP2) and
+   * `consolidate_corpus` — is available everywhere. The hook is kept so a
+   * future profile can exclude tools again without re-plumbing the call site.
    */
   private filterToolsByProfile(all: Tool[]): Tool[] {
-    const capabilities = resolveCapabilities(this.activeProfile);
-    const exclude = new Set<string>();
-
-    if (capabilities.profile === DeploymentProfile.MEMORY) {
-      exclude.add('reindex_memories');
-      exclude.add('queue_reindex_memories');
-      exclude.add('get_reindex_status');
-      exclude.add('cancel_reindex_job');
-      exclude.add('retry_reindex_job');
-      exclude.add('consolidate_corpus');
-    } else if (capabilities.profile === DeploymentProfile.LITE) {
-      exclude.add('queue_reindex_memories');
-      exclude.add('get_reindex_status');
-      exclude.add('cancel_reindex_job');
-      exclude.add('retry_reindex_job');
-    }
-
-    if (exclude.size === 0) {
-      return all;
-    }
-    return all.filter((tool) => !exclude.has(tool.name));
+    return all;
   }
 
   /**

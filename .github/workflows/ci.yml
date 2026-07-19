@@ -42,16 +42,6 @@ jobs:
         ports:
           - 5432:5432
 
-      redis:
-        image: redis:latest
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -136,13 +126,12 @@ jobs:
         run: pnpm test
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-          REDIS_URL: redis://localhost:6379
           PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
 
-      - name: Run e2e suites (real Postgres/Redis)
+      - name: Run e2e suites (real Postgres)
         # The e2e specs (incl. the ungated mcp-http-transport "linchpin" test)
         # only match test/jest-e2e.json's regex, so `pnpm test` never runs
-        # them. --forceExit: open Redis handles keep Node alive after a green
+        # them. --forceExit: lingering handles keep Node alive after a green
         # run (see #189 notes); --runInBand: suites share one database.
         run: >-
           pnpm --filter mcp-server exec jest
@@ -151,7 +140,6 @@ jobs:
           E2E_ENABLED: 'true'
           NODE_ENV: test
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-          REDIS_URL: redis://localhost:6379
           EMBEDDING_PROVIDER: local
           MCP_ADMIN_TOKEN: e2e-admin-token-min-16-chars
 
@@ -194,7 +182,6 @@ jobs:
         run: pnpm --filter mcp-server test:cov
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-          REDIS_URL: redis://localhost:6379
 
   audit:
     name: Dependency audit

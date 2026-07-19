@@ -96,7 +96,7 @@ systemctl --user enable --now engram-sync.service
 journalctl --user -u engram-sync -f
 ```
 
-The watcher needs the same database/Redis environment as the server (it writes
+The watcher needs the same database environment as the server (it writes
 via the importer), so the unit reads the same `~/.engram/engram-mcp.env`. Identity
 is `userId: "qp"`; scope follows the [contract](./agent-memory-contract.md).
 
