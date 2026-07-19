@@ -54,11 +54,30 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       }
       const next = Math.floor(input.length / 2);
       if (next < MIN_TRUNCATED_CHARS) {
+        this.warnContextGiveUp(model, text.length, input.length);
         return null;
       }
       input = input.slice(0, next);
     }
+    this.warnContextGiveUp(model, text.length, input.length);
     return null;
+  }
+
+  /** Degradation contract: every failure path logs a warning. */
+  private warnContextGiveUp(
+    model: EmbeddingModel,
+    originalChars: number,
+    lastAttemptChars: number
+  ): void {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'embedding.provider.ollama.context_length_give_up',
+        model,
+        originalChars,
+        lastAttemptChars,
+        hint: 'Input exceeds the model context even after truncation retries; no vector produced.',
+      })
+    );
   }
 
   private async requestEmbedding(

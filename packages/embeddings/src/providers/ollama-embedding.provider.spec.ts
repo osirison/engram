@@ -88,11 +88,18 @@ describe('OllamaEmbeddingProvider', () => {
     );
     const provider = new OllamaEmbeddingProvider();
 
+    const warnSpy = vi
+      .spyOn((provider as unknown as { logger: { warn: (msg: string) => void } }).logger, 'warn')
+      .mockImplementation(() => {});
     const result = await provider.generate('x'.repeat(8000), 'nomic-embed-text');
 
     expect(result).toBeNull();
     // full → 1/2 → 1/4, then stop.
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    // Degradation contract: giving up must not be silent.
+    expect(
+      warnSpy.mock.calls.some((call) => String(call[0]).includes('context_length_give_up'))
+    ).toBe(true);
   });
 
   it('does not retry below the minimum useful prefix', async () => {
