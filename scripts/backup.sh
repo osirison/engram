@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ENGRAM backup script — Postgres, Redis, Qdrant
+# ENGRAM backup script — Postgres, Redis
 #
 # Usage:
 #   ./scripts/backup.sh [--compose <compose-file>] [--out <dir>]
@@ -8,7 +8,6 @@
 #   BACKUP_DIR          destination directory (default: ./backups)
 #   DATABASE_URL        postgres connection string
 #   REDIS_URL           redis connection string
-#   QDRANT_URL          qdrant HTTP URL (default: http://localhost:6333)
 #   COMPOSE_FILE        docker-compose file for exec commands
 #   REDIS_CONTAINER     docker container id/name running redis; when set the
 #                       RDB is copied with `docker exec` instead of compose
@@ -19,7 +18,6 @@ set -euo pipefail
 # ── Defaults ─────────────────────────────────────────────────────────────────
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
-QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_PATH="${BACKUP_DIR}/${TIMESTAMP}"
 
@@ -116,23 +114,6 @@ if [[ -n "${REDIS_URL:-}" ]]; then
   fi
 else
   echo "[backup] REDIS_URL not set — skipping redis"
-fi
-
-# ── Qdrant ────────────────────────────────────────────────────────────────────
-echo "[backup] creating qdrant snapshot …"
-COLLECTION="${VECTOR_COLLECTION:-memories}"
-SNAPSHOT_RESP="$(curl -sf -X POST "${QDRANT_URL}/collections/${COLLECTION}/snapshots" \
-  -H 'Content-Type: application/json' || echo '{}')"
-# grep -oE (POSIX) instead of grep -oP (PCRE \K) so this works on BusyBox/BSD
-# grep too; preserve empty-on-no-match so the guard below skips correctly.
-SNAPSHOT_NAME="$(echo "${SNAPSHOT_RESP}" | grep -oE '"name":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
-
-if [[ -n "${SNAPSHOT_NAME}" ]]; then
-  curl -sf "${QDRANT_URL}/collections/${COLLECTION}/snapshots/${SNAPSHOT_NAME}" \
-    -o "${BACKUP_PATH}/qdrant_${COLLECTION}.snapshot"
-  echo "[backup] qdrant done → ${BACKUP_PATH}/qdrant_${COLLECTION}.snapshot"
-else
-  echo "[backup] warning: qdrant snapshot creation failed or returned unexpected response"
 fi
 
 # ── Archive ───────────────────────────────────────────────────────────────────

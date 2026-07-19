@@ -155,7 +155,9 @@ export class PgVectorStore implements VectorStore {
         await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
       }
     }
-    throw lastError;
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`pgvector provisioning failed: ${String(lastError)}`);
   }
 
   private async provision(dimensions: number): Promise<void> {
