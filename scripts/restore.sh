@@ -6,7 +6,6 @@
 #
 # Options:
 #   --archive <file>     backup archive produced by backup.sh (required)
-#   --compose <file>     docker-compose file (default: docker-compose.prod.yml)
 #   --no-confirm         skip interactive confirmation prompt
 #
 # Environment:
@@ -14,14 +13,12 @@
 
 set -euo pipefail
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ARCHIVE=""
 NO_CONFIRM=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --archive)     ARCHIVE="$2"; shift 2 ;;
-    --compose)     COMPOSE_FILE="$2"; shift 2 ;;
     --no-confirm)  NO_CONFIRM=true; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac

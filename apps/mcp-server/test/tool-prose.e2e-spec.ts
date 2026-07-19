@@ -14,7 +14,7 @@
  *   docker compose -f docker-compose.test.yml up -d --wait
  *   DATABASE_URL=postgresql://engram_test:test_password@localhost:5433/engram_test \
  *     pnpm -w db:migrate:deploy
- *   E2E_ENABLED=true DATABASE_URL=… REDIS_URL=… NODE_ENV=test \
+ *   E2E_ENABLED=true DATABASE_URL=… NODE_ENV=test \
  *     pnpm --filter mcp-server test:e2e
  */
 
@@ -23,7 +23,6 @@ process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://engram_test:test_password@localhost:5433/engram_test';
-process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
 process.env.EMBEDDING_PROVIDER = process.env.EMBEDDING_PROVIDER ?? 'local';
 
 import { INestApplication } from '@nestjs/common';

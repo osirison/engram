@@ -145,7 +145,6 @@ function describeField(initializer, profileEnum) {
 
 /** Per-field profile requirement, keyed by variable name. */
 const PROFILE_REQUIREMENT = {
-  DATABASE_URL: '`lite`, `enterprise`',
   JWT_SECRET: 'when `AUTH_REQUIRED=true`',
 };
 

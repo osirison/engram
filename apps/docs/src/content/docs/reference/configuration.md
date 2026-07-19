@@ -16,7 +16,7 @@ codebase.
 | -------- | ---- | ------- | -------- | ------- | ----------- |
 | `NODE_ENV` | `development` \| `production` \| `test` | `development` | no | all | Runtime environment. Controls dev-only behaviours and log verbosity. |
 | `PORT` | number | `3000` | no | all | TCP port the MCP/HTTP server listens on. |
-| `DATABASE_URL` | string | — | no | `lite`, `enterprise` | Postgres URL. Required in every profile; the requirement is enforced in the transform below so the error message can name the active profile. |
+| `DATABASE_URL` | string | — | no | all | Postgres URL. Required in every profile; the requirement is enforced in the transform below so the error message can name the active profile. |
 | `OPENAI_API_KEY` | string | — | no | all | Required only when `EMBEDDING_PROVIDER=openai`; when absent, OpenAI embedding generation is silently disabled. |
 | `EMBEDDING_PROVIDER` | `ollama` \| `openai` \| `disabled` \| `local` | `ollama` | no | all | Embedding provider selection. Defaults to `ollama` (local-first, no API key). `openai` requires OPENAI_API_KEY; `local` is a deterministic hash for testing. |
 | `EMBEDDING_MODEL` | string | — | no | all | Embedding model id. Defaults per provider: ollama→`nomic-embed-text` (768 dims), openai→`text-embedding-3-small` (1536 dims). Changing it requires a full reindex with recreate+regenerate. |
@@ -93,7 +93,6 @@ appears here automatically (add a description in the generator).
 | `METRICS_TOKEN` | Bearer token required to scrape `/health/metrics`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces. Omit to disable OpenTelemetry (no overhead). |
 | `OTEL_SERVICE_NAME` | Service name reported to OpenTelemetry. |
-| `REDIS_URL` | — |
 | `STM_CONSOLIDATION_IMPORTANCE_THRESHOLD` | Minimum importance an STM memory needs to qualify for promotion. |
 | `WEB_DATABASE_URL` | Postgres URL used by the Next.js dashboard (`apps/web`). |
 

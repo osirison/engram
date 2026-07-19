@@ -19,13 +19,13 @@ same process, so a fact one agent stores is immediately recallable by the others
 
 The server runs as a persistent process configured for shared HTTP access:
 
-| Setting              | Value                            | Notes                                              |
-| -------------------- | -------------------------------- | -------------------------------------------------- |
-| `MCP_TRANSPORT`      | `streamable-http`                | One shared HTTP server instead of per-client stdio |
-| `PORT`               | `3000`                           |                                                    |
-| `HOST`               | `127.0.0.1`                      | Loopback only — per-machine (see caveat below)     |
-| `AUTH_REQUIRED`      | `true`                           | Per-agent API keys enforced                        |
-| `DEPLOYMENT_PROFILE` | `standard` (default) / `lite`    | Pick per tenancy needs (see below)                 |
+| Setting              | Value                         | Notes                                              |
+| -------------------- | ----------------------------- | -------------------------------------------------- |
+| `MCP_TRANSPORT`      | `streamable-http`             | One shared HTTP server instead of per-client stdio |
+| `PORT`               | `3000`                        |                                                    |
+| `HOST`               | `127.0.0.1`                   | Loopback only — per-machine (see caveat below)     |
+| `AUTH_REQUIRED`      | `true`                        | Per-agent API keys enforced                        |
+| `DEPLOYMENT_PROFILE` | `standard` (default) / `lite` | Pick per tenancy needs (see below)                 |
 
 - **MCP endpoint:** `http://127.0.0.1:3000/mcp` — a single route that handles
   `POST` (JSON-RPC requests), `GET` (server-to-client SSE stream), and `DELETE`
