@@ -234,10 +234,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke-test image (memory profile)
+      - name: Smoke-test image (lite profile)
         run: |
-          docker run -d \
-            -e DEPLOYMENT_PROFILE=memory \
+          docker network create engram-smoke
+          docker run -d --network engram-smoke --name smoke-pg \
+            -e POSTGRES_DB=engram -e POSTGRES_USER=engram -e POSTGRES_PASSWORD=engram \
+            pgvector/pgvector:pg17
+          for _ in $(seq 1 30); do
+            docker exec smoke-pg pg_isready -U engram >/dev/null 2>&1 && break
+            sleep 1
+          done
+          # The pgvector health gate requires the extension to exist.
+          docker exec smoke-pg psql -U engram -d engram -c 'CREATE EXTENSION IF NOT EXISTS vector'
+          docker run -d --network engram-smoke \
+            -e DEPLOYMENT_PROFILE=lite \
+            -e DATABASE_URL=postgresql://engram:engram@smoke-pg:5432/engram \
             -e MCP_TRANSPORT=streamable-http \
             -e EMBEDDING_PROVIDER=local \
             -p 13000:3000 \
@@ -253,7 +264,8 @@ jobs:
           echo
           echo "--- container logs ---"
           docker logs engram-ci-smoke
-          docker rm -f engram-ci-smoke || true
+          docker rm -f engram-ci-smoke smoke-pg || true
+          docker network rm engram-smoke || true
           test -n "$ok"
 
       - name: Install trivy (pinned + cached)
