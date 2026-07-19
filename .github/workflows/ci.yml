@@ -52,20 +52,9 @@ jobs:
         ports:
           - 6379:6379
 
-      qdrant:
-        image: qdrant/qdrant:v1.13.6
-        ports:
-          - 6333:6333
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Wait for Qdrant
-        run: |
-          echo "Waiting for Qdrant to be ready..."
-          timeout 60 bash -c 'until curl -sf http://127.0.0.1:6333/collections; do sleep 2; done'
-          echo "Qdrant is ready"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -150,7 +139,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
           PGVECTOR_TEST_URL: postgresql://test:test@localhost:5432/engram_test
 
-      - name: Run e2e suites (real Postgres/Redis/Qdrant)
+      - name: Run e2e suites (real Postgres/Redis)
         # The e2e specs (incl. the ungated mcp-http-transport "linchpin" test)
         # only match test/jest-e2e.json's regex, so `pnpm test` never runs
         # them. --forceExit: open Redis handles keep Node alive after a green
@@ -163,7 +152,6 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
           REDIS_URL: redis://localhost:6379
-          QDRANT_URL: http://127.0.0.1:6333
           EMBEDDING_PROVIDER: local
           MCP_ADMIN_TOKEN: e2e-admin-token-min-16-chars
 
@@ -182,7 +170,6 @@ jobs:
         run: pnpm bench:ci
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-          QDRANT_URL: http://127.0.0.1:6333
 
       - name: Fetch baseline benchmark artifact (main)
         run: pnpm bench:baseline:fetch
