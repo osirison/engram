@@ -3,10 +3,50 @@ import {
   ReindexQueueService,
 } from './reindex-queue.service';
 
+interface JobRow {
+  id: string;
+  payload: ReindexJobStatus;
+  expiresAt: Date;
+}
+
 describe('ReindexQueueService', () => {
-  const redis = {
-    set: jest.fn<Promise<void>, [string, string, number]>(),
-    get: jest.fn<Promise<string | null>, [string]>(),
+  // In-memory stand-in for the `reindex_jobs` table.
+  const table = new Map<string, JobRow>();
+
+  const prisma = {
+    reindexJob: {
+      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve(table.get(where.id) ?? null),
+      ),
+      upsert: jest.fn(
+        ({
+          where,
+          create,
+          update,
+        }: {
+          where: { id: string };
+          create: JobRow;
+          update: Omit<JobRow, 'id'>;
+        }) => {
+          const existing = table.get(where.id);
+          const row = existing ? { ...existing, ...update } : { ...create };
+          table.set(where.id, row);
+          return Promise.resolve(row);
+        },
+      ),
+      deleteMany: jest.fn(
+        ({ where }: { where: { expiresAt: { lte: Date } } }) => {
+          let count = 0;
+          for (const [id, row] of table) {
+            if (row.expiresAt <= where.expiresAt.lte) {
+              table.delete(id);
+              count += 1;
+            }
+          }
+          return Promise.resolve({ count });
+        },
+      ),
+    },
   };
 
   const memoryService = {
@@ -16,20 +56,83 @@ describe('ReindexQueueService', () => {
 
   let service: ReindexQueueService;
 
+  const seed = (payload: ReindexJobStatus, ttlMs = 60_000): void => {
+    table.set(payload.jobId, {
+      id: payload.jobId,
+      payload,
+      expiresAt: new Date(Date.now() + ttlMs),
+    });
+  };
+
+  const flush = async (): Promise<void> => {
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new ReindexQueueService(redis as never, memoryService as never);
+    table.clear();
+    service = new ReindexQueueService(prisma as never, memoryService as never);
   });
 
   it('queues a job and persists queued state', async () => {
-    redis.get.mockResolvedValue(null);
-
     const job = await service.enqueue({ batchSize: 100 });
 
     expect(job.state).toBe('queued');
     expect(job.jobId).toBeDefined();
     expect(job.events[0]?.type).toBe('job_enqueued');
-    expect(redis.set).toHaveBeenCalled();
+    expect(prisma.reindexJob.upsert).toHaveBeenCalled();
+    expect(table.get(job.jobId)?.payload.state).toBe('queued');
+  });
+
+  it('persists payloads with undefined optional fields stripped (Prisma Json rejects undefined)', async () => {
+    await service.enqueue({ batchSize: 1 });
+
+    const { create } = prisma.reindexJob.upsert.mock
+      .calls[0]![0] as unknown as {
+      create: { payload: Record<string, unknown> };
+    };
+    // enqueue() without a retry sets retryOfJobId: undefined on the in-memory
+    // object; the persisted payload must not carry the key at all.
+    expect('retryOfJobId' in create.payload).toBe(false);
+    expect(
+      Object.values(create.payload).every((value) => value !== undefined),
+    ).toBe(true);
+  });
+
+  it('sweeps expired job rows on enqueue', async () => {
+    table.set('stale-job', {
+      id: 'stale-job',
+      payload: { jobId: 'stale-job' } as ReindexJobStatus,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    await service.enqueue({ batchSize: 1 });
+    await flush();
+
+    expect(table.has('stale-job')).toBe(false);
+  });
+
+  it('treats an expired-but-unswept row as missing', async () => {
+    seed(
+      {
+        jobId: 'job-expired',
+        state: 'completed',
+        createdAt: new Date().toISOString(),
+        events: [],
+        options: {},
+        summary: {
+          processed: 1,
+          indexed: 1,
+          skipped: 0,
+          failed: 0,
+          cursor: null,
+        },
+      },
+      -1000,
+    );
+
+    await expect(service.get('job-expired')).resolves.toBeNull();
   });
 
   it('processes queued jobs and aggregates progress', async () => {
@@ -49,19 +152,8 @@ describe('ReindexQueueService', () => {
         cursor: null,
       });
 
-    let latest: ReindexJobStatus | null = null;
-    redis.set.mockImplementation((_key, value) => {
-      latest = JSON.parse(value) as ReindexJobStatus;
-      return Promise.resolve();
-    });
-    redis.get.mockImplementation(() => {
-      return Promise.resolve(latest ? JSON.stringify(latest) : null);
-    });
-
     const job = await service.enqueue({ batchSize: 2 });
-    // Allow the async chain to run.
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
 
     const status = await service.get(job.jobId);
 
@@ -75,23 +167,6 @@ describe('ReindexQueueService', () => {
     expect(memoryService.reindex).toHaveBeenCalledTimes(2);
   });
 
-  const wireRedis = (): { current: () => ReindexJobStatus | null } => {
-    let latest: ReindexJobStatus | null = null;
-    redis.set.mockImplementation((_key, value) => {
-      latest = JSON.parse(value) as ReindexJobStatus;
-      return Promise.resolve();
-    });
-    redis.get.mockImplementation(() =>
-      Promise.resolve(latest ? JSON.stringify(latest) : null),
-    );
-    return { current: () => latest };
-  };
-
-  const flush = async (): Promise<void> => {
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-  };
-
   it('recreates the vector index exactly once at the start of a full recreate job', async () => {
     memoryService.reindex.mockResolvedValue({
       processed: 1,
@@ -100,7 +175,6 @@ describe('ReindexQueueService', () => {
       failed: 0,
       cursor: null,
     });
-    wireRedis();
 
     const job = await service.enqueue({
       recreate: true,
@@ -136,7 +210,6 @@ describe('ReindexQueueService', () => {
       failed: 0,
       cursor: null,
     });
-    wireRedis();
 
     const job = await service.enqueue({
       recreate: true,
@@ -159,7 +232,6 @@ describe('ReindexQueueService', () => {
       failed: 0,
       cursor: null,
     });
-    wireRedis();
 
     // A capped job restores only its own slice, so dropping the whole index
     // would strand every vector past the cap — recreate must be refused.
@@ -183,7 +255,6 @@ describe('ReindexQueueService', () => {
       failed: 0,
       cursor: null,
     });
-    wireRedis();
 
     // A resumed/retried job re-enters processing with a cursor already set;
     // re-wiping here would discard the progress the first run completed.
@@ -200,15 +271,6 @@ describe('ReindexQueueService', () => {
   });
 
   it('cancels queued jobs immediately', async () => {
-    let latest: ReindexJobStatus | null = null;
-    redis.set.mockImplementation((_key, value) => {
-      latest = JSON.parse(value) as ReindexJobStatus;
-      return Promise.resolve();
-    });
-    redis.get.mockImplementation(() => {
-      return Promise.resolve(latest ? JSON.stringify(latest) : null);
-    });
-
     const job = await service.enqueue({ batchSize: 2 });
     const cancelled = await service.cancel(job.jobId);
 
@@ -218,15 +280,11 @@ describe('ReindexQueueService', () => {
   });
 
   it('returns null when getting a non-existent job', async () => {
-    redis.get.mockResolvedValue(null);
-
-    const result = await service.get('non-existent-job');
-
-    expect(result).toBeNull();
+    await expect(service.get('non-existent-job')).resolves.toBeNull();
   });
 
   it('flags a running job for cancellation without terminating it immediately', async () => {
-    const runningJob: ReindexJobStatus = {
+    seed({
       jobId: 'job-running',
       state: 'running',
       createdAt: new Date().toISOString(),
@@ -241,9 +299,7 @@ describe('ReindexQueueService', () => {
         failed: 0,
         cursor: 'c-2',
       },
-    };
-    redis.get.mockResolvedValue(JSON.stringify(runningJob));
-    redis.set.mockResolvedValue(undefined);
+    });
 
     const result = await service.cancel('job-running');
 
@@ -253,7 +309,7 @@ describe('ReindexQueueService', () => {
   });
 
   it('returns the job as-is when cancelling an already-completed job', async () => {
-    const completedJob: ReindexJobStatus = {
+    seed({
       jobId: 'job-done',
       state: 'completed',
       createdAt: new Date().toISOString(),
@@ -266,17 +322,16 @@ describe('ReindexQueueService', () => {
         failed: 0,
         cursor: null,
       },
-    };
-    redis.get.mockResolvedValue(JSON.stringify(completedJob));
+    });
 
     const result = await service.cancel('job-done');
 
     expect(result?.state).toBe('completed');
-    expect(redis.set).not.toHaveBeenCalled();
+    expect(prisma.reindexJob.upsert).not.toHaveBeenCalled();
   });
 
   it('returns the job as-is when retrying a job that is not failed or cancelled', async () => {
-    const runningJob: ReindexJobStatus = {
+    seed({
       jobId: 'job-running',
       state: 'running',
       createdAt: new Date().toISOString(),
@@ -289,13 +344,12 @@ describe('ReindexQueueService', () => {
         failed: 0,
         cursor: null,
       },
-    };
-    redis.get.mockResolvedValue(JSON.stringify(runningJob));
+    });
 
     const result = await service.retry('job-running');
 
     expect(result?.state).toBe('running');
-    expect(redis.set).not.toHaveBeenCalled();
+    expect(prisma.reindexJob.upsert).not.toHaveBeenCalled();
   });
 
   it('marks job as failed when reindex throws a runtime error', async () => {
@@ -303,18 +357,8 @@ describe('ReindexQueueService', () => {
       new Error('embedding service unavailable'),
     );
 
-    let latest: ReindexJobStatus | null = null;
-    redis.set.mockImplementation((_key, value) => {
-      latest = JSON.parse(value) as ReindexJobStatus;
-      return Promise.resolve();
-    });
-    redis.get.mockImplementation(() => {
-      return Promise.resolve(latest ? JSON.stringify(latest) : null);
-    });
-
     const job = await service.enqueue({ batchSize: 10 });
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
 
     const status = await service.get(job.jobId);
     expect(status?.state).toBe('failed');
@@ -324,19 +368,9 @@ describe('ReindexQueueService', () => {
   });
 
   it('skips processing if job was cancelled before the worker starts', async () => {
-    let latest: ReindexJobStatus | null = null;
-    redis.set.mockImplementation((_key, value) => {
-      latest = JSON.parse(value) as ReindexJobStatus;
-      return Promise.resolve();
-    });
-    redis.get.mockImplementation(() => {
-      return Promise.resolve(latest ? JSON.stringify(latest) : null);
-    });
-
     const job = await service.enqueue({ batchSize: 10 });
     await service.cancel(job.jobId);
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
 
     const status = await service.get(job.jobId);
     expect(status?.state).toBe('cancelled');
@@ -344,17 +378,7 @@ describe('ReindexQueueService', () => {
   });
 
   it('retries failed jobs from their cursor', async () => {
-    const jobs = new Map<string, ReindexJobStatus>();
-    redis.set.mockImplementation((key, value) => {
-      jobs.set(key, JSON.parse(value) as ReindexJobStatus);
-      return Promise.resolve();
-    });
-    redis.get.mockImplementation((key) => {
-      const value = jobs.get(key);
-      return Promise.resolve(value ? JSON.stringify(value) : null);
-    });
-
-    const failed: ReindexJobStatus = {
+    seed({
       jobId: 'job-failed',
       state: 'failed',
       createdAt: new Date().toISOString(),
@@ -367,8 +391,7 @@ describe('ReindexQueueService', () => {
         failed: 1,
         cursor: 'c-5',
       },
-    };
-    jobs.set('memory:reindex:job:job-failed', failed);
+    });
 
     const retried = await service.retry('job-failed');
 

@@ -246,3 +246,43 @@ model MigrationCheckpoint {
   @@map("migration_checkpoints")
 }
 
+
+/// Ephemeral key/value entries backing auth sessions, one-time OAuth state,
+/// and the JWT jti denylist (Postgres replacement for the Redis stores).
+/// Every row carries an explicit expiry; reads filter on it and the auth
+/// store sweeper bulk-deletes expired rows.
+model AuthKvEntry {
+  key       String   @id
+  value     String   @db.Text
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@map("auth_kv_entries")
+}
+
+/// Fixed-window rate-limit counter (Postgres replacement for the Redis
+/// Lua INCRBY+EXPIRE). The window is anchored at the first hit; an atomic
+/// upsert resets the row when the previous window has expired.
+model RateLimitCounter {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("rate_limit_counters")
+}
+
+/// Reindex job status row (Postgres replacement for the Redis status blob).
+/// `payload` holds the full ReindexJobStatus JSON; rows expire 24h after the
+/// last save and are lazily swept on enqueue.
+model ReindexJob {
+  id        String   @id
+  payload   Json
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@map("reindex_jobs")
+}

@@ -29,6 +29,8 @@ codebase.
 | `MCP_TRANSPORT` | `stdio` \| `streamable-http` | `stdio` | no | all | MCP transport selection: stdio for local clients, streamable-http for Inspector. |
 | `STM_CONSOLIDATION_ACCESS_THRESHOLD` | number | `3` | no | all | Number of times an STM memory must be accessed before it qualifies for automatic promotion to LTM. Defaults to 3. |
 | `STM_CONSOLIDATION_INTERVAL_MS` | number | `300000` | no | all | How often the consolidation job scans for promotion candidates, in milliseconds. Defaults to 5 minutes. Set to 0 to disable the scheduler. |
+| `STM_SWEEP_INTERVAL_MS` | number | `600000` | no | all | How often expired short-term memory rows are bulk-deleted from Postgres, in milliseconds. Hygiene only — every STM read filters on expiry. Defaults to 10 minutes. Set to 0 to disable the scheduler. |
+| `AUTH_STORE_SWEEP_INTERVAL_MS` | number | `900000` | no | all | How often expired auth KV rows (sessions, OAuth state, jti denylist) and lapsed rate-limit counters are bulk-deleted, in milliseconds. Hygiene only — reads filter on expiry. Defaults to 15 minutes. 0 disables. |
 | `MEMORY_DECAY_INTERVAL_MS` | number | `86400000` | no | all | How often the long-term decay/staleness job scans the corpus, in milliseconds. Defaults to 24h. Set to 0 to disable the scheduler. |
 | `MEMORY_DECAY_BATCH_SIZE` | number | `100` | no | all | Rows scanned per decay batch (cursor-resumable). Defaults to 100. |
 | `MEMORY_DECAY_STALE_SCORE_THRESHOLD` | number | `0.3` | no | all | Importance score at/below which a memory is marked `stale`. Defaults to 0.3. |

@@ -94,6 +94,12 @@ export const baseSchema = z.object({
    */
   STM_SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).optional().default(600_000),
   /**
+   * How often expired auth KV rows (sessions, OAuth state, jti denylist) and
+   * lapsed rate-limit counters are bulk-deleted, in milliseconds. Hygiene
+   * only — reads filter on expiry. Defaults to 15 minutes. 0 disables.
+   */
+  AUTH_STORE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).optional().default(900_000),
+  /**
    * How often the long-term decay/staleness job scans the corpus, in
    * milliseconds. Defaults to 24h. Set to 0 to disable the scheduler.
    */
@@ -400,6 +406,7 @@ export type Env = {
   STM_CONSOLIDATION_ACCESS_THRESHOLD: number;
   STM_CONSOLIDATION_INTERVAL_MS: number;
   STM_SWEEP_INTERVAL_MS: number;
+  AUTH_STORE_SWEEP_INTERVAL_MS: number;
   MEMORY_DECAY_INTERVAL_MS: number;
   MEMORY_DECAY_BATCH_SIZE: number;
   MEMORY_DECAY_STALE_SCORE_THRESHOLD: number;

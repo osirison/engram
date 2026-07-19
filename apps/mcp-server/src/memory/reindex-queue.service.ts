@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { RedisService } from '@engram/redis';
+import { PrismaService } from '@engram/database';
+import type { Prisma } from '@prisma/client';
 import type { ReindexOptions, ReindexSummary } from './memory.service';
 import { MemoryService } from './memory.service';
 
@@ -61,7 +62,7 @@ export class ReindexQueueService {
   private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly redis: RedisService,
+    private readonly prisma: PrismaService,
     private readonly memoryService: MemoryService,
   ) {}
 
@@ -162,6 +163,7 @@ export class ReindexQueueService {
         ? `Enqueued retry of ${retryOfJobId}`
         : 'Enqueued new reindex job',
     });
+    await this.sweepExpired();
     await this.save(queued);
 
     this.processingChain = this.processingChain
@@ -176,11 +178,13 @@ export class ReindexQueueService {
   }
 
   async get(jobId: string): Promise<ReindexJobStatus | null> {
-    const raw = await this.redis.get(this.key(jobId));
-    if (!raw) {
+    const row = await this.prisma.reindexJob.findUnique({
+      where: { id: jobId },
+    });
+    if (!row || row.expiresAt.getTime() <= Date.now()) {
       return null;
     }
-    return JSON.parse(raw) as ReindexJobStatus;
+    return row.payload as unknown as ReindexJobStatus;
   }
 
   private async process(jobId: string): Promise<void> {
@@ -356,14 +360,32 @@ export class ReindexQueueService {
   }
 
   private async save(job: ReindexJobStatus): Promise<void> {
-    await this.redis.set(
-      this.key(job.jobId),
-      JSON.stringify(job),
-      JOB_TTL_SECONDS,
-    );
+    // Every save extends the row's life by the TTL, matching the Redis
+    // SET-with-TTL semantics this replaced. `payload` is the whole status
+    // blob; the row is the unit of persistence, not a queue.
+    const expiresAt = new Date(Date.now() + JOB_TTL_SECONDS * 1000);
+    // JSON round-trip: Prisma Json inputs reject `undefined` values, and
+    // optional fields (retryOfJobId, startedAt, ...) are routinely present as
+    // undefined on the in-memory object. Stringify drops those keys.
+    const payload = JSON.parse(JSON.stringify(job)) as Prisma.InputJsonValue;
+    await this.prisma.reindexJob.upsert({
+      where: { id: job.jobId },
+      create: { id: job.jobId, payload, expiresAt },
+      update: { payload, expiresAt },
+    });
   }
 
-  private key(jobId: string): string {
-    return `memory:reindex:job:${jobId}`;
+  /** Lazily drop expired job rows; called on enqueue so cleanup frequency is
+   * bounded by job creation, not by a scheduler. */
+  private async sweepExpired(): Promise<void> {
+    try {
+      await this.prisma.reindexJob.deleteMany({
+        where: { expiresAt: { lte: new Date() } },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to sweep expired reindex jobs: ${String(error)}`,
+      );
+    }
   }
 }

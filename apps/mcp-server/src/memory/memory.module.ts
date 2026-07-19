@@ -11,7 +11,6 @@ import { MemoryController } from './memory.controller';
 import { MemoryService } from './memory.service';
 import { MemoryAuditService } from './memory-audit.service';
 import { PrismaModule } from '@engram/database';
-import { RedisModule } from '@engram/redis';
 import { ReindexQueueService } from './reindex-queue.service';
 import { ConsolidationService } from './consolidation.service';
 import { DecayService } from './decay.service';
@@ -43,9 +42,6 @@ export class MemoryModule {
     if (capabilities.requiresDatabase) {
       imports.push(PrismaModule);
     }
-    if (capabilities.requiresRedis) {
-      imports.push(RedisModule.forRoot());
-    }
 
     const providers: Provider[] = [
       MemoryService,
@@ -62,7 +58,10 @@ export class MemoryModule {
       StmSweepService,
     ];
 
-    if (capabilities.requiresRedis) {
+    // Queued reindex jobs persist status in Postgres, so the async queue
+    // tools are available on every database-bearing profile (not just
+    // enterprise, as when status lived in Redis).
+    if (capabilities.requiresDatabase) {
       providers.push(ReindexQueueService);
     }
 
