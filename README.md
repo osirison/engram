@@ -19,7 +19,7 @@ back on demand — so your agents stop re-learning what they already knew.
 
 ## Quick start
 
-You need [Node.js 20+](https://nodejs.org) and [Docker](https://docs.docker.com/get-docker/) (for the bundled PostgreSQL).
+You need [Node.js 22.13.0+](https://nodejs.org) and [Docker](https://docs.docker.com/get-docker/) (for the bundled PostgreSQL).
 
 ```bash
 git clone https://github.com/osirison/engram.git

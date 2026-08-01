@@ -29,11 +29,11 @@ installer skips the bundled container.
 
 ## Prerequisites
 
-- Node.js 20 or newer with npm
+- Node.js 22.13.0 or newer with npm
 - Git
 - Optional: `pnpm@11.5.0` on your `PATH`
 - Optional: Docker and Docker Compose v2 — to run the bundled PostgreSQL
-  container (image `pgvector/pgvector:pg16+`)
+  container (image `pgvector/pgvector:pg17`)
 
 ENGRAM pins `pnpm@11.5.0` in [package.json](../package.json). Every command below
 uses `pnpm`; when `pnpm` is not on your `PATH`, replace the leading `pnpm` with

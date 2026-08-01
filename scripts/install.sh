@@ -17,7 +17,7 @@
 #   -h, --help   Show this help and exit.
 #
 # Requirements:
-#   - Node.js 20+ (ships with npm)
+#   - Node.js 22.13.0+ (ships with npm)
 #   - Docker + Docker Compose v2 for the bundled Postgres — OR point
 #     DATABASE_URL at your own Postgres that has the pgvector extension and
 #     skip Docker.
@@ -73,12 +73,11 @@ done
 
 step "ENGRAM installer — profile: ${PROFILE}"
 
-# ── Preflight: Node.js 20+ ────────────────────────────────────────────────────
+# ── Preflight: Node.js 22.13.0+ (matches package.json "engines.node") ─────────
 command -v node >/dev/null 2>&1 \
-  || die "Node.js 20+ is required but 'node' was not found. Install it from https://nodejs.org."
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  die "Node.js 20+ is required (found $(node -v)). Upgrade from https://nodejs.org."
+  || die "Node.js 22.13.0+ is required but 'node' was not found. Install it from https://nodejs.org."
+if ! node -e 'const v=process.versions.node.split(".").map(Number),r=[22,13,0];process.exit((v[0]>r[0]||(v[0]===r[0]&&(v[1]>r[1]||(v[1]===r[1]&&v[2]>=r[2]))))?0:1)'; then
+  die "Node.js 22.13.0+ is required (found $(node -v)). Upgrade from https://nodejs.org."
 fi
 info "Node $(node -v) detected."
 
@@ -87,7 +86,7 @@ if command -v pnpm >/dev/null 2>&1; then
   PM=(pnpm)
 else
   command -v npm >/dev/null 2>&1 \
-    || die "Neither 'pnpm' nor 'npm' was found. Install Node.js 20+ (which bundles npm)."
+    || die "Neither 'pnpm' nor 'npm' was found. Install Node.js 22.13.0+ (which bundles npm)."
   info "pnpm not on PATH — using the pinned pnpm@11.5.0 through npm."
   PM=(npm exec --yes pnpm@11.5.0 --)
 fi
