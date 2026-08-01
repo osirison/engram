@@ -35,9 +35,8 @@ Edit it so the `args` value points to the absolute path of
       "command": "node",
       "args": ["/absolute/path/to/your/engram/apps/mcp-server/dist/main.js"],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:password@localhost:5432/engram",
-        "REDIS_URL": "redis://localhost:6379",
-        "QDRANT_URL": "http://localhost:6333",
+        "DATABASE_URL": "postgresql://engram:dev_password@localhost:5432/engram",
+        "DEPLOYMENT_PROFILE": "lite",
         "NODE_ENV": "production"
       }
     }
@@ -45,8 +44,9 @@ Edit it so the `args` value points to the absolute path of
 }
 ```
 
-Add `"DEPLOYMENT_PROFILE": "memory"` (or `lite` / `enterprise`) to the `env`
-block to pick a profile; leaner profiles need fewer of the datastore URLs.
+Set `"DEPLOYMENT_PROFILE"` to `"lite"` (single-user, shown above) or
+`"standard"` (multi-tenant). Both profiles need only `DATABASE_URL` — Postgres is
+the sole backing service.
 
 Copy the file into Claude Desktop's config location and restart the client:
 
@@ -93,8 +93,8 @@ unset. Mint a key with the steps in
   `AUTH_REQUIRED=true` refuses to start in every `NODE_ENV`** unless the
   operator explicitly sets `ALLOW_UNAUTHENTICATED_HTTP=true` — an acknowledged
   trusted-network escape hatch (for example a loopback-bound, single-operator
-  host). Multi-tenant means the `enterprise` profile; the `memory` and `lite`
-  profiles are single-user, so the gate does not apply to them.
+  host). Multi-tenant means the `standard` profile; the `lite` profile is
+  single-user, so the gate does not apply to it.
 - The recommended posture for any shared server: `AUTH_REQUIRED=true`, one
   least-privilege API key per agent, and a loopback (`127.0.0.1`) bind. Setting
   `AUTH_REQUIRED=true` also requires a `JWT_SECRET` of at least 32 characters.

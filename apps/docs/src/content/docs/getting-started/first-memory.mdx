@@ -95,7 +95,7 @@ this is enforced.
 Start the server with the HTTP transport:
 
 ```bash
-DEPLOYMENT_PROFILE=memory \
+DEPLOYMENT_PROFILE=lite \
 MCP_TRANSPORT=streamable-http \
   pnpm --filter mcp-server dev
 ```
@@ -139,8 +139,8 @@ curl -sS \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"recall","arguments":{"userId":"qp","query":"what is the source of truth?"}}}'
 ```
 
-> The `memory` profile is single-user, so it serves HTTP without an auth gate.
-> A multi-tenant (`enterprise`) Streamable HTTP server refuses to start without
+> The `lite` profile is single-user, so it serves HTTP without an auth gate.
+> A multi-tenant (`standard`) Streamable HTTP server refuses to start without
 > `AUTH_REQUIRED=true` (or an explicit `ALLOW_UNAUTHENTICATED_HTTP=true`); on
 > an authenticated server, add an `Authorization: Bearer <api-key>` header to
 > every request — see

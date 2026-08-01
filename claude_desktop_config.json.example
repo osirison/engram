@@ -4,9 +4,8 @@
       "command": "node",
       "args": ["/absolute/path/to/your/engram/apps/mcp-server/dist/main.js"],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:password@localhost:5432/engram",
-        "REDIS_URL": "redis://localhost:6379",
-        "QDRANT_URL": "http://localhost:6333",
+        "DATABASE_URL": "postgresql://engram:dev_password@localhost:5432/engram",
+        "DEPLOYMENT_PROFILE": "lite",
         "NODE_ENV": "production"
       }
     }
