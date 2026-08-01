@@ -52,7 +52,7 @@
     "@opentelemetry/instrumentation-express": "^0.67.0",
     "@opentelemetry/instrumentation-http": "^0.219.0",
     "@opentelemetry/sdk-node": "^0.219.0",
-    "axios": "^1.16.1",
+    "axios": "^1.18.0",
     "express": "^5.0.0",
     "helmet": "^8.2.0",
     "nestjs-pino": "^4.6.1",

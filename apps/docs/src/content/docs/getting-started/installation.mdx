@@ -1,32 +1,34 @@
 ---
 title: Installation
-description: Full Engram setup for the enterprise profile (Postgres + Redis + Qdrant) and the lite profile (encrypted local store over Postgres).
+description: Full Engram setup for the standard (multi-tenant) and lite (single-user) profiles — both on PostgreSQL with pgvector.
 sidebar:
   order: 3
 ---
 
-This tutorial sets up the two persistent profiles. The `enterprise` profile is
-the default and the primary production target; the `lite` profile is a leaner
-single-host variant. For the zero-dependency `memory` profile, see the
+This tutorial sets up the two deployment profiles by hand. **Both run on
+PostgreSQL alone** (pgvector included); they differ only in whether the
+multi-tenant auth stack is wired. For the one-command path, see the
 [quick start](/docs/getting-started/quick-start/).
 
 All commands run from the repository root. If `pnpm` is not on your `PATH`,
 replace the leading `pnpm` with `npm exec --yes pnpm@11.5.0 --`.
 
-## Enterprise profile
+## Standard profile (default)
 
-The Enterprise profile uses Postgres, Redis, and Qdrant. Hybrid
-lexical + semantic retrieval is enabled out of the box, and the full
-reindex / queue / cancel / retry maintenance tool set is exposed.
+The `standard` profile is the default and the primary production target. It adds
+JWT sessions, per-agent API keys, organizations, and Postgres-backed rate
+limiting on top of the shared storage. Hybrid lexical + semantic retrieval is
+enabled out of the box, and the full reindex / queue / cancel / retry maintenance
+tool set is exposed.
 
 ```bash
 pnpm install
 test -f .env || cp .env.example .env
-DEPLOYMENT_PROFILE=enterprise pnpm docker:up
-DEPLOYMENT_PROFILE=enterprise pnpm db:generate
-DEPLOYMENT_PROFILE=enterprise pnpm db:migrate
-DEPLOYMENT_PROFILE=enterprise pnpm build
-DEPLOYMENT_PROFILE=enterprise pnpm --filter mcp-server dev
+pnpm docker:up
+pnpm db:generate
+pnpm db:migrate:deploy
+pnpm build
+pnpm --filter mcp-server dev
 ```
 
 Open a second terminal and verify the server:
@@ -35,15 +37,36 @@ Open a second terminal and verify the server:
 curl http://localhost:3000/health
 ```
 
-The health response should report `ok` when PostgreSQL, Redis, and Qdrant are
-ready.
+The health response reports `ok` when the process and PostgreSQL are ready.
 
-### Embeddings (local by default)
+## Lite profile (single-user)
+
+The `lite` profile is a single-user variant with the same durable Postgres
+storage as `standard`, minus the auth/organization stack — there is no login or
+API-key surface to configure. Set `DEPLOYMENT_PROFILE=lite` on the build and dev
+commands:
+
+```bash
+pnpm install
+test -f .env || cp .env.example .env
+pnpm docker:up
+pnpm db:generate
+pnpm db:migrate:deploy
+DEPLOYMENT_PROFILE=lite pnpm build
+DEPLOYMENT_PROFILE=lite pnpm --filter mcp-server dev
+```
+
+Moving a `lite` deployment up to `standard` later needs no data migration — both
+use the same Postgres tables. Switch the profile and provide the auth
+configuration (`AUTH_REQUIRED`, `JWT_SECRET`, API keys); see
+[MCP client setup](/docs/getting-started/mcp-client-setup/).
+
+## Embeddings (local by default)
 
 Semantic recall needs an embedding provider; the default is **Ollama**
-(`EMBEDDING_PROVIDER=ollama`) — local, no API key. Either install Ollama on
-the host ([ollama.com/download](https://ollama.com/download)) and pull the
-default model:
+(`EMBEDDING_PROVIDER=ollama`) — local, no API key. Either install Ollama on the
+host ([ollama.com/download](https://ollama.com/download)) and pull the default
+model:
 
 ```bash
 ollama pull nomic-embed-text
@@ -56,12 +79,12 @@ docker compose --profile ollama up -d
 docker compose exec ollama ollama pull nomic-embed-text
 ```
 
-To use OpenAI instead, set `EMBEDDING_PROVIDER=openai` and `OPENAI_API_KEY`
-in `.env`. Without a reachable provider, writes still succeed — memories are
-stored without vectors and backfilled by a later reindex
+To use OpenAI instead, set `EMBEDDING_PROVIDER=openai` and `OPENAI_API_KEY` in
+`.env`. Without a reachable provider, writes still succeed — memories are stored
+without vectors and backfilled by a later reindex
 ([Configure embeddings](/docs/how-to/configure-embeddings/)).
 
-### Start specific workspaces
+## Start specific workspaces
 
 Run one workspace at a time during local development.
 
@@ -74,9 +97,9 @@ Run one workspace at a time during local development.
 The MCP server and web app both use port `3000` by default, so do not run those
 two commands at the same time unless you change `PORT` for one of them.
 
-### Local infrastructure
+## Local infrastructure
 
-Docker Compose starts the backing services used by the MCP server.
+Docker Compose starts the PostgreSQL container used by the MCP server.
 
 | Task                          | Command               |
 | ----------------------------- | --------------------- |
@@ -89,116 +112,51 @@ Docker Compose starts the backing services used by the MCP server.
 
 Default host ports:
 
-| Service     | Environment setting | Default |
-| ----------- | ------------------- | ------- |
-| PostgreSQL  | `POSTGRES_PORT`     | `5432`  |
-| Redis       | `REDIS_PORT`        | `6379`  |
-| Qdrant HTTP | `QDRANT_HTTP_PORT`  | `6333`  |
-| Qdrant gRPC | `QDRANT_GRPC_PORT`  | `6334`  |
+| Service           | Environment setting | Default |
+| ----------------- | ------------------- | ------- |
+| PostgreSQL        | `POSTGRES_PORT`     | `5432`  |
+| Ollama (optional) | `OLLAMA_PORT`       | `11434` |
 
 If Docker reports that a port is already allocated, edit `.env` before starting
 services. Keep each service URL aligned with the host port. For example,
 `POSTGRES_PORT=5433` also needs `DATABASE_URL` to use `localhost:5433`.
 
-### Database commands
+## Database commands
 
 | Task                                   | Command                  |
 | -------------------------------------- | ------------------------ |
 | Generate Prisma client                 | `pnpm db:generate`       |
+| Deploy migrations (unattended)         | `pnpm db:migrate:deploy` |
 | Create and run a development migration | `pnpm db:migrate`        |
-| Deploy migrations                      | `pnpm db:migrate:deploy` |
 | Push schema without a migration        | `pnpm db:push`           |
 | Reset the local database               | `pnpm db:reset`          |
 | Open Prisma Studio                     | `pnpm db:studio`         |
 
-Use `pnpm db:migrate` for schema changes that should be committed. Use
-`pnpm db:push` only for short-lived local experiments.
+Use `pnpm db:migrate:deploy` to apply committed migrations unattended (the
+installer does this). Use `pnpm db:migrate` when authoring a new schema change,
+and `pnpm db:push` only for short-lived local experiments.
 
-### Enterprise recovery
+## Recovery
 
-For a single-node local stack, reset with `docker:clean` followed by
-`docker:up` and `db:migrate`:
+For a single-node local stack, reset by clearing the database volume and
+re-migrating:
 
 ```bash
-DEPLOYMENT_PROFILE=enterprise pnpm docker:clean
-DEPLOYMENT_PROFILE=enterprise pnpm docker:up
-DEPLOYMENT_PROFILE=enterprise pnpm db:migrate
+pnpm docker:clean
+pnpm docker:up
+pnpm db:migrate:deploy
 ```
 
-If the vector store drifted from Postgres (embeddings missing or stale),
-reindex from the source of truth:
+If the vector store drifted from Postgres (embeddings missing or stale), reindex
+from the source of truth:
 
 ```bash
-DEPLOYMENT_PROFILE=enterprise \
 MCP_ADMIN_TOKEN="$MCP_ADMIN_TOKEN" \
   pnpm --filter mcp-server reindex
 ```
 
 The CLI is cursor-resumable; pass `--cursor <id>` to continue from a previous
 run.
-
-## Lite profile
-
-The Lite profile persists memories to an AES-256-GCM encrypted file store at
-`LOCAL_DATA_DIR` (default `~/.engram/data`). Postgres is the source of truth
-for the server; Redis and Qdrant are absent.
-
-```bash
-pnpm install
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  pnpm db:migrate
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  pnpm build
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  pnpm --filter mcp-server dev
-```
-
-`LOCAL_ENCRYPTION_KEY` must be a 32-byte (256-bit) key. Base64-encode the raw
-bytes; the secure-startup helper decodes it. Generate a fresh key per host —
-export it once and reuse the same value across the commands above — and never
-commit it.
-
-Verify:
-
-```bash
-curl http://localhost:3000/health
-ls -ld ~/.engram/data
-stat -c '%a %n' ~/.engram/data/*.json
-```
-
-The directory must be `0700` and every file `0600`. The server refuses to start
-if any file is group- or world-readable.
-
-### Lite recovery
-
-If the directory is missing, the server recreates it on startup with the
-correct `0700` / `0600` modes. If a file has the wrong mode, the server refuses
-to start. Fix the mode and restart:
-
-```bash
-chmod 0700 ~/.engram/data
-find ~/.engram/data -type f -exec chmod 0600 {} +
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="<your-key>" \
-  pnpm --filter mcp-server dev
-```
-
-If the key is lost, the encrypted records are unrecoverable. Wipe and restart
-with a fresh key:
-
-```bash
-rm -rf ~/.engram/data
-DEPLOYMENT_PROFILE=lite \
-LOCAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  pnpm --filter mcp-server dev
-```
-
-For production runs, the server refuses to start without
-`LOCAL_ENCRYPTION_KEY`. In development it derives an ephemeral key with a
-warning so you can iterate without provisioning credentials.
 
 ## Troubleshooting
 
@@ -215,18 +173,15 @@ Regenerate Prisma after schema or dependency changes:
 pnpm db:generate
 ```
 
-Check direct service health:
+Check server health directly:
 
 ```bash
 curl http://localhost:3000/health
-curl http://localhost:6333/health
 ```
 
 ## Next steps
 
 - [Store your first memory](/docs/getting-started/first-memory/)
 - [MCP client setup](/docs/getting-started/mcp-client-setup/)
-- [Migrate lite → enterprise](/docs/how-to/profile-migration/) when a lite
-  deployment outgrows a single host.
 - [Deploy to production](/docs/how-to/deploy-production/) with the hardened
   Docker image.

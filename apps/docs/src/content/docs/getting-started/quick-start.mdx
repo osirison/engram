@@ -1,33 +1,31 @@
 ---
 title: Quick start
-description: Run the Engram MCP server with the memory profile — no external services, three commands.
+description: Run the Engram MCP server with the lite profile — one command from a fresh clone to a running server.
 sidebar:
   order: 2
 ---
 
-The `memory` profile boots with **no external services**. Short-term and
-long-term memory are in-process; embeddings degrade to lexical-only when no
-embedding backend is reachable. Data is lost on process exit — use it for
-demos, CI smoke tests, and exploring the MCP tool surface.
+The fastest path to a running Engram server is the `lite` profile, set up by the
+bundled installer. It is single-user with no auth to configure, and it persists
+memories to PostgreSQL just like `standard`.
 
-## 1. Install, build, run
+You need [Node.js 22.13.0+](https://nodejs.org) and
+[Docker](https://docs.docker.com/get-docker/) (for the bundled PostgreSQL).
 
-From a fresh clone of the repository:
-
-```bash
-pnpm install
-DEPLOYMENT_PROFILE=memory pnpm build
-DEPLOYMENT_PROFILE=memory pnpm --filter mcp-server dev
-```
-
-No `pnpm` on your `PATH`? Replace the leading `pnpm` with
-`npm exec --yes pnpm@11.5.0 --`:
+## 1. Clone, install, run
 
 ```bash
-npm exec --yes pnpm@11.5.0 -- install
-DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- build
-DEPLOYMENT_PROFILE=memory npm exec --yes pnpm@11.5.0 -- --filter mcp-server dev
+git clone https://github.com/osirison/engram.git
+cd engram
+./scripts/install.sh --start
 ```
+
+The installer copies `.env`, installs dependencies, starts PostgreSQL, runs
+migrations, builds, and — with `--start` — launches the MCP server on
+`http://localhost:3000`. It is idempotent, so you can re-run it any time. Drop
+`--start` to have it print the start command instead of launching.
+
+Prefer to wire each step yourself? See [Installation](/docs/getting-started/installation/).
 
 ## 2. Verify the server is up
 
@@ -37,41 +35,32 @@ In a second terminal:
 curl http://localhost:3000/health
 ```
 
-The health response reports `ok` with only the process-level `memory-store`
-indicator. Postgres, Redis, and Qdrant indicators are not present in this
-profile.
+The health response reports `ok` with the process and database indicators.
 
 ## 3. Optional: local embeddings for hybrid recall
 
-The default embedding provider is **Ollama** — local, no API key. If an
-Ollama server is running ([ollama.com/download](https://ollama.com/download))
-with the default model pulled, hybrid semantic recall works with zero extra
-configuration:
+The default embedding provider is **Ollama** — local, no API key. If an Ollama
+server is running ([ollama.com/download](https://ollama.com/download)) with the
+default model pulled, hybrid semantic recall works with zero extra configuration:
 
 ```bash
 ollama pull nomic-embed-text
 ```
 
 If Ollama is unreachable, the server degrades gracefully (memories are stored
-without vectors). No Ollama at all? The deterministic hash provider gives
-stable — but not semantic — similarity without any model:
+without vectors and can be backfilled by a later reindex). No Ollama at all? The
+deterministic hash provider gives stable — but not semantic — similarity without
+any model:
 
 ```bash
-DEPLOYMENT_PROFILE=memory \
+DEPLOYMENT_PROFILE=lite \
 EMBEDDING_PROVIDER=local \
   pnpm --filter mcp-server dev
 ```
 
-## Recovery
-
-There is nothing to recover — the process owns its data. Stop the process and
-restart to wipe the in-memory state. There is no on-disk persistence and no
-checkpoint.
-
 > `DEPLOYMENT_PROFILE` is read at module-load time. If the server exits
 > immediately, confirm the variable is set in the same shell that runs the
-> install / build / dev commands — changing it after the process boots has no
-> effect.
+> build / dev commands — changing it after the process boots has no effect.
 
 ## Next steps
 
@@ -79,5 +68,5 @@ checkpoint.
   `create_memory` → `recall` → `get_memory` round trip.
 - [MCP client setup](/docs/getting-started/mcp-client-setup/) — point Claude
   Desktop or Claude Code at the server.
-- [Installation](/docs/getting-started/installation/) — move up to the `lite`
-  or `enterprise` profile when you need persistence.
+- [Installation](/docs/getting-started/installation/) — the `standard` profile
+  when you need multi-tenant auth and API keys.

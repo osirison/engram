@@ -6,38 +6,41 @@ sidebar:
   label: Overview
 ---
 
-Engram runs in one of three deployment profiles, selected by the
-`DEPLOYMENT_PROFILE` environment variable. Pick the profile that matches the
-durability, scale, and infrastructure you want, then follow the matching
-tutorial.
+Engram runs in one of two deployment profiles, selected by the
+`DEPLOYMENT_PROFILE` environment variable. Both run on **PostgreSQL alone**
+(pgvector included) — pick the one that matches whether you need multi-tenant
+auth, then follow the matching tutorial.
 
-| Profile              | `DEPLOYMENT_PROFILE` | External dependencies     | Use it for                                         |
-| -------------------- | -------------------- | ------------------------- | -------------------------------------------------- |
-| Memory               | `memory`             | None                      | Demos, CI smoke tests, exploring the MCP surface   |
-| Lite                 | `lite`               | Postgres only             | Single-host deployments needing at-rest encryption |
-| Enterprise (default) | `enterprise`         | Postgres + Redis + Qdrant | Production, cluster scale, queued reindex          |
+| Profile              | `DEPLOYMENT_PROFILE` | External dependencies | Use it for                                                |
+| -------------------- | -------------------- | --------------------- | --------------------------------------------------------- |
+| Lite                 | `lite`               | Postgres only         | A personal, single-user local memory server               |
+| Standard (default)   | `standard`           | Postgres only         | Shared or production deployments — auth, API keys, tenancy |
+
+The legacy value `enterprise` is an accepted alias for `standard`. The old
+`memory` profile was removed — every profile now runs on Postgres.
 
 ## Which page do I want?
 
-- **[Quick start](/docs/getting-started/quick-start/)** — the `memory` profile:
-  zero external services, three commands to a running MCP server. Start here if
-  you just want to try Engram.
-- **[Installation](/docs/getting-started/installation/)** — the full
-  `enterprise` profile setup (Postgres + Redis + Qdrant via Docker Compose),
-  plus the `lite` profile variant with an encrypted local store.
+- **[Quick start](/docs/getting-started/quick-start/)** — the fastest path: one
+  command sets up the `lite` profile and starts a running MCP server. Start here
+  if you just want to try Engram.
+- **[Installation](/docs/getting-started/installation/)** — manual setup for both
+  the `lite` and `standard` profiles, plus the command and infrastructure
+  reference.
 - **[Store your first memory](/docs/getting-started/first-memory/)** — call
   `create_memory`, `recall`, and `get_memory` end-to-end against a running
   server.
 - **[MCP client setup](/docs/getting-started/mcp-client-setup/)** — connect
   Claude Desktop or Claude Code to your server.
 
-## Prerequisites (all profiles)
+## Prerequisites (both profiles)
 
-- Node.js 20 or newer with npm
+- Node.js 22.13.0 or newer with npm
 - Git
+- Docker and Docker Compose v2 — to run the bundled PostgreSQL container
+  (image `pgvector/pgvector:pg17`). Or point `DATABASE_URL` at your own Postgres
+  with the `pgvector` extension.
 - Optional: pnpm on your `PATH` (the repository pins `pnpm@11.5.0`)
-- Optional: Docker and Docker Compose v2 (only for the `enterprise` profile)
-- Optional: `openssl` (to generate `LOCAL_ENCRYPTION_KEY` for the `lite` profile)
 
 When `pnpm` is not installed, replace the leading `pnpm` in any command with
 `npm exec --yes pnpm@11.5.0 --`. For example:
