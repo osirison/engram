@@ -33,8 +33,8 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
  * {@link AuthIdentity} otherwise. A presented-but-invalid credential is never
  * silently downgraded to anonymous.
  *
- * When a {@link JwtRevocationService} is wired (the standard profile), verified
- * JWTs are additionally checked against the `jti` denylist so
+ * When a {@link JwtRevocationService} is wired (the standard profile, with JWT
+ * auth configured), verified JWTs are additionally checked against the `jti` denylist so
  * logged-out tokens are rejected for their remaining lifetime.
  */
 @Injectable()
@@ -114,7 +114,7 @@ export class AuthResolver {
     }
 
     // Revocation (jti denylist) check — present only when a denylist store
-    // is wired (the standard profile). Fail-closed: a denylist store error rejects the token
+    // is wired (multi-tenant profile + JWT configured). Fail-closed: a denylist store error rejects the token
     // rather than accepting a possibly-revoked one, matching the API-key
     // posture above where a verification error never authenticates.
     if (this.revocation) {

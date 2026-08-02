@@ -216,7 +216,7 @@ export interface ListMemoryOptions {
   search?: string;
   /**
    * Restrict the listing to a single tier. `'short-term'` queries the Postgres STM store
-   * only, paging via its SCAN cursor; `'long-term'` queries Postgres (LTM) only.
+   * only, paging via its cursor; `'long-term'` queries Postgres (LTM) only.
    * When omitted, both tiers are merged (legacy behaviour — do not build stable
    * pagination on the merge; see `listMemories`).
    */
