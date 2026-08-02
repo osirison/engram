@@ -221,8 +221,9 @@ jobs:
         # package-lock.json, so `pnpm audit` above cannot see it at all — and
         # it went unwatched long enough to accumulate two high advisories while
         # being publicly deployed to Pages. Audited in full (not --omit=dev):
-        # its "dev" dependencies ARE the build toolchain for a prerendered
-        # static site, so a compromised one ships straight to the public bundle.
+        # the deployed artefact is `dist/`, not node_modules, but this site is
+        # prerendered, so its "dev" dependencies are the toolchain that RUNS to
+        # produce that artefact and a compromised one can poison the output.
         working-directory: apps/marketing-site
         run: npm audit --audit-level=high
 

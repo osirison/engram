@@ -134,8 +134,10 @@ only thing that saw them.
 
 It is now in scope for both: Renovate manages it as an npm project, and the
 `Dependency audit` job runs `npm audit` in that directory. That audit is _not_
-scoped to `--omit=dev`, unlike the pnpm one — the site is prerendered at build
-time, so its build toolchain lands in the published bundle.
+scoped to `--omit=dev`. The published artefact is `apps/marketing-site/dist`,
+not `node_modules` — but the site is prerendered, so those "dev" dependencies
+are the toolchain that executes to produce `dist`, and a compromised one can
+poison the output that ships.
 
 If you ever add a third lockfile, add it to that job too; `pnpm audit` will not
 find it for you.
