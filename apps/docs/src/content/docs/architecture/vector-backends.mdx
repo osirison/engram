@@ -1,6 +1,6 @@
 ---
-title: Vector backends
-description: Why the vector store is a swappable, derived index — Qdrant vs pgvector trade-offs, the shared VectorStore interface, and the in-process hybrid fallback.
+title: Vector store
+description: Why the vector store is a derived index — pgvector's runtime-managed embedding_vec column on the memories table, dimensionality inference, HNSW tuning, and rebuild-from-Postgres recovery.
 sidebar:
   order: 5
 ---
@@ -9,18 +9,21 @@ Semantic recall needs a vector index, but Engram treats that index as
 **derived state**: Postgres holds the truth (including the raw `embedding`
 float array), and the vector store can be dropped and
 [rebuilt](/docs/architecture/reindex-backfill/) at any time. That framing is
-what makes the backend swappable — losing or switching an index is an
-operational task, not a data-loss event.
+why a lost or corrupted index is an operational task, not a data-loss event.
 
-## One interface, two backends
+There is exactly one backend: **pgvector**. Vectors live in a
+runtime-managed `embedding_vec` column on the `memories` table itself, so the
+vector index shares Postgres' transactional boundary and a single `pg_dump`
+covers both the data and its index.
 
-Both backends implement the same `VectorStore` interface
-(`packages/vector-store`) and are injected through `VECTOR_STORE_TOKEN`;
-`VECTOR_BACKEND` selects the implementation at boot:
+## The VectorStore interface
+
+The store implements the `VectorStore` interface
+(`packages/vector-store`) and is injected through `VECTOR_STORE_TOKEN`:
 
 ```ts
 interface VectorStore {
-  readonly backend: 'qdrant' | 'pgvector';
+  readonly backend: 'pgvector';
   ensureReady(dimensions: number): Promise<void>;
   upsert(records: VectorRecord[]): Promise<void>;
   delete(ids: string[]): Promise<void>;
@@ -30,58 +33,41 @@ interface VectorStore {
 ```
 
 Every search carries a `VectorSearchFilter` with a **required `userId`** —
-tenant isolation is enforced inside the index (payload filter in Qdrant,
-`WHERE` clause in pgvector), never bolted on after the fact. Optional filters
-(`scope`, `tags`, `type`, `organizationId`, created-date range) ride along the
-same way.
+tenant isolation is enforced inside the index as a `WHERE` clause, never
+bolted on after the fact. Optional filters (`scope`, `tags`, `type`,
+`organizationId`, created-date range) ride along the same way.
 
-Dimensionality is **observed, not assumed**: both backends call
-`ensureReady` with the vector length of the first upserted vector,
-provisioning or validating the index at that size. `VECTOR_DIMENSIONS` is an
-**optional strict pin** (it no longer defaults to 1536) — when set, the
-backend verifies the index against it and throws an actionable error on
-mismatch instead of failing silently.
+Dimensionality is **observed, not assumed**: `ensureReady` is called with the
+vector length of the first upserted vector, provisioning or validating the
+index at that size. `VECTOR_DIMENSIONS` is an **optional strict pin** (it does
+not default to 1536) — when set, the store verifies the index against it and
+throws an actionable error on mismatch instead of failing silently.
 
-### Qdrant (`VECTOR_BACKEND=qdrant`, the default)
-
-`QdrantVectorStore` (`packages/vector-store/src/qdrant.vector-store.ts`)
-stores vectors in a dedicated Qdrant collection (`VECTOR_COLLECTION`, default
-`engram_memories`) with cosine similarity. Memory CUIDs are mapped to
-deterministic UUIDv5 point ids, so upserts are idempotent.
-
-`ensureReady` guards the dimension contract: if the collection already exists
-with a different vector size than the pipeline produces, it throws one
-actionable error up front — previously a mismatch surfaced only as per-point
-silent upsert failures.
-
-Choose Qdrant when vector search is hot enough to deserve its own service:
-it scales independently of Postgres, and its ANN engine is purpose-built.
-The cost is one more service to run, monitor, back up — and keep consistent
-(it is *eventually* consistent with Postgres between reindex runs).
-
-### pgvector (`VECTOR_BACKEND=pgvector`)
+## pgvector: the index lives in Postgres
 
 `PgVectorStore` (`packages/vector-store/src/pgvector.vector-store.ts`) uses
 an `embedding_vec vector(n)` column **on the `memories` table itself**, with
-an HNSW index. No extra service; the vector index lives in the same
-transactional boundary as the data, and one `pg_dump` covers both.
+an HNSW index and cosine distance (the pgvector `<=>` operator). Memory ids
+are the vector ids, so upserts are idempotent. No extra service; the vector
+index lives in the same transactional boundary as the data.
 
 The column is **runtime-managed**, not schema-managed: it does not appear in
 `schema.prisma`, and `ensureReady` provisions the column and HNSW index at
 the observed dimensionality on the first vector write. On subsequent boots it
 verifies the live column's dimensions (via the `pg_attribute` typmod) and
 throws an actionable error on mismatch. Until the first vector is written,
-searches simply return empty results — the same behavior as a missing Qdrant
-collection. `reset()` drops the index *and* the column, so a full rebuild
-reprovisions them at the new dimensionality. Throughout, the raw
-`embedding Float[]` column in Postgres remains the source of truth; the
-pgvector column is a derived index. The health check reflects this split:
-`ok` tracks only the `vector` extension, while the lazily provisioned column
-is reported informationally (`column`, `dimensions`).
+searches simply return empty results. `reset()` drops the index *and* the
+column, so a full rebuild reprovisions them at the new dimensionality.
+Throughout, the raw `embedding Float[]` column in Postgres remains the source
+of truth; the pgvector column is a derived index. The health check reflects
+this split: `ok` tracks only the `vector` extension, while the lazily
+provisioned column is reported informationally (`column`, `dimensions`).
 
 Deployments that predate runtime management (the old fixed `vector(1536)`
 column) should run one plain reindex after deploying — it reuses the stored
 `Float[]` embeddings, so no provider calls are made.
+
+## HNSW tuning
 
 Tuning is exposed through three optional variables (see the
 [configuration guide](/docs/reference/configuration-guide/#pgvector-hnsw-tuning)):
@@ -89,33 +75,14 @@ Tuning is exposed through three optional variables (see the
 `PGVECTOR_HNSW_EF_SEARCH` per query (recall/latency trade-off).
 
 The operational catch: the Postgres image must ship the extension —
-`pgvector/pgvector:pg16` or later. Plain `postgres:*-alpine` images will fail
-at `ensureReady()`.
+`pgvector/pgvector:pg17` (pg16 or later). Plain `postgres:*-alpine` images
+will fail at `ensureReady()`.
 
-### Choosing
-
-| Concern | Qdrant | pgvector |
-| ------- | ------ | -------- |
-| Extra service to operate | yes | no |
-| Backup story | separate snapshot | included in `pg_dump` |
-| Scale vector search independently | yes | no (shares Postgres) |
-| Consistency with source of truth | derived, reindex to heal | same database |
-| Docker requirement | `qdrant` image | `pgvector/pgvector:pg16+` |
-
-Both pass the same test suite and the same latency benchmark
-(`pnpm bench:backends`); switching is an env change plus a reindex —
-see [Change vector backend](/docs/how-to/change-vector-backend/).
-
-## The no-backend fallback: hybrid transient retrieval
-
-Under the `memory` and `lite` profiles there is no external vector store at
-all. Recall still works: `HybridTransientRetriever`
-(`packages/memory-ltm/src/retrieval/hybrid-transient-retriever.ts`) builds an
-in-process index over the user's LTM rows — a lexical token-postings index
-plus normalized embedding vectors — and fuses both rankings with Reciprocal
-Rank Fusion (k=60, equal weights), the same fusion recipe as the eval
-harness. Ranking behavior stays consistent from laptop profile to production,
-which is precisely why the recipe is shared rather than reimplemented.
+Switching embedding models with a different dimensionality (e.g.
+`nomic-embed-text` 768 → `text-embedding-3-small` 1536) is a **reindex
+event**: existing vectors are incompatible with the new index shape, so
+recreate the index and regenerate. The step-by-step is in
+[Reindex embeddings](/docs/how-to/reindex-embeddings/).
 
 ## Where ranking actually happens
 
@@ -124,5 +91,5 @@ The vector store returns raw similarity hits, deliberately over-fetched
 then hydrates the rows from Postgres, drops
 [superseded memories](/docs/architecture/consolidation-and-decay/#superseded-and-contradicted-status),
 and re-ranks by blended **similarity + recency + importance** before trimming
-to the requested limit. Keeping ranking in the service layer means backend
-choice never changes recall semantics — the index only proposes candidates.
+to the requested limit. Keeping ranking in the service layer means the index
+only proposes candidates — final recall semantics live above it.

@@ -101,11 +101,11 @@ The same package exports a latency harness:
 - `createVectorStoreLatencyTarget(options)` — adapts a real vector store to
   the benchmark target interface.
 
-For the ready-made backend comparison (Qdrant vs pgvector over fixture
-records), use the repo script — it needs real services:
+For a ready-made pgvector search-latency benchmark over fixture records, use
+the repo script — it needs a real database:
 
 ```bash
-DATABASE_URL=... QDRANT_URL=... pnpm bench:backends
+DATABASE_URL=... pnpm bench:backends
 # flags: --iterations 80 --warmup 20 --limit 10 --p95 <ms> --output <file>
 ```
 

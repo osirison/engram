@@ -1,6 +1,6 @@
 ---
 title: Configure embeddings
-description: Choose an embedding provider (ollama, openai, local, disabled), pick a model, tune the Redis cache, and change models safely.
+description: Choose an embedding provider (ollama, openai, local, disabled), pick a model, and change models safely.
 sidebar:
   order: 8
 ---
@@ -106,19 +106,6 @@ OPENAI_API_KEY=sk-...
 Switching an existing deployment between Ollama (768 dims) and OpenAI
 (1536 dims) is a dimension change — follow the model-change procedure below.
 
-## Cache
-
-Embeddings are cached in Redis keyed by `(text, model)`:
-
-```bash
-EMBEDDING_CACHE_TTL=2592000   # seconds; default 30 days
-```
-
-Repeated recall queries and dedup checks hit the cache instead of the
-provider. Because the model id is part of the key, switching models is safe —
-the cache never serves vectors from the old model. Profiles without Redis
-simply run uncached.
-
 ## Change the model or provider (dimension change)
 
 Switching to a model with a different dimensionality (e.g. from the 768-dim
@@ -154,9 +141,9 @@ dimensionality, and writes the new vectors back to Postgres. Recall is empty
 while the rebuild runs. `recreate` is only honored by an unscoped full pass —
 no `userId`, `cursor`, or memory cap.
 
-Budget note: regeneration calls the provider once per memory (cache
-notwithstanding) — free with the local Ollama default, token cost with
-`openai`. For a large corpus, prefer the queued variant
+Budget note: regeneration calls the provider once per memory — free with the
+local Ollama default, token cost with `openai`. For a large corpus, prefer the
+queued variant
 (`queue_reindex_memories`, same arguments) so the pass runs in the background
 — see [Reindex embeddings](/docs/how-to/reindex-embeddings/).
 
@@ -177,5 +164,6 @@ stale (`embeddingStale`). Repair a single memory without a full pass with the
 
 - Store a memory, then `recall` it with a paraphrase — a semantic (not
   keyword) match confirms embeddings are live.
-- The Prometheus metrics (`/health/metrics`) include embedding cache
-  hit/miss counters — a warm cache shows hits climbing on repeated queries.
+- If recall only ever matches on exact keywords, check the server logs: an
+  unreachable provider or unpulled model logs a warning and returns `null`, so
+  writes still succeed but land without a vector.

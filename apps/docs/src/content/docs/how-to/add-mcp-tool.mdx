@@ -80,10 +80,10 @@ frobnicate: this.frobnicate.bind(this) as BoundHandler,
 
 `getMcpTools()` maps every manifest entry to its bound handler and **throws at
 boot** if a manifest entry has no handler — a missing binding cannot ship
-silently. If the tool depends on a service that only exists in some profiles
-(Postgres-only, BullMQ-only), filter it there too: see how
-`export_memories` / `consolidate_corpus` are hidden when their services are
-absent, and `filterToolsByProfile()` for the per-profile exclusion lists.
+silently. If the tool depends on a service that is only present in some
+profiles, hide it when that service is absent: see how `export_memories`,
+`import_agent_memory`, and `consolidate_corpus` are dropped when their
+`@Optional()`-injected services are not wired.
 
 ## 4. Test at both levels
 

@@ -6,9 +6,9 @@ sidebar:
 ---
 
 Reindexing rebuilds the derived vector index from Postgres, the source of
-truth. Run it after a backend switch, an embedding model change, a vector
-store loss, or a bulk import. Design details (cursor resumability, per-item
-failure isolation): [Reindex & backfill](/docs/architecture/reindex-backfill/).
+truth. Run it after an embedding model change, a vector store loss, or a bulk
+import. Design details (cursor resumability, per-item failure isolation):
+[Reindex & backfill](/docs/architecture/reindex-backfill/).
 
 There are two front doors to the same engine: a **CLI** for operators on the
 server host, and **admin MCP tools** for driving it through an MCP client.
@@ -20,9 +20,8 @@ pnpm --filter mcp-server reindex
 ```
 
 The CLI bootstraps the app context directly, so it needs the server's `.env`
-(`DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`/backend config,
-`DEPLOYMENT_PROFILE`) but **not** `MCP_ADMIN_TOKEN` — shell access to the
-host is the credential.
+(`DATABASE_URL`, `DEPLOYMENT_PROFILE`) but **not** `MCP_ADMIN_TOKEN` — shell
+access to the host is the credential.
 
 Flags:
 
@@ -41,10 +40,10 @@ prints `processed / indexed / skipped / failed`.
 ## Option B — admin MCP tools
 
 All five tools are `auth: 'admin'`: the input carries an `adminToken` that
-must equal `MCP_ADMIN_TOKEN` (constant-time compared). They are available in
-the enterprise profile; `lite` keeps only the synchronous tool, and the
-`memory` profile has none (no vector store) — see
-[deployment profiles](/docs/architecture/deployment-profiles/#the-tool-surface-is-profile-filtered-too).
+must equal `MCP_ADMIN_TOKEN` (constant-time compared). Both profiles are
+Postgres-backed, so all five are available in `lite` and `standard` alike —
+including the queued tools, whose job rows live in Postgres — see
+[deployment profiles](/docs/architecture/deployment-profiles/).
 
 **Synchronous** — blocks until done, returns the summary. Fine for scoped or
 small corpora:
@@ -60,8 +59,8 @@ small corpora:
 }
 ```
 
-**Queued** — returns a `jobId` immediately; the job persists progress in
-Redis and survives observation:
+**Queued** — returns a `jobId` immediately; the job persists progress (and its
+resume cursor) in Postgres and survives observation:
 
 ```json
 { "name": "queue_reindex_memories", "arguments": { "adminToken": "<MCP_ADMIN_TOKEN>" } }
@@ -100,8 +99,7 @@ only honored by an **unscoped full reindex** — no `userId`, `cursor`, or
 
 | Situation | Mode |
 | --------- | ---- |
-| Backend switch (qdrant ⇄ pgvector) | reuse (default) — vectors are valid, no provider cost |
-| Vector store lost/corrupted | reuse (default) |
+| Vector store lost/corrupted | reuse (default) — vectors are valid, no provider cost |
 | Embedding model or dimension change | **recreate + regenerate** (see below) |
 | Imported with `EMBEDDING_PROVIDER=local`, upgrading to real vectors | **regenerate** |
 | A few individually stale memories | `reembed_memory` per id instead of a full pass |

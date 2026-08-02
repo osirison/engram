@@ -27,7 +27,7 @@ auth — is rejected **at boot**, not discovered in production.
 `assertHttpAuthPosture()` (`apps/mcp-server/src/http-auth-posture.ts`)
 refuses to start when all three hold:
 
-1. the active profile is multi-tenant (`enterprise`),
+1. the active profile is multi-tenant (`standard`),
 2. `MCP_TRANSPORT=streamable-http`,
 3. `AUTH_REQUIRED` is false and `ALLOW_UNAUTHENTICATED_HTTP` is not set.
 
@@ -113,11 +113,11 @@ boundary, so the storage layers repeat the constraint: every `Memory`,
 `ApiKey`, `MemoryAudit`, `MemoryLink`, and `MemoryImportSource` row carries
 `userId`, every service query filters on it, and the vector store embeds
 `userId` in its
-[search filter](/docs/architecture/vector-backends/#one-interface-two-backends).
-STM keys are namespaced per user (and per org). An optional `organizationId`
-adds a second grouping level for multi-org deployments; the enterprise
-profile's Redis-backed rate limiter buckets by key, user, org, and IP
-(`RATE_LIMIT_*`, see the
+[search filter](/docs/architecture/vector-backends/#the-vectorstore-interface).
+STM rows carry `userId` (and org) like every other memory row. An optional
+`organizationId` adds a second grouping level for multi-org deployments; the
+`standard` profile's Postgres-backed rate limiter (`rate_limit_counters`)
+buckets by key, user, org, and IP (`RATE_LIMIT_*`, see the
 [configuration guide](/docs/reference/configuration-guide/#rate-limits)).
 
 ## Turning it on

@@ -1,85 +1,78 @@
 ---
 title: Deployment profiles
-description: Why one Engram binary ships three deployment profiles — memory, lite, enterprise — and how ProfileCapabilities wires modules and filters the tool surface.
+description: Why one Engram binary ships two deployment profiles — lite and standard — and how ProfileCapabilities wires the auth stack and filters the tool surface.
 sidebar:
   order: 4
 ---
 
-Engram runs in three very different contexts: a laptop where an agent needs
-memory *right now*, a single-operator host that wants persistence without an
-ops stack, and a multi-tenant server with real infrastructure. Instead of
-three builds or a thicket of feature flags, one binary reads
+Engram runs in two contexts: a single-operator host that wants persistence
+without an auth stack, and a multi-tenant server with real infrastructure.
+Instead of two builds or a thicket of feature flags, one binary reads
 `DEPLOYMENT_PROFILE` and resolves a `ProfileCapabilities` record
 (`packages/config/src/profile.ts`) that every module consults at boot.
 
+Both profiles run on the same backing service — **PostgreSQL with the
+pgvector extension**, the only external dependency. What differs is whether
+the multi-tenant auth/organization stack is wired in.
+
 ## The ladder
 
-| Capability | `memory` | `lite` | `enterprise` |
-| ---------- | -------- | ------ | ------------ |
-| `requiresDatabase` | no | yes | yes |
-| `requiresRedis` | no | no | yes |
-| `requiresQdrant` | no | no | yes |
-| `inProcessAdapters` | yes | no | no |
-| `persistent` | no | yes | yes |
-| `multiTenant` | no | no | yes |
+| Capability | `lite` | `standard` |
+| ---------- | ------ | ---------- |
+| `requiresDatabase` | yes | yes |
+| `persistent` | yes | yes |
+| `multiTenant` | no | yes |
 
-- **`memory`** — zero external services. STM is an in-process map, LTM an
-  in-process adapter, recall runs on the in-process hybrid retriever. Nothing
-  survives a restart; that is the point — it is the instant-gratification and
-  test profile.
-- **`lite`** — one durable store, no Redis/Qdrant. LTM uses the encrypted
-  file-backed `LiteJsonStore` (`LOCAL_DATA_DIR`, default `~/.engram/data`,
-  AES-256-GCM with `LOCAL_ENCRYPTION_KEY`). Single-tenant persistence for a
-  personal always-on server.
-- **`enterprise`** — Postgres + Redis + Qdrant (or pgvector), multi-tenant,
-  rate-limitable, queue-backed maintenance. The default (for backward
-  compatibility with existing deployments).
+- **`lite`** — single-user local durability on Postgres. The
+  auth/organization stack is **not wired**: no OAuth sessions, no per-agent
+  API-key enforcement, no rate limiting. For a personal, always-on server.
+- **`standard`** — the **default**. The same Postgres storage plus the full
+  multi-tenant stack: authentication, per-agent API keys, organizations, and
+  rate limiting.
 
-The default is `enterprise`; the config loader fails fast at boot when a
-profile's required URLs (`DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`) are
-missing, rather than failing at first use.
+The default is `standard`; the config loader fails fast at boot when
+`DATABASE_URL` is missing, rather than failing at first use.
+
+> The value `enterprise` is a deprecated **alias** for `standard` (it maps to
+> the same capabilities), kept so existing deployments keep booting. The old
+> `memory` profile — zero external services, in-process adapters — was
+> **removed**: every profile now runs on Postgres.
 
 ## Capabilities drive wiring, not scattered ifs
 
-`AppModule.forRoot()` consults the capability record once:
-`PrismaModule` only loads when `requiresDatabase`, `RedisModule` when
-`requiresRedis`, `QdrantModule` when `requiresQdrant`. Services take their
-optional dependencies with `@Optional()` injection, so the same
-`MemoryService` code path works whether STM is Redis or an in-process map.
+`AppModule.forRoot()` consults the capability record once. Because both
+profiles set `requiresDatabase`, `PrismaModule` and `AuthModule` are always
+imported; `AuthModule` then gates its OAuth sessions, rate limiting, and the
+multi-tenant boot fail-safe on `multiTenant` **internally**. Services take
+their optional dependencies with `@Optional()` injection, so the same
+`MemoryService` code path works whether or not the auth stack is present.
 The alternative — checking `process.env.DEPLOYMENT_PROFILE` at each call
 site — is exactly the drift-prone pattern this design avoids: capability
 checks happen at composition time, in one place.
 
-## The tool surface is profile-filtered too
+## The tool surface is capability-filtered
 
-A profile must never advertise an MCP tool it cannot serve.
-`MemoryController.getMcpTools()` filters the manifest:
-
-- **`memory`** hides the reindex/queue maintenance tools *and*
-  `consolidate_corpus` (no vector store to rebuild, no Postgres corpus to
-  consolidate), plus the Postgres-only `export_memories` /
-  `import_agent_memory`.
-- **`lite`** keeps synchronous `reindex_memories` but hides the queue tools
-  (`queue_reindex_memories`, `get_reindex_status`, `cancel_reindex_job`,
-  `retry_reindex_job`) — they need a Redis-backed worker.
-- **`enterprise`** exposes everything.
-
-An MCP client discovers a truthful `tools/list` for the deployment it is
-talking to, instead of tools that would only ever return errors.
+`MemoryController.getMcpTools()` builds the MCP manifest through a
+capability-aware filter, so a profile never advertises a tool it cannot
+serve. Because both profiles are Postgres-backed, every tool — including the
+async reindex queue (`queue_reindex_memories`, `get_reindex_status`,
+`cancel_reindex_job`, `retry_reindex_job`), `consolidate_corpus`, and the
+Postgres-only `export_memories` / `import_agent_memory` — is currently served
+in both. The filter hook is retained so a future profile can exclude tools
+again without re-plumbing the call site.
 
 ## Multi-tenancy is a profile property
 
-Only `enterprise` sets `multiTenant: true`, and that flag is load-bearing for
+Only `standard` sets `multiTenant: true`, and that flag is load-bearing for
 security: it is what arms the
 [boot-time auth fail-safe](/docs/architecture/auth-and-multitenancy/#the-boot-fail-safe)
 — a multi-tenant server over streamable-http refuses to start unauthenticated.
-The single-tenant profiles are exempt because there is no cross-tenant data to
-protect.
+`lite` is exempt because there is no cross-tenant data to protect.
 
 ## Moving up the ladder
 
-Profiles are a ladder, not a fork: the expected lifecycle is to start on
-`memory`, adopt `lite` when persistence matters, and migrate to `enterprise`
-when scale or multi-tenancy does. The dedicated migration tooling and runbook
-for the last step live in
-[Migrate lite to enterprise](/docs/how-to/profile-migration/).
+Profiles are a ladder, not a fork: start on `lite` for a personal server, and
+move to `standard` when multi-tenancy or scale does. Both share identical
+Postgres storage, so the move is a configuration change — enabling the auth
+stack — not a data migration. The runbook lives in
+[Migrate lite to standard](/docs/how-to/profile-migration/).

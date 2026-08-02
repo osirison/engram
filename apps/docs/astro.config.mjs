@@ -26,7 +26,6 @@ const packages = [
   'embeddings',
   'vector-store',
   'database',
-  'redis',
   'auth',
   'eval',
   'client',
