@@ -1,0 +1,258 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+
+  // ── ENGRAM dependency automation ────────────────────────────────────────
+  // Keeps the monorepo on current libraries and turns published advisories
+  // into PRs automatically.
+  //
+  // Two things about this file are load-bearing and easy to break:
+  //
+  //  1. packageRules are applied IN ORDER and later rules win. Every
+  //     "never automerge this" rule therefore lives AFTER the grouping and
+  //     automerge rules, or it is silently overridden.
+  //  2. A group branch automerges only if EVERY member of the group is
+  //     automergeable. So a rule that sets `automerge: false` must also set
+  //     `groupName: null`, or it disables automerge for the whole batch it
+  //     happens to land in.
+  //
+  // See docs/ops/dependency-automation.md for the policy this encodes.
+  // ────────────────────────────────────────────────────────────────────────
+
+  extends: [
+    'config:recommended',
+    ':dependencyDashboard',
+    ':semanticCommits',
+    'security:openssf-scorecard',
+    // NB: lockfile maintenance is configured explicitly below, not via a
+    // `:maintainLockFiles*` preset — two sources would fight over the schedule.
+  ],
+
+  timezone: 'Europe/London',
+
+  // Regular upgrade runs land as a Monday-morning batch; security PRs are
+  // exempt from this schedule (see vulnerabilityAlerts) and open immediately.
+  schedule: ['before 07:00 on monday'],
+
+  // The Dependency Dashboard issue is the single place to see everything
+  // pending, rate-limited, or blocked — including advisories with no fix yet.
+  dependencyDashboard: true,
+  dependencyDashboardTitle: 'Dependency dashboard',
+  dependencyDashboardOSVVulnerabilitySummary: 'unresolved',
+
+  // apps/marketing-site is deliberately OUTSIDE the pnpm workspace
+  // (pnpm-workspace.yaml `- '!apps/marketing-site'`) and carries its own
+  // package-lock.json. Renovate would otherwise treat it as an npm project
+  // and open PRs whose lockfile the root install does not manage.
+  ignorePaths: ['**/node_modules/**', 'apps/marketing-site/**'],
+
+  // Conventional commits — commitlint here allows: feat|fix|refactor|perf|
+  // style|test|docs|build|ops|chore with a lowercase subject. Renovate only
+  // lowercases the subject when it builds the prefix itself from
+  // semanticCommitType, so never set `commitMessagePrefix` (that path skips
+  // the lowercasing and emits "…: Update dependency …", which fails
+  // commitlint's subject-case rule).
+  semanticCommits: 'enabled',
+  semanticCommitType: 'chore',
+  semanticCommitScope: 'deps',
+  commitMessageLowerCase: 'auto',
+
+  // 3-day supply-chain quarantine: skip releases younger than this so a
+  // compromised publish has time to be yanked. Security fixes override it.
+  // NOTE: this filters *candidate releases during lookup*. It does NOT apply
+  // to transitive resolution or to lockFileMaintenance — see the runbook.
+  minimumReleaseAge: '3 days',
+  // Required for the age gate to actually hold; without it other internal
+  // checks can let a too-young release through.
+  internalChecksFilter: 'strict',
+
+  // Renovate does its own merge rather than handing off to GitHub's native
+  // auto-merge. This is deliberate and stricter: GitHub's auto-merge only
+  // waits for the *required* checks, so a PR could land with the
+  // (non-required) `Dependency audit` red. Renovate's own automerge requires
+  // the whole branch status to be green, so a red audit blocks the merge.
+  // Branch protection still applies on top — Renovate merges through the API
+  // and GitHub rejects anything that violates it.
+  platformAutomerge: false,
+  automergeStrategy: 'squash',
+
+  // Keep the review queue survivable. There is an existing advisory backlog;
+  // these limits stop it arriving as 30 simultaneous PRs.
+  prConcurrentLimit: 5,
+  prHourlyLimit: 2,
+  branchConcurrentLimit: 8,
+
+  // Rebase a PR when its branch goes stale so CI results stay meaningful.
+  rebaseWhen: 'behind-base-branch',
+
+  labels: ['dependencies'],
+
+  // Refreshes the whole transitive tree monthly, catching drift that no
+  // direct-dependency bump would. It re-resolves rather than looking up
+  // candidates, so the 3-day quarantine does NOT apply — hence never
+  // automerged (see the explicit rule below).
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ['before 07:00 on the first day of the month'],
+    commitMessageAction: 'refresh',
+  },
+
+  // ── packageRules — ORDER MATTERS, later rules win ──────────────────────
+  packageRules: [
+    // ── 1. Ecosystem groups ─────────────────────────────────────────────
+    // Related packages must move together: splitting them produces version
+    // skew that typechecks but breaks at runtime (see the @opentelemetry
+    // note in pnpm-workspace.yaml, where a lone propagator bump pulled in a
+    // second @opentelemetry/core and broke context propagation).
+    // Scoped to non-breaking updates so majors stay one-per-PR (rule 4).
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      matchPackageNames: ['@opentelemetry/**'],
+      groupName: 'opentelemetry',
+    },
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      matchPackageNames: ['@nestjs/**'],
+      groupName: 'nestjs',
+    },
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      matchPackageNames: ['@prisma/**', 'prisma'],
+      groupName: 'prisma',
+    },
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      matchPackageNames: ['@astrojs/**', 'astro', 'starlight**'],
+      groupName: 'astro and starlight',
+    },
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      matchPackageNames: [
+        'next',
+        'next-auth',
+        '@auth/**',
+        'react',
+        'react-dom',
+        '@types/react',
+        '@types/react-dom',
+      ],
+      groupName: 'next and react',
+    },
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      matchPackageNames: ['vitest', '@vitest/**', 'jest', 'jest-**', 'ts-jest'],
+      groupName: 'test runners',
+    },
+
+    // ── 2. Patch + minor: grouped and automerged once CI is green ───────
+    {
+      matchUpdateTypes: ['patch', 'minor', 'pin', 'digest'],
+      automerge: true,
+      groupName: 'patch and minor updates',
+      // Dev tooling churns most; keep it out of the main group's way.
+      // Negation-only is the correct form here — adding a leading '*' is a
+      // hard config error ("* along with other patterns") that aborts the
+      // whole Renovate run.
+      matchPackageNames: ['!@types/**', '!eslint**', '!@typescript-eslint/**'],
+    },
+    {
+      matchUpdateTypes: ['patch', 'minor'],
+      matchPackageNames: ['@types/**', 'eslint**', '@typescript-eslint/**'],
+      matchDepTypes: ['devDependencies'],
+      automerge: true,
+      groupName: 'lint and type tooling',
+    },
+
+    // ── 3. 0.x releases: a "minor" is a breaking change ─────────────────
+    // semver says nothing below 1.0.0 is stable, and Renovate types
+    // 0.219.0 → 0.220.0 as `minor`. This repo has ~43 ranges on 0.x,
+    // including the @opentelemetry/* 0.219.x experimental line whose breaks
+    // are runtime-only (they typecheck, then fail in production).
+    {
+      matchCurrentVersion: '/^0\\./',
+      matchUpdateTypes: ['minor'],
+      automerge: false,
+      groupName: null,
+      labels: ['dependencies', 'major-upgrade'],
+    },
+
+    // ── 4. Majors: never automerged, one PR each ────────────────────────
+    // Placed after the ecosystem groups so `groupName: null` actually wins.
+    {
+      matchUpdateTypes: ['major'],
+      automerge: false,
+      groupName: null,
+      labels: ['dependencies', 'major-upgrade'],
+      minimumReleaseAge: '7 days',
+    },
+
+    // ── 5. CI workflow edits always get a human ─────────────────────────
+    // The github-actions manager rewrites `uses:` refs in .github/workflows.
+    // Those jobs hold GITHUB_TOKEN (e.g. the trivy scan and the release
+    // workflow), so a third-party action must never start executing there
+    // without someone reading the diff.
+    {
+      matchManagers: ['github-actions'],
+      automerge: false,
+      groupName: null,
+      labels: ['dependencies', 'toolchain'],
+    },
+
+    // ── 6. Lockfile maintenance: reviewed, never automerged ─────────────
+    // It re-resolves the transitive tree with no age filtering.
+    {
+      matchUpdateTypes: ['lockFileMaintenance'],
+      automerge: false,
+      groupName: null,
+      labels: ['dependencies', 'toolchain'],
+    },
+
+    // ── 7. Toolchain pins ───────────────────────────────────────────────
+    // A bump here has to move the CI setup-node / pnpm versions with it.
+    {
+      matchPackageNames: ['pnpm', 'node', '@types/node'],
+      automerge: false,
+      groupName: null,
+      labels: ['dependencies', 'toolchain'],
+    },
+
+    // ── 8. Packages constrained by a workspace override ─────────────────
+    // pnpm-workspace.yaml `overrides` carry deliberate upper bounds with
+    // comments explaining what breaks without them.
+    //
+    // IMPORTANT: Renovate does NOT parse the `overrides:` block of
+    // pnpm-workspace.yaml (its schema reads only `packages`, the catalogs,
+    // and the minimumReleaseAge keys). This rule therefore only fires for
+    // packages that ALSO appear in some package.json. Raising an override
+    // floor for a new CVE remains a human task — the vulnerability-watch
+    // issue is where that lands.
+    {
+      matchPackageNames: ['undici', 'vite', 'fast-uri', 'multer', 'form-data', 'hono'],
+      automerge: false,
+      groupName: null,
+      labels: ['dependencies', 'pinned-review-required'],
+    },
+  ],
+
+  // ── Security advisories: fastest path, quarantine waived ──────────────
+  // A published advisory means the vulnerable version is already public, so
+  // waiting out a release-age window is strictly worse than shipping the fix.
+  vulnerabilityAlerts: {
+    enabled: true,
+    schedule: ['at any time'],
+    minimumReleaseAge: null,
+    labels: ['dependencies', 'security'],
+    // Use semanticCommitType, NOT commitMessagePrefix: the prefix path skips
+    // Renovate's subject lowercasing and emits "fix(deps): Update dependency
+    // …", which this repo's commitlint rejects (subject-case).
+    semanticCommitType: 'fix',
+    // `automerge` is deliberately unset. vulnerabilityAlerts merges on top of
+    // packageRules, so leaving it unset lets a security fix inherit the same
+    // policy as everything else: patch/minor automerges once CI is green, a
+    // major (or a 0.x minor) still waits for a human. Setting it true here
+    // would override that and land breaking majors unreviewed.
+  },
+
+  // OSV-backed detection in addition to GitHub advisories, so a vulnerability
+  // is surfaced even before it lands in the GitHub Advisory Database.
+  osvVulnerabilityAlerts: true,
+}
