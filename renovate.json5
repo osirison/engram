@@ -39,11 +39,14 @@
   dependencyDashboardTitle: 'Dependency dashboard',
   dependencyDashboardOSVVulnerabilitySummary: 'unresolved',
 
-  // apps/marketing-site is deliberately OUTSIDE the pnpm workspace
-  // (pnpm-workspace.yaml `- '!apps/marketing-site'`) and carries its own
-  // package-lock.json. Renovate would otherwise treat it as an npm project
-  // and open PRs whose lockfile the root install does not manage.
-  ignorePaths: ['**/node_modules/**', 'apps/marketing-site/**'],
+  // apps/marketing-site is OUTSIDE the pnpm workspace (pnpm-workspace.yaml
+  // `- '!apps/marketing-site'`) and carries its own package-lock.json, so
+  // Renovate treats it as a separate npm project — which is correct: that is
+  // exactly how `.github/workflows/node.js.yml` builds it (`npm ci` in that
+  // directory). It was ignored here originally, and the result was that the
+  // publicly deployed marketing site silently accumulated advisories that
+  // `pnpm audit` structurally cannot see. Kept in scope deliberately.
+  ignorePaths: ['**/node_modules/**'],
 
   // Conventional commits — commitlint here allows: feat|fix|refactor|perf|
   // style|test|docs|build|ops|chore with a lowercase subject. Renovate only

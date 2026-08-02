@@ -123,8 +123,22 @@ will not open that PR and will not list it on the dashboard. The
 they _also_ appear in a `package.json`, but do not rely on it as the only
 signal.
 
-`apps/marketing-site` is likewise ignored: it sits outside the pnpm workspace
-and carries its own `package-lock.json`.
+### `apps/marketing-site` is a second, separate surface
+
+It sits outside the pnpm workspace and carries its own `package-lock.json`, so
+**`pnpm audit` structurally cannot see it** — and it is publicly deployed to
+Pages by `.github/workflows/node.js.yml`. It was originally excluded from
+Renovate too, and the predictable happened: it quietly accumulated two high
+advisories that no local audit reported. GitHub's Dependabot alerts were the
+only thing that saw them.
+
+It is now in scope for both: Renovate manages it as an npm project, and the
+`Dependency audit` job runs `npm audit` in that directory. That audit is _not_
+scoped to `--omit=dev`, unlike the pnpm one — the site is prerendered at build
+time, so its build toolchain lands in the published bundle.
+
+If you ever add a third lockfile, add it to that job too; `pnpm audit` will not
+find it for you.
 
 ### Writing an override that does not break the build
 
