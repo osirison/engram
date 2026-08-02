@@ -10,7 +10,7 @@ import { ZodError } from 'zod';
  *   2. `ClientFacingError` — messages we authored for the caller (auth
  *      failures, unavailable-in-profile notices, …).
  *
- * Everything else (Prisma, Redis, embedding-provider, vector-store errors)
+ * Everything else (Prisma, embedding-provider, vector-store errors)
  * is replaced with a generic message so internal details — connection
  * strings, table names, provider quotas — never reach a client. The full
  * error is still logged server-side by the handler before rethrowing.

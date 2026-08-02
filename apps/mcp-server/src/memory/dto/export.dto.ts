@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const exportToolSchema = z
   .object({
     userId: userIdSchema,
-    /** Include short-term (Redis) memories. Default false — LTM only. */
+    /** Include short-term memories. Default false — LTM only. */
     includeStm: z.boolean().optional(),
     tags: z.array(z.string()).optional(),
     dateFrom: z.string().datetime().optional(),

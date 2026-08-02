@@ -2,7 +2,7 @@
  * Key/value store backing sessions and one-time OAuth state.
  *
  * The package defines only the interface; the host application provides a
- * concrete implementation (Redis in enterprise). Unit tests use an in-memory
+ * concrete implementation (Postgres in the standard profile). Unit tests use an in-memory
  * fake. Every write carries an explicit TTL so entries cannot leak.
  */
 export interface SessionStore {

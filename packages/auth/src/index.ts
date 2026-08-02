@@ -2,7 +2,7 @@
  * @engram/auth — authentication & authorization primitives for ENGRAM.
  *
  * Framework-agnostic building blocks (plain classes + interfaces). The NestJS
- * wiring, Redis store adapters, and HTTP controller live in the host app
+ * wiring, Postgres store adapters, and HTTP controller live in the host app
  * (`apps/mcp-server/src/auth`), which composes these with config and DI.
  */
 

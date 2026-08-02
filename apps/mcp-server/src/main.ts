@@ -311,7 +311,7 @@ async function bootstrap(): Promise<void> {
     logger.error('Failed to start MCP handler:', error);
   }
 
-  // Run NestJS lifecycle hooks (Redis/Prisma disconnect, metrics registry
+  // Run NestJS lifecycle hooks (Prisma disconnect, metrics registry
   // clear, MCP transport close, scheduler interval cleanup) on SIGTERM/SIGINT
   // and drain in-flight requests instead of dropping them. enableShutdownHooks
   // wires the signal handling itself; we deliberately avoid a manual handler

@@ -7,12 +7,12 @@ export type ExportTypeFilter = 'short-term' | 'long-term';
 
 /**
  * Options for {@link MemoryExportService.export}. STM is excluded by default
- * (PLAN §4.6): it is transient Redis-backed working memory, so exporting it
+ * (PLAN §4.6): it is transient Postgres-backed working memory, so exporting it
  * would capture ephemeral state.
  */
 export interface MemoryExportOptions {
   userId: string;
-  /** Include short-term (Redis) memories. Default false — LTM only. */
+  /** Include short-term memories. Default false — LTM only. */
   includeStm?: boolean;
   tags?: string[];
   dateFrom?: Date;

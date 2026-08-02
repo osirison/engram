@@ -1,8 +1,8 @@
 /**
  * Counter store backing the fixed-window rate limiter.
  *
- * The package defines the interface; the host application provides a Redis
- * implementation (atomic `INCR` + first-hit `EXPIRE`). Unit tests use an
+ * The package defines the interface; the host application provides a concrete
+ * implementation (the app ships a Postgres-backed store). Unit tests use an
  * in-memory fake driven by an injectable clock.
  */
 export interface RateLimitIncrementResult {
