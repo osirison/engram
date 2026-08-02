@@ -208,6 +208,25 @@ jobs:
         # step surfaces the next one automatically instead of by hand.
         run: pnpm audit --prod --audit-level=high
 
+  renovate-config:
+    name: Renovate config
+    runs-on: ubuntu-latest
+    # A config error does not degrade Renovate gracefully — it aborts the
+    # whole repository run, so no upgrade PRs and no security PRs are opened
+    # at all, with a single config-warning issue as the only signal. Catch it
+    # on the PR that introduces it instead.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Validate renovate.json5
+        run: npx --yes --package renovate renovate-config-validator --strict
+
   docker-build:
     name: Docker build (mcp-server)
     runs-on: ubuntu-latest
