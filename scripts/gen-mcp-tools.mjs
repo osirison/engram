@@ -179,8 +179,8 @@ function indexPage() {
   lines.push('<!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->');
   lines.push('');
   lines.push(`Engram registers **${tools.length} MCP tools**. Both deployment`);
-  lines.push('profiles (lite and standard) expose the full set; admin/maintenance');
-  lines.push('tools (reindex, queue, cancel, retry) additionally require `MCP_ADMIN_TOKEN`.');
+  lines.push('profiles (lite and standard) expose the full set; the tools marked');
+  lines.push('`admin` in the table below additionally require `MCP_ADMIN_TOKEN`.');
   lines.push('');
   lines.push('| Tool | Auth | Scope | Description |');
   lines.push('| ---- | ---- | ----- | ----------- |');

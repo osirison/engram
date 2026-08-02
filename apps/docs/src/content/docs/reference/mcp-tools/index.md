@@ -6,8 +6,8 @@ description: Every MCP tool the Engram server registers, with its auth mode and 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
 Engram registers **28 MCP tools**. Both deployment
-profiles (lite and standard) expose the full set; admin/maintenance
-tools (reindex, queue, cancel, retry) additionally require `MCP_ADMIN_TOKEN`.
+profiles (lite and standard) expose the full set; the tools marked
+`admin` in the table below additionally require `MCP_ADMIN_TOKEN`.
 
 | Tool | Auth | Scope | Description |
 | ---- | ---- | ----- | ----------- |

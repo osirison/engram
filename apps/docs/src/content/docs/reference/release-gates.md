@@ -22,7 +22,7 @@ release, or rolling back.
 SLOs are measurable from synthetic probes and benchmarks. Each profile
 ships its own targets because the durability / scale tradeoffs differ.
 
-### profile-lite
+### Lite
 
 | Objective            | Target                     | Measurement                                                   |
 | -------------------- | -------------------------- | ------------------------------------------------------------- |
@@ -31,9 +31,9 @@ ships its own targets because the durability / scale tradeoffs differ.
 | Health probe         | `<= 75ms` P95              | Synthetic `GET /health` against the live process              |
 | MCP tool latency P95 | `<= 75ms`                  | Wrapper-level timing in `MemoryController` instrumented tests |
 
-### profile-standard
+### Standard
 
-The `profile-standard` profile maintains the existing benchmark
+The `standard` profile maintains the existing benchmark
 guardrail: a regression budget of `<= 20ms` P95 against the
 `main` baseline. CI fetches the baseline from the latest `main` run
 artifacts and compares the current run; a delta above the budget fails
@@ -122,14 +122,14 @@ Coverage deltas on existing code paths must not regress more than
 
 ## Backward-Compatibility Gates
 
-`profile-standard` is the contract the existing operators depend on. The
+The `standard` profile is the contract the existing operators depend on. The
 following gates confirm that the profile ladder did not break the historical
 behaviour.
 
 | Gate                                                        | Probe                                                         | Threshold                                                                      |
 | ----------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Health endpoint includes all indicators                     | `pnpm --filter mcp-server test -- --testPathPattern='health'` | `memory-store`/`database`/`pgvector` all `up`                                  |
-| Full MCP tool set registered in `profile-standard`          | `apps/mcp-server/src/memory/memory.controller.spec.ts`        | Registered tool set matches the committed reference                            |
+| Full MCP tool set registered in `standard`                  | `apps/mcp-server/src/memory/memory.controller.spec.ts`        | Registered tool set matches the committed reference                            |
 | `reindex_memories` / `queue_reindex_memories` admin-guarded | `apps/mcp-server/test/mcp-tools.integration.spec.ts`          | Both reject missing/wrong admin token                                          |
 | Reindex CLI flags unchanged                                 | `pnpm --filter mcp-server reindex --help`                     | `--user`, `--batch-size`, `--max`, `--cursor`, `--regenerate` still recognised |
 | Default `DEPLOYMENT_PROFILE`                                | `packages/config/src/env.schema.spec.ts`                      | Omitting the env var resolves to `standard`                                    |
@@ -141,11 +141,11 @@ The CI wiring in `.github/workflows/profile-matrix.yml` enforces:
 1. `build` job — `pnpm build` with `DEPLOYMENT_PROFILE` set to
    `lite` and `standard` in parallel.
 2. `lint`, `typecheck`, `test` — repository-wide gates.
-3. `smoke:profile-lite` — boots the server in `profile-lite` against a
+3. `smoke-profile-lite` — boots the server in the `lite` profile against a
    Postgres service, asserts the health response is `ok` with the
    `memory-store`, `database`, and `pgvector` indicators `up`, and that
    the metrics endpoint advertises the `lite` profile label.
-4. `smoke:profile-standard` — boots the server in `profile-standard`
+4. `smoke-profile-standard` — boots the server in the `standard` profile
    against Postgres, asserts the same three health indicators are `up`,
    and runs the reindex CLI cleanly.
 5. `migration:lite-to-standard` — runs the migration integration test
