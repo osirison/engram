@@ -26,7 +26,6 @@
     "@engram/core": "workspace:*",
     "@engram/memory-stm": "workspace:*",
     "@engram/memory-ltm": "workspace:*",
-    "@engram/memory-lite": "workspace:*",
     "@engram/embeddings": "workspace:*",
     "@engram/vector-store": "workspace:*",
     "@engram/database": "workspace:*",

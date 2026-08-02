@@ -88,7 +88,7 @@ simple:
 | `MemoryAudit` | Append-only trail for destructive ops (`update`/`delete`/`promote`/`reembed`/`restore`), with before/after snapshots — this is what `restore_memory` restores from |
 | `MemoryLink` | First-class typed edges between memories (`duplicate-of`, `contradicts`, wikilink-derived relations) |
 | `MemoryImportSource` | Idempotency ledger for `import_agent_memory`, including the `lastWrittenVersion` CAS baseline |
-| `MigrationCheckpoint` | State machine + cursor for the profile migration tooling |
+| `MigrationCheckpoint` | Legacy table retained from the retired profile-migration tooling; unused by the runtime |
 
 Notably absent: a soft-delete column. Deletes are hard, but every delete
 writes a `MemoryAudit` snapshot first, so `restore_memory` can recreate the

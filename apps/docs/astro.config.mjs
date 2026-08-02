@@ -22,7 +22,6 @@ const packages = [
   'core',
   'memory-stm',
   'memory-ltm',
-  'memory-lite',
   'embeddings',
   'vector-store',
   'database',
