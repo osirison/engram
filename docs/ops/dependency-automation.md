@@ -61,9 +61,10 @@ merges through the API and GitHub rejects anything that violates it.
 
 **Status (2026-08-02):** the advisory backlog that used to hold automerge shut
 was cleared, and `Dependency audit` was promoted from an informational job to a
-**required** status check — so a dependency PR can no longer land alongside a
-fresh advisory, whichever merge path is used. It is now one of 11 required
-contexts on `main`.
+**required** status check on `main` — so a dependency PR can no longer land
+alongside a fresh advisory, whichever merge path is used. (`gh api
+repos/osirison/engram/branches/main/protection/required_status_checks` lists
+the current set.)
 
 Because it is required, it must report on **every** PR: keep the `audit` job
 free of `if:` conditions, `needs:`, and path filters. A required check that
