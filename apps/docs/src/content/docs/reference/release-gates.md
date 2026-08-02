@@ -73,47 +73,34 @@ and enforced by the "Run recall-quality regression gate" step in
 
 ## Reliability Gates
 
-Reliability gates are enforced by the integration test suite and the
-migration SLO research. Each gate maps to one or more executable
-artefacts.
+Reliability gates are enforced by the integration test suite. Each gate
+maps to one or more executable artefacts.
 
-| Gate                                      | Test / probe                                                            | Threshold                                                             |
-| ----------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Zero unreconciled records after migration | `apps/mcp-server/src/__tests__/migration-full-path.integration.spec.ts` | `report.globalMismatchFraction === 0`                                 |
-| Zero data loss during migration chaos     | `apps/mcp-server/src/__tests__/migration-chaos.integration.spec.ts`     | Resume cursor == last persisted cursor                                |
-| Rollback keeps source readable            | `apps/mcp-server/src/__tests__/migration-rollback.spec.ts`              | `verifier` failure auto-aborts to `rollback`; source CRUD still works |
-| 99% startup success over 30-day window    | Synthetic probe counter in production                                   | `<= 1%` failed `GET /health/ready` per 24h                            |
-| Verifier hard-stop                        | `apps/mcp-server/src/migration/verifier.service.ts`                     | mismatch fraction `<= 0.00001` advances; above auto-aborts            |
-
-The migration integration tests are part of the
-`migration-lite-to-standard` job in
-`.github/workflows/profile-matrix.yml`.
+| Gate                                   | Test / probe                          | Threshold                                  |
+| -------------------------------------- | ------------------------------------- | ------------------------------------------ |
+| 99% startup success over 30-day window | Synthetic probe counter in production | `<= 1%` failed `GET /health/ready` per 24h |
 
 ## Security Gates
 
-Security gates are enforced by unit tests in `apps/mcp-server`, plus the
-secure-startup checks that run at process boot.
+Security gates are enforced by unit tests in `apps/mcp-server`.
 
-| Gate                                              | Test / probe                                                              | Threshold                                                           |
-| ------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| All secrets redacted in logs                      | `apps/mcp-server/src/__tests__/secret-redaction.spec.ts`                  | `pino` redaction paths cover every sensitive field at root + nested |
-| Admin token uses constant-time comparison         | `apps/mcp-server/src/__tests__/admin-token-constant-time.spec.ts`         | `crypto.timingSafeEqual` for every call                             |
-| Audit logging on every admin call                 | `apps/mcp-server/src/memory/memory.controller.ts` (assertAdminAuthorized) | `admin_auth_ok` / `admin_auth_denied` emitted for every call        |
-| Migration verifies per-user + global count + hash | `apps/mcp-server/src/migration/verifier.service.ts`                       | `report.totalChecked === liteTotal`; hash match                     |
+| Gate                                      | Test / probe                                                              | Threshold                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| All secrets redacted in logs              | `apps/mcp-server/src/__tests__/secret-redaction.spec.ts`                  | `pino` redaction paths cover every sensitive field at root + nested |
+| Admin token uses constant-time comparison | `apps/mcp-server/src/__tests__/admin-token-constant-time.spec.ts`         | `crypto.timingSafeEqual` for every call                             |
+| Audit logging on every admin call         | `apps/mcp-server/src/memory/memory.controller.ts` (assertAdminAuthorized) | `admin_auth_ok` / `admin_auth_denied` emitted for every call        |
 
 ## Coverage Gates
 
 The release enforces a `>= 85%` coverage threshold on the new code
 paths introduced by the profile ladder (profile resolver, profile-aware
-adapters, migration, verifier, secure-startup, and admin-token
-utilities). Coverage is enforced per workspace using the existing
+adapters, and admin-token utilities). Coverage is enforced per workspace using the existing
 `pnpm --filter mcp-server test:cov` script.
 
 | Code path                                           | Coverage target | How it is measured                           |
 | --------------------------------------------------- | --------------- | -------------------------------------------- |
 | `packages/config/src/profile.ts`                    | `>= 95%`        | `pnpm --filter config test` + `test:cov`     |
 | `packages/memory-stm/src/adapters/**`               | `>= 90%`        | `pnpm --filter memory-stm test`              |
-| `apps/mcp-server/src/migration/**`                  | `>= 85%`        | `pnpm --filter mcp-server test` + `test:cov` |
 | `apps/mcp-server/src/security/**`                   | `>= 90%`        | `pnpm --filter mcp-server test` + `test:cov` |
 | `apps/mcp-server/src/health/memory-store.health.ts` | `>= 90%`        | `pnpm --filter mcp-server test` + `test:cov` |
 
@@ -148,8 +135,5 @@ The CI wiring in `.github/workflows/profile-matrix.yml` enforces:
 4. `smoke-profile-standard` — boots the server in the `standard` profile
    against Postgres, asserts the same three health indicators are `up`,
    and runs the reindex CLI cleanly.
-5. `migration:lite-to-standard` — runs the migration integration test
-   suites, including the full-path, chaos, and rollback tests, plus the
-   migration-state, dual-write, and verifier suites.
 
 A failure in any job blocks merge to `main` and `multi-tiered-memory`.
