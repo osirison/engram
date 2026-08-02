@@ -172,7 +172,7 @@
       matchUpdateTypes: ['minor'],
       automerge: false,
       groupName: null,
-      labels: ['dependencies', 'major-upgrade'],
+      addLabels: ['dependencies', 'major-upgrade'],
     },
 
     // ── 4. Majors: never automerged, one PR each ────────────────────────
@@ -181,7 +181,7 @@
       matchUpdateTypes: ['major'],
       automerge: false,
       groupName: null,
-      labels: ['dependencies', 'major-upgrade'],
+      addLabels: ['dependencies', 'major-upgrade'],
       minimumReleaseAge: '7 days',
     },
 
@@ -194,7 +194,7 @@
       matchManagers: ['github-actions'],
       automerge: false,
       groupName: null,
-      labels: ['dependencies', 'toolchain'],
+      addLabels: ['dependencies', 'toolchain'],
     },
 
     // ── 6. Lockfile maintenance: reviewed, never automerged ─────────────
@@ -203,7 +203,7 @@
       matchUpdateTypes: ['lockFileMaintenance'],
       automerge: false,
       groupName: null,
-      labels: ['dependencies', 'toolchain'],
+      addLabels: ['dependencies', 'toolchain'],
     },
 
     // ── 7. Toolchain pins ───────────────────────────────────────────────
@@ -212,7 +212,7 @@
       matchPackageNames: ['pnpm', 'node', '@types/node'],
       automerge: false,
       groupName: null,
-      labels: ['dependencies', 'toolchain'],
+      addLabels: ['dependencies', 'toolchain'],
     },
 
     // ── 8. Packages constrained by a workspace override ─────────────────
@@ -229,7 +229,7 @@
       matchPackageNames: ['undici', 'vite', 'fast-uri', 'multer', 'form-data', 'hono'],
       automerge: false,
       groupName: null,
-      labels: ['dependencies', 'pinned-review-required'],
+      addLabels: ['dependencies', 'pinned-review-required'],
     },
   ],
 
