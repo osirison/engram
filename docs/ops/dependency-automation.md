@@ -54,19 +54,21 @@ propagation). 0.x minors are therefore treated as breaking and reviewed.
 
 Renovate performs its own merge (`platformAutomerge: false`) rather than
 handing off to GitHub's native auto-merge. That is deliberate and stricter:
-GitHub's auto-merge only waits for the **required** checks, and
-`Dependency audit` is _not_ one of them — so a dependency PR could otherwise
-land while introducing a fresh advisory. Renovate requires the whole branch
-status to be green, so a red audit blocks the merge. Branch protection still
-applies on top; Renovate merges through the API and GitHub rejects anything
-that violates it.
+GitHub's auto-merge only waits for the **required** checks, so anything left
+informational could otherwise be red at merge time. Renovate requires the whole
+branch status to be green. Branch protection still applies on top; Renovate
+merges through the API and GitHub rejects anything that violates it.
 
-**Status:** the advisory backlog that used to hold this shut was cleared on
-2026-08-02 (`pnpm audit` is clean for production _and_ dev dependencies), so
-automerge is live. Promoting `Dependency audit` from an informational job to a
-**required** status check is the remaining step — it is not required today, so
-branch protection alone would still let a dependency PR land alongside a fresh
-advisory; only Renovate's own all-checks-green rule currently prevents that.
+**Status (2026-08-02):** the advisory backlog that used to hold automerge shut
+was cleared, and `Dependency audit` was promoted from an informational job to a
+**required** status check on `main` — so a dependency PR can no longer land
+alongside a fresh advisory, whichever merge path is used. (`gh api
+repos/osirison/engram/branches/main/protection/required_status_checks` lists
+the current set.)
+
+Because it is required, it must report on **every** PR: keep the `audit` job
+free of `if:` conditions, `needs:`, and path filters. A required check that
+never reports blocks every PR rather than failing one.
 
 > Branch protection also requires **conversation resolution**, and the Copilot
 > reviewer comments automatically. So "automerge" means _merges once nothing is

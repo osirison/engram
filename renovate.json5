@@ -70,16 +70,19 @@
 
   // Renovate does its own merge rather than handing off to GitHub's native
   // auto-merge. This is deliberate and stricter: GitHub's auto-merge only
-  // waits for the *required* checks, so a PR could land with the
-  // (non-required) `Dependency audit` red. Renovate's own automerge requires
-  // the whole branch status to be green, so a red audit blocks the merge.
-  // Branch protection still applies on top — Renovate merges through the API
-  // and GitHub rejects anything that violates it.
+  // waits for the *required* checks, so any job left informational could be
+  // red at merge time. Renovate's own automerge requires the whole branch
+  // status to be green. (`Dependency audit` became a required check on
+  // 2026-08-02, so that one is now covered by both paths.) Branch protection
+  // still applies on top — Renovate merges through the API and GitHub rejects
+  // anything that violates it.
   platformAutomerge: false,
   automergeStrategy: 'squash',
 
-  // Keep the review queue survivable. There is an existing advisory backlog;
-  // these limits stop it arriving as 30 simultaneous PRs.
+  // Keep the review queue survivable. The initial advisory backlog was cleared
+  // on 2026-08-02, but the first Renovate run still has a whole tree of
+  // upgrades to propose; these limits stop that arriving as 30 simultaneous
+  // PRs.
   prConcurrentLimit: 5,
   prHourlyLimit: 2,
   branchConcurrentLimit: 8,
