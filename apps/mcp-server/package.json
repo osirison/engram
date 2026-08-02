@@ -38,7 +38,7 @@
     "@engram/memory-ltm": "workspace:^",
     "@engram/memory-stm": "workspace:^",
     "@engram/vector-store": "workspace:^",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.24",
     "@nestjs/config": "^4.0.4",

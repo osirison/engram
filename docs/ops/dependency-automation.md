@@ -61,12 +61,12 @@ status to be green, so a red audit blocks the merge. Branch protection still
 applies on top; Renovate merges through the API and GitHub rejects anything
 that violates it.
 
-**Consequence today:** there is a standing advisory backlog in `apps/web` and
-`apps/docs`, so `Dependency audit` is red on every branch and nothing will
-automerge until it is cleared. That is the gate working as intended, not a
-misconfiguration — and once the backlog is fixed, automerge starts working with
-no config change. Clearing it, then promoting `Dependency audit` to a required
-status check, is the intended next step.
+**Status:** the advisory backlog that used to hold this shut was cleared on
+2026-08-02 (`pnpm audit` is clean for production _and_ dev dependencies), so
+automerge is live. Promoting `Dependency audit` from an informational job to a
+**required** status check is the remaining step — it is not required today, so
+branch protection alone would still let a dependency PR land alongside a fresh
+advisory; only Renovate's own all-checks-green rule currently prevents that.
 
 > Branch protection also requires **conversation resolution**, and the Copilot
 > reviewer comments automatically. So "automerge" means _merges once nothing is
@@ -125,6 +125,37 @@ signal.
 
 `apps/marketing-site` is likewise ignored: it sits outside the pnpm workspace
 and carries its own `package-lock.json`.
+
+### Writing an override that does not break the build
+
+Two rules, both learned the hard way during the 2026-08-02 sweep.
+
+**1. Always upper-bound the floor.** An override value is a range, not a
+minimum, and pnpm resolves it to the newest release that satisfies it —
+_across majors_. `js-yaml: '>=4.3.1'` silently resolved to **5.2.3**. Write
+`'>=4.3.1 <5'`.
+
+**2. Scope per major when several majors are live.** A bare package-name key
+rewrites the dependency for _every_ consumer. Forcing all of `brace-expansion`
+onto the patched 5.x line handed `minimatch@3.x` — which `require()`s it — an
+ESM-only package, and `pnpm lint` died with `expand is not a function`. Give
+each major its own key instead; sibling version-scoped keys work correctly:
+
+```yaml
+'brace-expansion@^1': '>=1.1.18 <2' # minimatch 3.x (CJS)
+'brace-expansion@^2': '>=2.1.4 <3' # minimatch 9.x
+'brace-expansion@^5': '>=5.0.9 <6' # minimatch 10.x (ESM)
+```
+
+Check the fix is actually reachable before assuming a patch exists: some
+advisories name a `patched_versions` that was never published (next-auth's
+`>=5.0.0` — the 5.x line is still in beta, and `5.0.0-beta.32` is the real
+fix), and some name one that only exists on a later minor line (there is no
+`astro@7.0.10`; the fix starts at 7.1.x).
+
+Finally, `pnpm update <pkg>` does **not** refresh a transitive dependency, even
+with `--depth Infinity`. If a vulnerable package is not a direct dependency, an
+override is the only lever.
 
 ## Where to look
 

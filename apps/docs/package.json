@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.3",
-    "astro": "^7.0.2",
-    "sharp": "^0.34.5",
+    "astro": "^7.1.6",
+    "sharp": "^0.35.3",
     "starlight-links-validator": "^0.25.2",
     "starlight-typedoc": "^0.23.0",
     "typedoc": "^0.28.20",
@@ -21,16 +21,16 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
-    "typescript": "6.0.3",
+    "@engram/auth": "workspace:*",
+    "@engram/client": "workspace:*",
     "@engram/config": "workspace:*",
     "@engram/core": "workspace:*",
-    "@engram/memory-stm": "workspace:*",
-    "@engram/memory-ltm": "workspace:*",
-    "@engram/embeddings": "workspace:*",
-    "@engram/vector-store": "workspace:*",
     "@engram/database": "workspace:*",
-    "@engram/auth": "workspace:*",
+    "@engram/embeddings": "workspace:*",
     "@engram/eval": "workspace:*",
-    "@engram/client": "workspace:*"
+    "@engram/memory-ltm": "workspace:*",
+    "@engram/memory-stm": "workspace:*",
+    "@engram/vector-store": "workspace:*",
+    "typescript": "6.0.3"
   }
 }

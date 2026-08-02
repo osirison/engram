@@ -49,6 +49,45 @@ overrides:
   '@opentelemetry/sdk-trace-base': '>=2.9.0 <3'
   '@opentelemetry/sdk-trace-node': '>=2.9.0 <3'
   '@opentelemetry/exporter-zipkin': '>=2.9.0 <3'
+  # --- 2026-08-02 advisory sweep -------------------------------------------
+  # Every entry below is an UPPER-BOUNDED floor. An unbounded '>=x' lets pnpm
+  # jump the next major: '>=4.3.1' on js-yaml silently resolved to 5.2.3, and
+  # forcing brace-expansion across majors handed minimatch 3.x an ESM-only 5.x
+  # and broke `eslint` outright ("expand is not a function"). Bound every one.
+  #
+  # Path traversal in `serve-static` on Windows (GHSA). Fixed only in 2.x, which
+  # @modelcontextprotocol/sdk did not accept until 1.30.0 ("^1.19.9 || ^2.0.5"),
+  # so this override is only valid alongside that bump — not before it.
+  '@hono/node-server': '>=2.0.5 <3'
+  # Path traversal in previous-source-map auto-loading, arbitrary file read, and
+  # a `</style>` XSS in the stringifier. Pulled by next and tailwind.
+  postcss: '>=8.5.18 <9'
+  # DoS via infinite loop in .proto option parsing. Held in 7.x — 8.x is a major
+  # and @grpc/proto-loader (via @opentelemetry) still expects ^7.
+  protobufjs: '>=7.6.5 <8'
+  # `removeScripts` left some executable scripts intact. Pinned by Astro, which
+  # depends on an exact-ish range, so the floor has to be forced here.
+  svgo: '>=4.0.2 <5'
+  # record() issue paths could make flatten() throw for inherited Object keys.
+  valibot: '>=1.4.2 <2'
+  # DoS when an invalid `limit` value is supplied. Pulled by express 5.
+  body-parser: '>=2.3.0 <3'
+  # Inherited libvips CVEs. Also a direct dependency of apps/docs (bumped there
+  # too); this covers the copy Next.js pulls into apps/web.
+  sharp: '>=0.35.0 <0.36'
+  # Quadratic-complexity DoS via YAML merge-key chains. Both live majors are
+  # affected and each has its own patch, so each line is raised in place rather
+  # than collapsed: `@istanbuljs/load-nyc-config` needs js-yaml 3.x, whose
+  # safeLoad/safeDump were removed in 4.
+  'js-yaml@^3': '>=3.15.1 <4'
+  'js-yaml@^4': '>=4.3.1 <5'
+  # DoS via exponential-time and unbounded brace expansion. Same shape: every
+  # live major is affected and separately patched. Collapsing them is not an
+  # option — minimatch 3.x/9.x `require()` this package, and 5.x is ESM-only, so
+  # a cross-major floor breaks eslint with "expand is not a function".
+  'brace-expansion@^1': '>=1.1.18 <2'
+  'brace-expansion@^2': '>=2.1.4 <3'
+  'brace-expansion@^5': '>=5.0.9 <6'
 
 # Allow openai to use zod v4 (openai declares a peer dep on zod ^3 but only uses
 # it for its optional structured-output helpers, which we don't use).
