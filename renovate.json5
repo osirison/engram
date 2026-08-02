@@ -229,7 +229,28 @@
     // floor for a new CVE remains a human task — the vulnerability-watch
     // issue is where that lands.
     {
-      matchPackageNames: ['undici', 'vite', 'fast-uri', 'multer', 'form-data', 'hono'],
+      matchPackageNames: [
+        'undici',
+        'vite',
+        'fast-uri',
+        'multer',
+        'form-data',
+        'hono',
+        // Added by the 2026-08-02 sweep. Only `sharp` is presently reachable
+        // via a package.json (apps/docs), so only it can actually fire today —
+        // but a bump of any of these needs its override floor raised in the
+        // same PR, and listing them keeps that visible if one later becomes a
+        // direct dependency.
+        '@hono/node-server',
+        'postcss',
+        'protobufjs',
+        'svgo',
+        'valibot',
+        'body-parser',
+        'sharp',
+        'js-yaml',
+        'brace-expansion',
+      ],
       automerge: false,
       groupName: null,
       addLabels: ['dependencies', 'pinned-review-required'],

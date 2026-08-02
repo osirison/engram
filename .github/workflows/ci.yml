@@ -206,11 +206,15 @@ jobs:
           # Error: Path(s) specified in the action for caching do(es) not
           # exist". That was invisible while the audit step itself was red.
 
-      - name: Audit production dependencies
-        # High+ vulnerabilities in prod deps fail the build. The workspace
-        # already carries manual CVE overrides in pnpm-workspace.yaml; this
-        # step surfaces the next one automatically instead of by hand.
-        run: pnpm audit --prod --audit-level=high
+      - name: Audit dependencies
+        # High+ vulnerabilities fail the build. Deliberately NOT `--prod`: the
+        # dev tree is the build toolchain, a compromised one reaches the
+        # published artefacts just as surely, and scoping to prod meant four
+        # dev-dependency advisories sat unnoticed because nothing could ever go
+        # red for them. The workspace carries manual CVE floors in
+        # pnpm-workspace.yaml; this step surfaces the next one instead of
+        # someone finding it by hand.
+        run: pnpm audit --audit-level=high
 
       - name: Audit marketing-site
         # apps/marketing-site is outside the pnpm workspace and has its own
@@ -327,7 +331,15 @@ jobs:
         # runs never touch the GitHub release download at all.
         # When bumping `version`, keep it to a tag that still has release
         # assets: https://github.com/aquasecurity/trivy/releases
-        uses: aquasecurity/setup-trivy@v0.3.1
+        #
+        # SHA-pinned, not tag-pinned. Both aquasecurity actions were hit by
+        # GHSA-69fq-xp46-6x23, in which every existing tag was force-pushed to
+        # a malicious commit — so a tag is not a safe reference for these two
+        # specifically, and moving the tag forward would not have helped. This
+        # tag (v0.3.1, 2026-06-03) post-dates the incident; the pin is what
+        # makes it stay that way. `version:` below must also stay off the
+        # compromised trivy releases v0.69.4–v0.69.6.
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: v0.72.0
           cache: true
@@ -339,11 +351,12 @@ jobs:
         # flip (npm's vendored picomatch/sigstore CVEs are dropped from the
         # runtime image in apps/mcp-server/Dockerfile). `ignore-unfixed` keeps
         # unpatchable OS findings from reddening builds we cannot act on.
-        # v0.36.0 is the floor for GHSA (critical): the Trivy ecosystem supply
-        # chain was briefly compromised in releases before 0.35.0, and 0.34.0
-        # fixed a script injection via a sourced env file in this composite
-        # action. Every input used below is unchanged in 0.36.0.
-        uses: aquasecurity/trivy-action@v0.36.0
+        # v0.36.0 clears GHSA-69fq-xp46-6x23 (critical — 76 of 77 trivy-action
+        # tags were hijacked; 0.35.0 is the safe floor) and the 0.34.0 fix for
+        # a script injection via a sourced env file in this composite action.
+        # SHA-pinned for the same reason as setup-trivy above. Every input
+        # passed below is still declared in 0.36.0's action.yaml.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
           TRIVY_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Primary DB mirror plus ghcr fallback so an anonymous-pull rate

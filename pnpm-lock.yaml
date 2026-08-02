@@ -5,11 +5,11 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  multer: '>=2.2.0'
-  form-data: '>=4.0.6'
+  multer: '>=2.2.0 <3'
+  form-data: '>=4.0.6 <5'
   undici: '>=6.27.0 <7'
-  hono: '>=4.12.25'
-  vite: '>=8.0.16 <8.1.0'
+  hono: '>=4.12.25 <5'
+  vite: '>=8.0.16 <9'
   fast-uri: '>=3.1.4 <4'
   '@opentelemetry/propagator-jaeger': '>=2.9.0 <3'
   '@opentelemetry/core': '>=2.9.0 <3'
@@ -25,7 +25,7 @@ overrides:
   svgo: '>=4.0.2 <5'
   valibot: '>=1.4.2 <2'
   body-parser: '>=2.3.0 <3'
-  sharp: '>=0.35.0 <0.36'
+  sharp: '>=0.35.0 <1'
   js-yaml@^3: '>=3.15.1 <4'
   js-yaml@^4: '>=4.3.1 <5'
   brace-expansion@^1: '>=1.1.18 <2'
@@ -101,7 +101,7 @@ importers:
         specifier: ^7.1.6
         version: 7.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.1)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0)
       sharp:
-        specifier: '>=0.35.0 <0.36'
+        specifier: '>=0.35.0 <1'
         version: 0.35.3(@types/node@25.9.1)
       starlight-links-validator:
         specifier: ^0.25.2
@@ -2078,7 +2078,7 @@ packages:
     resolution: {integrity: sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg==}
     engines: {node: '>=20'}
     peerDependencies:
-      hono: '>=4.12.25'
+      hono: '>=4.12.25 <5'
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4649,7 +4649,7 @@ packages:
     peerDependencies:
       '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0
       babel-plugin-react-compiler: ^1.0.0
-      vite: '>=8.0.16 <8.1.0'
+      vite: '>=8.0.16 <9'
     peerDependenciesMeta:
       '@rolldown/plugin-babel':
         optional: true
@@ -4666,7 +4666,7 @@ packages:
     resolution: {integrity: sha512-vY7nuamKgfvpA1Koa3oYIw/k7D6kZnpGyNMZW8loow2bsBYla1TFdqTaXncWdRn4pgwNs+90RhnXhJScDwQeJA==}
     peerDependencies:
       msw: ^2.4.9
-      vite: '>=8.0.16 <8.1.0'
+      vite: '>=8.0.16 <9'
     peerDependenciesMeta:
       msw:
         optional: true
@@ -4677,7 +4677,7 @@ packages:
     resolution: {integrity: sha512-EVkXzBjrPGM+cK8/ANWgBrkUCfJfb38/EfTSO8h7pWvKkyPkpWxvR7BkD2MyItMF62C97zAEoqdpUixwR/e+Rw==}
     peerDependencies:
       msw: ^2.4.9
-      vite: '>=8.0.16 <8.1.0'
+      vite: '>=8.0.16 <9'
     peerDependenciesMeta:
       msw:
         optional: true
@@ -9250,7 +9250,7 @@ packages:
   vitefu@1.1.3:
     resolution: {integrity: sha512-ub4okH7Z5KLjb6hDyjqrGXqWtWvoYdU3IGm/NorpgHncKoLTCfRIbvlhBm7r0YstIaQRYlp4yEbFqDcKSzXSSg==}
     peerDependencies:
-      vite: '>=8.0.16 <8.1.0'
+      vite: '>=8.0.16 <9'
     peerDependenciesMeta:
       vite:
         optional: true
@@ -9271,7 +9271,7 @@ packages:
       '@vitest/ui': 4.1.7
       happy-dom: '*'
       jsdom: '*'
-      vite: '>=8.0.16 <8.1.0'
+      vite: '>=8.0.16 <9'
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -9312,7 +9312,7 @@ packages:
       '@vitest/ui': 4.1.9
       happy-dom: '*'
       jsdom: '*'
-      vite: '>=8.0.16 <8.1.0'
+      vite: '>=8.0.16 <9'
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -10190,7 +10190,7 @@ snapshots:
   '@commitlint/is-ignored@21.0.2':
     dependencies:
       '@commitlint/types': 21.0.1
-      semver: 7.8.1
+      semver: 7.8.5
 
   '@commitlint/lint@21.0.2':
     dependencies:
@@ -10262,7 +10262,7 @@ snapshots:
     dependencies:
       '@simple-libs/child-process-utils': 1.0.2
       '@simple-libs/stream-utils': 1.2.0
-      semver: 7.8.1
+      semver: 7.8.5
     optionalDependencies:
       conventional-commits-parser: 6.4.0
 
@@ -13199,7 +13199,7 @@ snapshots:
       '@typescript-eslint/visitor-keys': 8.60.0
       debug: 4.4.3
       minimatch: 10.2.5
-      semver: 7.8.1
+      semver: 7.8.5
       tinyglobby: 0.2.17
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
@@ -15786,7 +15786,7 @@ snapshots:
       '@babel/parser': 7.29.7
       '@istanbuljs/schema': 0.1.6
       istanbul-lib-coverage: 3.2.2
-      semver: 7.8.1
+      semver: 7.8.5
     transitivePeerDependencies:
       - supports-color
 
@@ -16083,7 +16083,7 @@ snapshots:
       jest-message-util: 30.4.1
       jest-util: 30.4.1
       pretty-format: 30.4.1
-      semver: 7.8.1
+      semver: 7.8.5
       synckit: 0.11.13
     transitivePeerDependencies:
       - supports-color
@@ -16375,7 +16375,7 @@ snapshots:
 
   make-dir@4.0.0:
     dependencies:
-      semver: 7.8.1
+      semver: 7.8.5
 
   make-error@1.3.6: {}
 
@@ -18702,7 +18702,7 @@ snapshots:
 
   typescript-auto-import-cache@0.3.6:
     dependencies:
-      semver: 7.8.1
+      semver: 7.8.5
 
   typescript-eslint@8.60.0(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3):
     dependencies:
@@ -19048,7 +19048,7 @@ snapshots:
   volar-service-typescript@0.0.71(@volar/language-service@2.4.28):
     dependencies:
       path-browserify: 1.0.1
-      semver: 7.8.1
+      semver: 7.8.5
       typescript-auto-import-cache: 0.3.6
       vscode-languageserver-textdocument: 1.0.12
       vscode-nls: 5.2.0

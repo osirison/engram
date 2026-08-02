@@ -17,18 +17,20 @@ minimumReleaseAgeExclude:
   - recharts@3.9.1
 
 overrides:
-  multer: '>=2.2.0'
-  form-data: '>=4.0.6'
+  multer: '>=2.2.0 <3'
+  form-data: '>=4.0.6 <5'
   # Pin to the patched 6.x line: the unbounded '>=6.27.0' pulled undici 8.x into
   # @qdrant/js-client-rest (which needs ^6.24.0), breaking its REST transport
   # ("invalid onRequestStart method"). 6.27.0 is the patched 6.x release.
   undici: '>=6.27.0 <7'
-  hono: '>=4.12.25'
-  # Patched 8.0 line for GHSA-fx2h-pf6j-xcff (vite dev-server `server.fs.deny`
-  # bypass on Windows). Pulled transitively by Astro/Starlight (apps/docs). Kept
-  # on 8.0.x — the range Astro resolves today — and off the 8.1.x releases that
-  # are too new for the minimum-release-age gate.
-  vite: '>=8.0.16 <8.1.0'
+  hono: '>=4.12.25 <5'
+  # Patched floor for GHSA-fx2h-pf6j-xcff (vite dev-server `server.fs.deny`
+  # bypass on Windows). Pulled transitively by Astro/Starlight (apps/docs).
+  # Previously capped at <8.1.0 to stay under a minimum-release-age gate that no
+  # longer exists (see docs/ops/dependency-automation.md — the gate broke
+  # --frozen-lockfile and was moved to Renovate). That cap had gone stale and was
+  # holding the tree two minors back, so it is now bounded at the real major.
+  vite: '>=8.0.16 <9'
   # Patched 3.1.x line for GHSA-4c8g-83qw-93j6 / CVE-2026-13676 / CVE-2026-16221
   # (host confusion + policy-bypass via improper Unicode hostname handling).
   # Pulled transitively by ajv (^3). Kept in 3.x for ajv compatibility.
@@ -74,7 +76,11 @@ overrides:
   body-parser: '>=2.3.0 <3'
   # Inherited libvips CVEs. Also a direct dependency of apps/docs (bumped there
   # too); this covers the copy Next.js pulls into apps/web.
-  sharp: '>=0.35.0 <0.36'
+  # Bounded at <1, NOT <0.36 — sharp is the exception to the rule above. It does
+  # not backport to old minor lines: 0.34.5 was left vulnerable with no 0.34.6,
+  # and the fix required crossing 0.34 -> 0.35. A `<0.36` bound would therefore
+  # pin us below the next fix instead of ahead of it.
+  sharp: '>=0.35.0 <1'
   # Quadratic-complexity DoS via YAML merge-key chains. Both live majors are
   # affected and each has its own patch, so each line is raised in place rather
   # than collapsed: `@istanbuljs/load-nyc-config` needs js-yaml 3.x, whose
