@@ -217,17 +217,16 @@ model MemoryImportSource {
   @@map("memory_import_sources")
 }
 
-/// Migration checkpoint persisted in Postgres for profile-enterprise.
+/// Legacy checkpoint table from the retired file-store migration tooling.
 ///
-/// The profile-lite checkpoint lives in the file-backed JSON store; this
-/// row is the parallel representation used when the target profile is
-/// enterprise and Postgres is the authoritative source of truth.
+/// Both deployment profiles now share the same Postgres tables, so there is
+/// no data migration to check-point and no code reads or writes this model.
+/// The table is retained so dropping it can be a deliberate, separate
+/// database migration rather than a side effect of deleting dead code.
 ///
-/// `state` mirrors the enum in
-/// `apps/mcp-server/src/migration/migration.types.ts`. We store it as a
-/// `String` (not a Postgres enum) so the lifecycle can evolve without a
-/// schema migration; the Zod parser in the application enforces the
-/// closed set at read time.
+/// `state` is a `String` (not a Postgres enum) — it recorded the lifecycle
+/// `idle → preparing → copying → verifying → cutting_over → complete |
+/// rollback` of a migration run.
 model MigrationCheckpoint {
   id                 String    @id @default(cuid(2))
   sourceProfile      String

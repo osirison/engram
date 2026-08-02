@@ -82,8 +82,7 @@ maps to one or more executable artefacts.
 
 ## Security Gates
 
-Security gates are enforced by unit tests in `apps/mcp-server`, plus the
-secure-startup checks that run at process boot.
+Security gates are enforced by unit tests in `apps/mcp-server`.
 
 | Gate                                      | Test / probe                                                              | Threshold                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |

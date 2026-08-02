@@ -19,7 +19,6 @@ COPY packages/database/package.json packages/database/
 COPY packages/embeddings/package.json packages/embeddings/
 COPY packages/eslint-config/package.json packages/eslint-config/
 COPY packages/eval/package.json packages/eval/
-COPY packages/memory-lite/package.json packages/memory-lite/
 COPY packages/memory-ltm/package.json packages/memory-ltm/
 COPY packages/memory-stm/package.json packages/memory-stm/
 COPY packages/typescript-config/package.json packages/typescript-config/
