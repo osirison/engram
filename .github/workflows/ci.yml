@@ -200,7 +200,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
-          cache: 'pnpm'
+          # No `cache: 'pnpm'` here on purpose. This job audits lockfiles and
+          # never runs `pnpm install`, so the pnpm store is never created and
+          # the cache-save post-step fails the whole job with "Path Validation
+          # Error: Path(s) specified in the action for caching do(es) not
+          # exist". That was invisible while the audit step itself was red.
 
       - name: Audit production dependencies
         # High+ vulnerabilities in prod deps fail the build. The workspace
