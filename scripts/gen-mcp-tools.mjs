@@ -178,9 +178,9 @@ function indexPage() {
   lines.push('');
   lines.push('<!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->');
   lines.push('');
-  lines.push(`Engram registers **${tools.length} MCP tools**. Availability is further`);
-  lines.push('narrowed by the active deployment profile (the queue/reindex maintenance');
-  lines.push('tools require the enterprise profile).');
+  lines.push(`Engram registers **${tools.length} MCP tools**. Both deployment`);
+  lines.push('profiles (lite and standard) expose the full set; the tools marked');
+  lines.push('`admin` in the table below additionally require `MCP_ADMIN_TOKEN`.');
   lines.push('');
   lines.push('| Tool | Auth | Scope | Description |');
   lines.push('| ---- | ---- | ----- | ----------- |');

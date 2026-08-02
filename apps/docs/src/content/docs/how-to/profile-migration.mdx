@@ -1,129 +1,87 @@
 ---
-title: Migrate lite to enterprise
-description: Runbook for promoting a profile-lite deployment to profile-enterprise with dual-write, verification, cutover, and rollback.
+title: Migrate lite to standard
+description: Switch a lite deployment to the standard multi-tenant profile — no data migration, just a profile change plus auth configuration.
 sidebar:
   order: 6
 ---
 
-This runbook covers promoting a `profile-lite` deployment to
-`profile-enterprise`. The migration is dual-write, resumable, and verifies zero
-data loss before cutover. SLO targets live in the
-[release gates reference](/docs/reference/release-gates/).
+Both deployment profiles run on the **same PostgreSQL tables**. `lite` is the
+single-user profile with the auth/organization stack left unwired; `standard`
+(the default) adds the multi-tenant stack — authentication, per-agent API keys,
+organizations, and rate limits — on top of the identical storage.
+
+Because the data already lives in the same Postgres schema, promoting `lite` to
+`standard` requires **no data migration, backfill, or dual-write**. You switch
+`DEPLOYMENT_PROFILE` and supply auth configuration; the memories, short-term
+rows, and reindex job rows are already where `standard` expects them.
 
 If `pnpm` is not on your `PATH`, replace the leading `pnpm` in any command with
 `npm exec --yes pnpm@11.5.0 --`.
 
-:::caution[Steps 4–6 are aspirational — no operator entrypoint ships today]
-The migration tooling itself is real and tested
-(`apps/mcp-server/src/migration/` — dual-write coordinator, backfill service,
-verifier, and the `MigrationCheckpoint` state machine). What does **not**
-exist yet is an operator-facing entrypoint: the `verify-migration` /
-`cutover-migration` / `abort-migration` workspace scripts shown in steps 4–6
-are the *planned* interface and are **not present** in
-`apps/mcp-server/package.json`, nor is there an equivalent CLI, HTTP
-endpoint, or MCP tool.
-
-Today the state transitions are service methods only —
-`VerifierService.verify()`, `MigrationStateService.completeMigration()`, and
-`MigrationStateService.abortMigration()` — reachable solely from code running
-inside the server (for example a one-off bootstrap script that resolves them
-from the Nest application context). Until the scripts land, treat steps 4–6
-as the specification of that procedure, not as copy-pasteable commands.
+:::note[Profile names]
+`standard` is the current name; `enterprise` is accepted as a deprecated alias
+and coerces to `standard`. The old `memory` profile was removed — every profile
+now runs on Postgres.
 :::
 
-## Prerequisites
+## Step 1 — Prepare auth configuration
 
-- `profile-lite` deployment running with a known `LOCAL_ENCRYPTION_KEY`
-- Postgres reachable from the `profile-enterprise` host
-- Redis and Qdrant reachable from the `profile-enterprise` host
-- `MCP_ADMIN_TOKEN` set in both environments
-- A `profile-enterprise` build with the migration tooling enabled (the server
-  build from this repository)
-
-## Step 1 — Stop profile-lite writes
-
-Stop the `profile-lite` server cleanly so no in-flight writes remain
-unflushed. The on-disk `LiteJsonStore` writes atomically on every mutation, so
-a graceful shutdown leaves a consistent snapshot.
+`standard` served over `MCP_TRANSPORT=streamable-http` will **refuse to boot**
+without authentication configured — the fail-safe would otherwise serve every
+tenant unauthenticated with a client-controlled `userId`. Set the auth
+variables before switching the profile:
 
 ```bash
-# On the profile-lite host
-systemctl stop engram
-ls -la ~/.engram/data
-# Confirm every file is mode 0600
+# .env on the server host
+AUTH_REQUIRED=true
+JWT_SECRET=<at least 32 chars — openssl rand -base64 48>
 ```
 
-## Step 2 — Bring up profile-enterprise infrastructure
+See [Enable authentication](/docs/how-to/enable-auth/) for the JWT secret
+requirements, the boot fail-safe, and the `ALLOW_UNAUTHENTICATED_HTTP` escape
+hatch for a deliberately open, trusted-network deployment.
 
-On the new host, start Postgres, Redis, and Qdrant, then run the migrations.
+## Step 2 — Switch the profile
 
 ```bash
-DEPLOYMENT_PROFILE=enterprise pnpm docker:up
-DEPLOYMENT_PROFILE=enterprise pnpm db:generate
-DEPLOYMENT_PROFILE=enterprise pnpm db:migrate
+# .env on the server host
+DEPLOYMENT_PROFILE=standard
 ```
 
-The migration state machine starts at `idle`. No client traffic flows to
-`profile-enterprise` yet.
+`standard` is the default, so removing `DEPLOYMENT_PROFILE=lite` entirely has
+the same effect. Restart the server. No schema change and no `db:migrate` step
+is needed — the tables are unchanged.
 
-## Step 3 — Export and dual-write
+## Step 3 — Mint per-agent API keys
 
-Boot the `profile-enterprise` server with the migration tooling enabled. The
-dual-write coordinator begins streaming the `profile-lite` source into the
-`profile-enterprise` shadow store while the backfill service streams the
-historical snapshot.
+With `standard` active and `AUTH_REQUIRED=true`, every `/mcp` call must present
+a credential. Mint one least-privilege API key per agent:
 
 ```bash
-DEPLOYMENT_PROFILE=enterprise \
-LOCAL_ENCRYPTION_KEY="<source-key>" \
-  pnpm --filter mcp-server dev
+pnpm --filter mcp-server provision-agent-keys -- \
+  --agents claude-code,copilot,cursor --user qp \
+  --scopes memories:read,memories:write
 ```
 
-The state machine advances `idle → preparing → copying → verifying`. The
-`copying` phase streams in pages; the cursor is persisted on every page so an
-interrupted pass resumes from the last `(userId, memoryId)` pair with no
-duplicates.
+Each key prints once in plaintext (`eng_…`); wire it into each client as a
+Bearer credential. Full workflow: [Provision agent API keys](/docs/how-to/provision-agent-keys/).
 
-## Step 4 — Verify (count + hash comparison)
-
-Run the verifier (`VerifierService.verify()`) to confirm the `profile-lite`
-source matches the `profile-enterprise` shadow before allowing cutover. The
-command below is the planned interface (see the caution above):
+## Verify
 
 ```bash
-DEPLOYMENT_PROFILE=enterprise \
-LOCAL_ENCRYPTION_KEY="<source-key>" \
-  pnpm --filter mcp-server verify-migration
+curl http://localhost:3000/health/ready
+
+# A protected tools/call without an Authorization header must now return 401.
+curl -i -X POST http://localhost:3000/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_memories","arguments":{"userId":"qp"}},"id":1}'
 ```
 
-The verifier emits a JSON report and refuses to advance when the hard-stop
-fraction (`0.00001` default) is exceeded. Investigate any per-user count or
-content-hash mismatch before continuing. A passing report auto-advances the
-state to `cutting_over`.
+The same call with a valid `eng_…` key must succeed. The scripted checks in
+[Enable authentication](/docs/how-to/enable-auth/#verify) cover the rest.
 
-## Step 5 — Cutover
+## Rollback
 
-Once verification passes, complete the migration
-(`MigrationStateService.completeMigration()`; planned interface below):
-
-```bash
-DEPLOYMENT_PROFILE=enterprise \
-  pnpm --filter mcp-server cutover-migration
-```
-
-Re-point the client configuration to the `profile-enterprise` endpoint and
-restart the client. The `profile-lite` host remains in read-only shadow mode
-during the rollback window.
-
-## Step 6 — Rollback
-
-If `profile-enterprise` is unhealthy after cutover, abort the migration
-(`MigrationStateService.abortMigration()`; planned interface below):
-
-```bash
-DEPLOYMENT_PROFILE=enterprise \
-  pnpm --filter mcp-server abort-migration
-```
-
-Re-point the client back to `profile-lite` and start it. The on-disk state was
-never modified by the migration tooling, so the source remains readable.
+Set `DEPLOYMENT_PROFILE=lite` (and drop the auth requirement if you want the
+single-user posture back) and restart. The data was never moved, so the `lite`
+server reads the same tables unchanged.

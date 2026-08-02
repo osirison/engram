@@ -27,23 +27,23 @@ one shape.
 | `type` | `String` | `'short-term'` or `'long-term'` — the tier switch |
 | `version` | `Int @default(1)` | Optimistic-concurrency counter; bumped on every content update |
 | `expiresAt` | `DateTime?` | Set only for short-term memories; the TTL contract |
-| `embedding` | `Float[]` | Embedding as a float array — what the Qdrant backend syncs from |
-| `embeddingVec` | `Unsupported("vector(1536)")?` | Native pgvector column (`embedding_vec`) used by the pgvector backend |
+| `embedding` | `Float[]` | Embedding as a float array — the vector source of truth the pgvector index is derived from |
 | `createdAt` / `updatedAt` | `DateTime` | Recency signals for ranking and decay |
 
 Indexes back the hot paths: `(userId)`, `(userId, type)`, `(userId, scope)`,
 `(organizationId)`, `(organizationId, type)`, and `(expiresAt)`.
 
-### Why two embedding columns?
+### Why the embedding is a `Float[]`
 
-The vector store is a **derived index**, and Engram supports two backends
-([vector backends](/docs/architecture/vector-backends/)). `embedding Float[]`
-is portable — any backend (and the reindex pipeline) can read it back from
-Postgres. `embeddingVec` is the pgvector-native column that Postgres can index
-with HNSW; Prisma cannot type it, so it is declared `Unsupported`. Keeping the
-float array in Postgres regardless of backend is what makes
+The vector store is a **derived index**
+([vector store](/docs/architecture/vector-backends/)). The schema keeps only
+`embedding Float[]` — the portable source of truth the reindex pipeline reads
+back from Postgres. The pgvector-native column that Postgres indexes with HNSW,
+`embedding_vec`, is **not** in `schema.prisma`: it is runtime-managed,
+provisioned by `PgVectorStore.ensureReady` at the observed dimensionality and
+dropped/rebuilt on `reset()`. Keeping the float array in Postgres is what makes
 [reindex](/docs/architecture/reindex-backfill/) able to rebuild a lost vector
-store without calling the embeddings provider again.
+index without calling the embeddings provider again.
 
 ### The `metadata` JSON contract
 
@@ -88,7 +88,7 @@ simple:
 | `MemoryAudit` | Append-only trail for destructive ops (`update`/`delete`/`promote`/`reembed`/`restore`), with before/after snapshots — this is what `restore_memory` restores from |
 | `MemoryLink` | First-class typed edges between memories (`duplicate-of`, `contradicts`, wikilink-derived relations) |
 | `MemoryImportSource` | Idempotency ledger for `import_agent_memory`, including the `lastWrittenVersion` CAS baseline |
-| `MigrationCheckpoint` | State machine + cursor for the lite→enterprise migration tooling |
+| `MigrationCheckpoint` | State machine + cursor for the profile migration tooling |
 
 Notably absent: a soft-delete column. Deletes are hard, but every delete
 writes a `MemoryAudit` snapshot first, so `restore_memory` can recreate the

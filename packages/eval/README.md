@@ -67,7 +67,7 @@ const report = await runHarness(
 ```
 
 The `Retriever` callback may be synchronous or asynchronous, so a live vector
-search against Qdrant can be scored with the same harness.
+search against pgvector can be scored with the same harness.
 
 ## Hybrid fusion
 
@@ -126,8 +126,8 @@ baseline.
 
 `runLatencyBenchmark` measures search latency for any backend that implements
 the small `LatencyTarget` contract (`seed?`, `search`, `teardown?`). It is
-backend-agnostic: wrap a Qdrant or pgvector `VectorStore` to compare their
-percentiles under the same workload.
+backend-agnostic: wrap the pgvector `VectorStore` (or any `LatencyTarget`) to
+measure its percentiles under a given workload.
 
 ```ts
 import { runLatencyBenchmark } from '@engram/eval';
@@ -155,14 +155,14 @@ any threshold breaches. The clock is injectable (`now`) for deterministic tests.
 
 `createVectorStoreLatencyTarget` builds a `LatencyTarget` from any object that
 matches the minimal `VectorStoreLike` shape (`upsert`, `search`, optional
-`delete`). Both the Qdrant and pgvector backends satisfy it, so the eval package
-benchmarks either one without importing `@engram/vector-store`.
+`delete`). The pgvector backend satisfies it, so the eval package benchmarks it
+without importing `@engram/vector-store`.
 
 ```ts
 import { createVectorStoreLatencyTarget, runLatencyBenchmark } from '@engram/eval';
 
 const target = createVectorStoreLatencyTarget({
-  store, // QdrantVectorStore | PgVectorStore | any VectorStoreLike
+  store, // PgVectorStore | any VectorStoreLike
   records: fixtures, // [{ id, vector, metadata? }]
   queries: [{ vector: queryVector, limit: 10 }],
   cleanup: true, // delete seeded ids on teardown when supported

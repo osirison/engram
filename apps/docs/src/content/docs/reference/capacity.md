@@ -52,8 +52,6 @@ latency (~5–20 ms).
 
 Mitigations:
 
-- **Redis cache** — already wired in `EmbeddingsService`; 30-day TTL. Cache hit
-  rate is exported via `getPrometheusMetrics()` (`engram_embeddings_cacheHits_total`).
 - **Batch embeddings** (openai only) — OpenAI `/v1/embeddings` accepts up to
   2048 texts per request. Use `bulk ingest` (#127) to amortize API overhead.
 - **Local providers** — the default `ollama` provider embeds locally with real
@@ -91,22 +89,17 @@ Guidance:
   ```sql
   SET hnsw.ef_search = 128;
   ```
-- For > 1 M vectors: evaluate migrating to Qdrant, which handles large
-  collections with better memory control (`VECTOR_BACKEND=qdrant`).
-
-### 4. Redis (STM + embedding cache)
-
-Redis is used for STM keys and the embedding cache. Neither path is typically
-a bottleneck at < 500 concurrent clients. If Redis CPU becomes visible, enable
-cluster mode or move embedding cache to a separate Redis instance.
+- For > 1 M vectors: raise `PGVECTOR_HNSW_M` / `PGVECTOR_HNSW_EF_CONSTRUCTION`
+  at build time and add RAM so the HNSW index stays resident in Postgres
+  `shared_buffers` before pushing `ef_search` higher.
 
 ## Scaling Playbook
 
 ### Horizontal scaling (stateless compute)
 
-The MCP server is stateless — all state lives in Postgres, Redis, and Qdrant.
-Add server instances behind a load balancer and set a shared `DATABASE_URL`,
-`REDIS_URL`, and `QDRANT_URL`. No session stickiness is required.
+The MCP server is stateless — all state lives in Postgres. Add server
+instances behind a load balancer and set a shared `DATABASE_URL`. No session
+stickiness is required.
 
 ### Read replica for recall
 
@@ -125,8 +118,6 @@ client for search queries.
 | Component | When to scale up                                              |
 | --------- | ------------------------------------------------------------- |
 | Postgres  | RAM < 2 × working set (HNSW index must fit in shared_buffers) |
-| Redis     | Memory usage > 80% of `maxmemory`                             |
-| Qdrant    | RAM < 1.5 × total vector bytes                                |
 
 ### Connection pool sizing
 

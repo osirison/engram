@@ -1,6 +1,6 @@
 ---
 title: ENGRAM Embeddings Package
-description: Embedding generation and cache support for ENGRAM memory services
+description: Embedding generation for ENGRAM memory services
 ---
 
 ## Overview
@@ -8,7 +8,8 @@ description: Embedding generation and cache support for ENGRAM memory services
 `@engram/embeddings` provides a NestJS module for semantic embeddings. It is
 local-first: the default provider talks to a local Ollama server, with OpenAI
 available as an opt-in. A deterministic hash provider (testing) and a disabled
-provider round out the set, and generated embeddings can be cached in Redis.
+provider round out the set. Generated embeddings persist on memory rows
+(`embedding Float[]`); there is no cross-request embedding cache.
 
 The service returns `null` instead of throwing when embeddings are unavailable
 (Ollama not running, model not pulled, missing API key), so memory workflows

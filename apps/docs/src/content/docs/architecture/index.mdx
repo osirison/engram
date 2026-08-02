@@ -36,10 +36,10 @@ flowchart LR
   end
 
   subgraph Storage
-    STM["STM: Redis (TTL)<br/>or in-process"]
+    STM["STM: Postgres<br/>(memories table, TTL)"]
     LTM["LTM: Postgres<br/>(source of truth)"]
-    VS["Vector store<br/>Qdrant | pgvector"]
-    EMB["Embeddings<br/>OpenAI | local | disabled"]
+    VS["Vector store: pgvector<br/>(embedding_vec in Postgres)"]
+    EMB["Embeddings<br/>ollama | openai | local | disabled"]
   end
 
   A -->|tools/call| T --> AUTH --> RATE --> MC --> MS
@@ -49,7 +49,6 @@ flowchart LR
   MS --> EMB
   CONS --> STM
   CONS --> LTM
-  EMB -->|cache| STM
 ```
 
 *(Mermaid source — renders as a diagram on GitHub and in Mermaid-aware
@@ -64,20 +63,20 @@ rebuilt from Postgres at any time
 ([reindex & backfill](/docs/architecture/reindex-backfill/)), and short-term
 memories are deliberately allowed to expire
 ([memory tiers](/docs/architecture/memory-tiers/)). This ordering means a lost
-Qdrant volume or flushed Redis is an inconvenience, never data loss.
+or corrupted vector index is an inconvenience, never data loss.
 
-**One binary, three deployment profiles.** The same server runs with zero
-external services (`memory`), a single encrypted local store (`lite`), or the
-full Postgres + Redis + Qdrant stack (`enterprise`). Modules are wired
-conditionally from `ProfileCapabilities`, and the MCP tool list itself is
-filtered by profile — a profile never advertises a tool it cannot serve
+**One binary, two deployment profiles.** The same server runs single-user
+(`lite`, with the auth/organization stack left unwired) or multi-tenant
+(`standard`, the default). Both run on the same Postgres (with the pgvector
+extension) — the only backing service — and differ only in whether the auth
+stack is active. Modules are wired conditionally from `ProfileCapabilities`
 ([deployment profiles](/docs/architecture/deployment-profiles/)).
 
 **Degrade, don't fail.** Embeddings are optional at every seam: if the
 provider is disabled or unreachable, writes still succeed (vector-less) and
 recall falls back to what is available
 ([embeddings](/docs/architecture/embeddings/),
-[vector backends](/docs/architecture/vector-backends/)).
+[vector store](/docs/architecture/vector-backends/)).
 
 **The tenant boundary is the credential, not the request body.** With auth
 enabled, the verified key's `userId` overrides anything the client sends, and
@@ -96,9 +95,9 @@ consolidation — goes through version-guarded compare-and-set writes
 | ---- | -------- |
 | [Memory model](/docs/architecture/memory-model/) | The `Memory` row, its metadata JSON, versioning, and the supporting tables |
 | [Memory tiers](/docs/architecture/memory-tiers/) | STM vs LTM, TTLs, access counting, promotion |
-| [Deployment profiles](/docs/architecture/deployment-profiles/) | memory / lite / enterprise and `ProfileCapabilities` |
-| [Vector backends](/docs/architecture/vector-backends/) | Qdrant vs pgvector, and the in-process hybrid fallback |
-| [Embeddings](/docs/architecture/embeddings/) | Providers, Redis caching, null-safe degradation |
+| [Deployment profiles](/docs/architecture/deployment-profiles/) | lite / standard and `ProfileCapabilities` |
+| [Vector store](/docs/architecture/vector-backends/) | pgvector and the runtime-managed `embedding_vec` column |
+| [Embeddings](/docs/architecture/embeddings/) | Providers, dimensions, null-safe degradation |
 | [Reindex & backfill](/docs/architecture/reindex-backfill/) | Cursor-resumable rebuilds, the job queue |
 | [Auth & multi-tenancy](/docs/architecture/auth-and-multitenancy/) | Boot fail-safe, per-agent keys, scopes, delegation |
 | [Consolidation & decay](/docs/architecture/consolidation-and-decay/) | STM→LTM promotion, corpus consolidation, dedup, contradictions |

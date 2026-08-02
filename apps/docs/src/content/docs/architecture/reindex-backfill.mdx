@@ -1,6 +1,6 @@
 ---
 title: Reindex & backfill
-description: Why the vector index can always be rebuilt from Postgres — the cursor-resumable algorithm, per-item failure isolation, and the Redis-backed job queue.
+description: Why the vector index can always be rebuilt from Postgres — the cursor-resumable algorithm, per-item failure isolation, and the Postgres-backed job queue.
 sidebar:
   order: 7
 ---
@@ -57,22 +57,22 @@ recall is degraded until the backfill completes.
 | `queue_reindex_memories` + `get_reindex_status` / `cancel_reindex_job` / `retry_reindex_job` | Asynchronous job with persisted state | Large corpora, anything you would not want to block on |
 
 The queue (`apps/mcp-server/src/memory/reindex-queue.service.ts`) persists
-job state in Redis (24 h TTL) and processes jobs on a **single serial
-promise chain** — one reindex at a time, by design: concurrent full-corpus
-rebuilds would contend on the same vector store for zero benefit. Job states
+each job as a **Postgres job row** — progress, resume cursor, and audit
+events in the row's payload, refreshed with a 24 h TTL — and processes jobs on
+a **single serial promise chain** — one reindex at a time, by design:
+concurrent full-corpus rebuilds would contend on the same vector store for
+zero benefit. Job states
 (`queued → running → completed | failed | cancelled`) and every transition
 are audit-logged; `cancel` preserves the progress cursor, and `retry` resumes
 a failed or cancelled job **from that cursor** rather than starting over.
 
-Profile availability follows capability, not convention: `lite` keeps the
-synchronous tool but hides the queue tools (no Redis worker), `memory` hides
-all of them (no vector store) — see
+Both deployment profiles are Postgres-backed, so the synchronous tool and the
+queue tools are available in both — the queue's state lives in Postgres, the
+same store every profile provisions — see
 [Deployment profiles](/docs/architecture/deployment-profiles/).
 
 ## When reindex actually runs
 
-- **Backend switch** (`qdrant` ⇄ `pgvector`) — the new index starts empty;
-  backfill populates it. [Guide](/docs/how-to/change-vector-backend/).
 - **Embedding model/provider change** — vectors must be regenerated
   (`--regenerate`), not copied. [Guide](/docs/how-to/configure-embeddings/).
 - **Vector store loss** — restore-from-backup or plain rebuild;

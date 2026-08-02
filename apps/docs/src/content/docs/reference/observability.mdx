@@ -19,11 +19,9 @@ Exposed at `GET /health/metrics` in Prometheus text format.
 | `engram_consolidation_runs_total`          | counter   | `status`                | Consolidation scheduler runs (success/partial)                          |
 | `engram_reindex_operations_total`          | counter   | `status`                | Vector-store reindex operations                                         |
 | `engram_active_mcp_sessions`               | gauge     | —                       | Active Streamable HTTP MCP sessions                                     |
-| `engram_vector_backend_info`               | gauge     | `backend`               | Active vector backend (qdrant/pgvector)                                 |
+| `engram_vector_backend_info`               | gauge     | `backend`               | Active vector backend (always `pgvector`)                               |
 | `engram_deployment_profile_info`           | gauge     | `profile`               | Active deployment profile                                               |
 | `engram_pgvector_ready`                    | gauge     | —                       | Whether pgvector extension is reachable                                 |
-| `engram_embeddings_cache_hits_total`       | counter   | —                       | Embedding cache hits (from EmbeddingsService)                           |
-| `engram_embeddings_cache_misses_total`     | counter   | —                       | Embedding cache misses                                                  |
 | `engram_agent_memory_operations_total`     | counter   | `agent`, `op`, `status` | Store/recall ops per agent (API key) — primary-memory adoption (WP5)    |
 
 Standard Node.js process metrics (`process_cpu_seconds_total`,

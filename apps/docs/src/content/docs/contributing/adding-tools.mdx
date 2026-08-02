@@ -8,7 +8,7 @@ sidebar:
 Every MCP tool in Engram follows one pattern: a **strict Zod input schema**, a
 **typed handler**, and a **tool definition object** that ties them together.
 Shared, dependency-free tools live in `packages/core/src/mcp/tools/`;
-app-level tools that need NestJS services (Prisma, Redis, embeddings) are built
+app-level tools that need NestJS services (Prisma, embeddings) are built
 in `apps/mcp-server` and registered at boot.
 
 ## 1. Define the schema, handler, and definition

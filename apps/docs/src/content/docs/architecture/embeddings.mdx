@@ -1,6 +1,6 @@
 ---
 title: Embeddings
-description: Why embedding generation is optional at every seam — provider selection, Redis caching, and the null-return degradation contract.
+description: Why embedding generation is optional at every seam — provider selection, dimension resolution, and the null-return degradation contract.
 sidebar:
   order: 6
 ---
@@ -53,27 +53,22 @@ Three properties of this lineup are intentional:
   absent, embedding generation is silently disabled and writes proceed
   vector-less — same contract as `disabled`.
 
-## Redis caching
+## No cross-request cache
 
-Embedding calls are cached in Redis under a deterministic key derived from
-`(text, model)`, with TTL `EMBEDDING_CACHE_TTL` (default 30 days) — the key
-format is the same for every provider, and because the model id is part of
-it, switching models never serves stale vectors. The cache exists because
-agent workloads re-embed the same strings constantly — recall queries repeat,
-dedup checks re-embed recent content, and reindex passes re-touch the corpus.
-A content-keyed cache makes those calls free and idempotent. Cache
-hits/misses are exported as metrics
-([observability](/docs/reference/observability/)).
-
-Under profiles without Redis, the cache is simply absent — same interface,
-no caching layer.
+There is no cross-request embedding cache. Each embedding call generates a
+vector from the provider, and that vector is persisted on the memory row
+(`embedding Float[]`) — the single place a vector is stored.
+[Reindex](/docs/architecture/reindex-backfill/) and backfill reuse those
+stored `Float[]` embeddings by default rather than re-embedding, so rebuilding
+the vector index costs no provider calls. Generated vectors live with their
+rows; there is no separate cache layer to size, expire, or operate.
 
 ## Dimensions are resolved, not assumed
 
 The pipeline resolves its dimensionality in strict precedence order:
 
 1. **`VECTOR_DIMENSIONS`** — an optional strict pin. When set, the vector
-   backends verify the index against it and throw an actionable error on
+   store verifies the index against it and throws an actionable error on
    mismatch. It no longer defaults to 1536.
 2. **The known-model map** — `MODEL_DIMENSIONS` in `@engram/embeddings`:
    `nomic-embed-text` 768, `mxbai-embed-large` 1024, `all-minilm` 384,
@@ -82,8 +77,8 @@ The pipeline resolves its dimensionality in strict precedence order:
 3. **The actual vector** — arbitrary model ids are allowed; an unknown model
    gets its dimensions from the first vector it produces.
 
-When nothing pins the size up front, both backends infer dimensionality from
-the first upserted vector and provision themselves accordingly. Switching
+When nothing pins the size up front, the store infers dimensionality from
+the first upserted vector and provisions itself accordingly. Switching
 models with a different dimensionality (e.g. `nomic-embed-text` →
 `text-embedding-3-small`) is therefore a **reindex event**: existing vectors
 are incompatible with the new index shape. The procedure — recreate the index
@@ -102,6 +97,6 @@ and regenerate rather than reuse stored embeddings — is in
 | Key revoked / quota exhausted | Same as provider down — degrade, log, continue |
 
 This is the same philosophy as the
-[vector backend design](/docs/architecture/vector-backends/): Postgres is the
+[vector store design](/docs/architecture/vector-backends/): Postgres is the
 source of truth, everything derived can be regenerated, so no derived-state
 failure is allowed to block a write.

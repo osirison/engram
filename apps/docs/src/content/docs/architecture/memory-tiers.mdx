@@ -20,16 +20,12 @@ where rows live, how long they live, and which jobs touch them.
 
 ## STM: expiry as a feature
 
-`MemoryStmService` (`packages/memory-stm`) stores short-term memories in
-Redis under namespaced keys built by `StmKeyBuilder`:
-
-```
-memory:stm:{userId}:{memoryId}
-memory:stm:{organizationId}:{userId}:{memoryId}   # org-scoped
-```
+`PostgresStmAdapter` (`packages/memory-stm`) stores short-term memories as
+rows in the shared `memories` table — `type: 'short-term'` with an
+`expiresAt` timestamp — injected through the `STM_PROVIDER` token.
 
 Every STM write carries a TTL — **default 86 400 s (24 h)**, clamped to
-[60 s, 7 d] — and Redis expiry is the deletion mechanism. Nothing has to
+[60 s, 7 d] — recorded as `expiresAt`. Nothing an agent does has to
 garbage-collect stale session facts; they evaporate. This is why transient
 state belongs in STM: forgetting is free.
 
@@ -40,10 +36,11 @@ Two details matter for the rest of the system:
   re-reading is evidently not transient. See
   [Consolidation & decay](/docs/architecture/consolidation-and-decay/) for the
   promotion pass (`STM_CONSOLIDATION_ACCESS_THRESHOLD`, default 3).
-- **No Redis, no problem.** Under the `memory` profile there is no Redis;
-  `InMemoryStmAdapter` provides the same interface over an in-process map
-  with timer-based expiry. Same semantics, zero services — see
-  [Deployment profiles](/docs/architecture/deployment-profiles/).
+- **One table, swept clean.** STM rows live in the same `memories` table as
+  LTM (one [model](/docs/architecture/memory-model/), two lifecycles), so
+  promotion is a field update, not a cross-store copy. Expiry is the only
+  STM-specific mechanic: reads exclude rows past `expiresAt`, and
+  `StmSweepService` (`STM_SWEEP_INTERVAL_MS`) deletes them in the background.
 
 ## LTM: durability plus lifecycle
 
@@ -57,10 +54,8 @@ follow asynchronously. LTM rows are the only rows that:
 - are subject to decay, pruning, and corpus consolidation,
 - carry the audit trail and version CAS guarantees.
 
-Under the `lite` profile, LTM swaps Postgres for `LiteJsonStore`
-(`packages/memory-lite`): per-memory encrypted JSON files
-(AES-256-GCM with `LOCAL_ENCRYPTION_KEY`) under `~/.engram/data`. Same
-service contract, single-user storage.
+Both profiles persist LTM to the same Postgres store; the profile only
+changes whether the multi-tenant auth stack sits in front of it.
 
 ## Crossing the boundary
 

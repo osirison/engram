@@ -14,13 +14,12 @@ the human-facing dashboard and broader platform features.
 
 ## Where we are
 
-The foundation is built: the NestJS MCP server, Postgres and Prisma, Redis
-short-term memory, Postgres long-term memory, an embeddings package, a Qdrant
-vector-store package, health checks, and memory CRUD MCP tools.
+The foundation is built: the NestJS MCP server, Postgres and Prisma,
+Postgres-backed short-term and long-term memory, an embeddings package, a
+pgvector vector-store package, health checks, and memory CRUD MCP tools.
 
-One core gap drives the plan below: embeddings are generated and stored, but no
-vector index is populated and there is no semantic recall path yet. Closing that
-gap is the first priority.
+The vector lifecycle is wired end-to-end: embeddings are generated, indexed in
+pgvector, and served through the semantic `recall` path.
 
 ## Delivery waves
 
@@ -48,7 +47,7 @@ Each wave maps to a GitHub milestone and a set of epics. Track work through the
 
 ## Near-term sequence
 
-1. Define the vector-store abstraction over Qdrant and pgvector (#105).
+1. Define the vector-store abstraction over pgvector (#105).
 2. Wire vector upsert and delete into the long-term memory lifecycle (#107).
 3. Implement semantic kNN search and the `recall` MCP tool (#108, #109).
 4. Stand up the relevance evaluation harness to keep recall quality honest (#113).

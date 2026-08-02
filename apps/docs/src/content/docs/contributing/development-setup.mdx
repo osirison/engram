@@ -14,15 +14,16 @@ if `pnpm` is not installed globally, replace the leading `pnpm` with
 ```bash
 pnpm install
 test -f .env || cp .env.example .env    # then edit as needed
-pnpm docker:up                          # starts PostgreSQL, Redis, Qdrant
+pnpm docker:up                          # starts PostgreSQL (pgvector)
 pnpm db:generate                        # generate Prisma client
 pnpm db:migrate                         # run migrations
 pnpm build
 pnpm --filter mcp-server dev            # MCP server on http://localhost:3000
 ```
 
-This is the `enterprise` profile flow (the default). For lighter profiles and
-the full walkthrough, see [Installation](/docs/getting-started/installation/).
+This is the `standard` profile flow (the default). For the single-user `lite`
+profile and the full walkthrough, see
+[Installation](/docs/getting-started/installation/).
 
 ## Quality checks
 

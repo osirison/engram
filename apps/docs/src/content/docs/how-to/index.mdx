@@ -15,9 +15,9 @@ the *why* behind these procedures, see [Architecture](/docs/architecture/).
 | Guide | Task |
 | ----- | ---- |
 | [Deploy to production](/docs/how-to/deploy-production/) | Build and run the hardened Docker image, compose file, health checks |
-| [Back up and restore](/docs/how-to/backup-and-restore/) | pg_dump, Redis BGSAVE, Qdrant snapshots, retention, restore drills |
+| [Back up and restore](/docs/how-to/backup-and-restore/) | pg_dump, retention policy, restore drills |
 | [Enable observability](/docs/how-to/enable-observability/) | Prometheus metrics scraping and OpenTelemetry tracing |
-| [Migrate lite to enterprise](/docs/how-to/profile-migration/) | Promote a profile-lite deployment to the full stack |
+| [Migrate lite to standard](/docs/how-to/profile-migration/) | Switch a lite deployment to the standard multi-tenant profile |
 
 ## Secure it
 
@@ -30,8 +30,7 @@ the *why* behind these procedures, see [Architecture](/docs/architecture/).
 
 | Guide | Task |
 | ----- | ---- |
-| [Change vector backend](/docs/how-to/change-vector-backend/) | Switch Qdrant ⇄ pgvector and backfill the new index |
-| [Configure embeddings](/docs/how-to/configure-embeddings/) | Providers, cache TTL, and safe model/dimension changes |
+| [Configure embeddings](/docs/how-to/configure-embeddings/) | Providers and safe model/dimension changes |
 | [Reindex embeddings](/docs/how-to/reindex-embeddings/) | Rebuild the vector store — CLI flags and the queued admin tools |
 
 ## Move data in

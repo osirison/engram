@@ -83,8 +83,8 @@ so recency decay does not bury them.
 
 **Store:**
 
-1. **Decisions & rationale** — "we chose pgvector over Qdrant because X"; the
-   architectural choice _and why_.
+1. **Decisions & rationale** — "we chose pgvector over a standalone vector
+   service because X"; the architectural choice _and why_.
 2. **Conventions & preferences** — coding style, commit format, tools qp prefers,
    naming rules.
 3. **Environment & wiring facts** — non-secret config, service URLs, ports, how

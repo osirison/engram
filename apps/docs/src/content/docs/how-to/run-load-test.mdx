@@ -19,7 +19,7 @@ the [capacity reference](/docs/reference/capacity/).
 
 - Postgres reachable at `DATABASE_URL`, with the Engram schema migrated and
   the pgvector extension available (`pgvector/pgvector:pg16+` image).
-- Nothing else — no Redis, no Qdrant, no API keys.
+- Nothing else — no other services, no API keys.
 
 Use a **disposable database**: the test writes real rows (tagged
 `load-test`).
@@ -69,9 +69,8 @@ Compare your numbers against the latency budgets in the
 ## Scope: what this does not measure
 
 The script bypasses the MCP transport, auth middleware, rate limiting, and
-the embeddings provider — it isolates storage-layer throughput. For
-per-backend *search* latency comparisons (Qdrant vs pgvector), use
-`pnpm bench:backends` instead
+the embeddings provider — it isolates storage-layer throughput. For pgvector
+*search* latency percentiles specifically, use `pnpm bench:backends` instead
 ([Write evaluations](/docs/how-to/write-evaluations/#latency-benchmarking)).
 
 ## Cleanup
