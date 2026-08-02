@@ -200,13 +200,32 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
-          cache: 'pnpm'
+          # No `cache: 'pnpm'` here on purpose. This job audits lockfiles and
+          # never runs `pnpm install`, so the pnpm store is never created and
+          # the cache-save post-step fails the whole job with "Path Validation
+          # Error: Path(s) specified in the action for caching do(es) not
+          # exist". That was invisible while the audit step itself was red.
 
-      - name: Audit production dependencies
-        # High+ vulnerabilities in prod deps fail the build. The workspace
-        # already carries manual CVE overrides in pnpm-workspace.yaml; this
-        # step surfaces the next one automatically instead of by hand.
-        run: pnpm audit --prod --audit-level=high
+      - name: Audit dependencies
+        # High+ vulnerabilities fail the build. Deliberately NOT `--prod`: the
+        # dev tree is the build toolchain, a compromised one reaches the
+        # published artefacts just as surely, and scoping to prod meant four
+        # dev-dependency advisories sat unnoticed because nothing could ever go
+        # red for them. The workspace carries manual CVE floors in
+        # pnpm-workspace.yaml; this step surfaces the next one instead of
+        # someone finding it by hand.
+        run: pnpm audit --audit-level=high
+
+      - name: Audit marketing-site
+        # apps/marketing-site is outside the pnpm workspace and has its own
+        # package-lock.json, so `pnpm audit` above cannot see it at all — and
+        # it went unwatched long enough to accumulate two high advisories while
+        # being publicly deployed to Pages. Audited in full (not --omit=dev):
+        # the deployed artefact is `dist/`, not node_modules, but this site is
+        # prerendered, so its "dev" dependencies are the toolchain that RUNS to
+        # produce that artefact and a compromised one can poison the output.
+        working-directory: apps/marketing-site
+        run: npm audit --audit-level=high
 
   renovate-config:
     name: Renovate config
@@ -306,14 +325,22 @@ jobs:
 
       - name: Install trivy (pinned + cached)
         # Standalone setup-trivy instead of trivy-action's built-in installer
-        # (#208): trivy-action v0.33.1 defaults to trivy v0.65.0, whose release
-        # assets were removed upstream, so the built-in install 404s on every
-        # run (the "flaky download" was actually a permanent 404). Pin a live
+        # (#208): the action's default trivy version has had its release assets
+        # removed upstream before, so the built-in install 404s on every run
+        # (the "flaky download" was actually a permanent 404). Pin a live
         # version here and cache the binary via actions/cache so post-warmup
         # runs never touch the GitHub release download at all.
         # When bumping `version`, keep it to a tag that still has release
         # assets: https://github.com/aquasecurity/trivy/releases
-        uses: aquasecurity/setup-trivy@v0.3.1
+        #
+        # SHA-pinned, not tag-pinned. Both aquasecurity actions were hit by
+        # GHSA-69fq-xp46-6x23, in which every existing tag was force-pushed to
+        # a malicious commit — so a tag is not a safe reference for these two
+        # specifically, and moving the tag forward would not have helped. This
+        # tag (v0.3.1, 2026-06-03) post-dates the incident; the pin is what
+        # makes it stay that way. `version:` below must also stay off the
+        # compromised trivy releases v0.69.4–v0.69.6.
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: v0.72.0
           cache: true
@@ -325,7 +352,12 @@ jobs:
         # flip (npm's vendored picomatch/sigstore CVEs are dropped from the
         # runtime image in apps/mcp-server/Dockerfile). `ignore-unfixed` keeps
         # unpatchable OS findings from reddening builds we cannot act on.
-        uses: aquasecurity/trivy-action@v0.33.1
+        # v0.36.0 clears GHSA-69fq-xp46-6x23 (critical — 76 of 77 trivy-action
+        # tags were hijacked; 0.35.0 is the safe floor) and the 0.34.0 fix for
+        # a script injection via a sourced env file in this composite action.
+        # SHA-pinned for the same reason as setup-trivy above. Every input
+        # passed below is still declared in 0.36.0's action.yaml.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
           TRIVY_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Primary DB mirror plus ghcr fallback so an anonymous-pull rate

@@ -11,7 +11,13 @@ import { auth } from '@/auth';
  * without a session; tRPC enforces auth in its own context.
  */
 export default auth((req) => {
-  if (req.auth) return NextResponse.next();
+  // Check `.user`, not bare truthiness. GHSA-8fpg-xm3f-6cx3 (critical) was
+  // exactly this: on a server-side Auth.js config error the session endpoint's
+  // JSON *error body* was assigned to `req.auth`, and being truthy it let every
+  // visitor through — auth failing open. next-auth 5.0.0-beta.32 fixes that at
+  // source (non-OK responses now yield null), so this is defence in depth, and
+  // it matches the guards in server/trpc/trpc.ts and app/(dashboard)/layout.tsx.
+  if (req.auth?.user) return NextResponse.next();
 
   const signInUrl = new URL('/signin', req.nextUrl.origin);
   const target = `${req.nextUrl.pathname}${req.nextUrl.search}`;
