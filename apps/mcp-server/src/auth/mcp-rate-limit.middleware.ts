@@ -30,7 +30,7 @@ function jsonRpcId(body: unknown): unknown {
 }
 
 /**
- * Express middleware for `/mcp` applying Redis-backed fixed-window rate limits.
+ * Express middleware for `/mcp` applying Postgres-backed fixed-window rate limits.
  * Authenticated requests are metered per-user (and per-org when applicable);
  * unauthenticated requests are metered per client IP. Per-tool overrides apply
  * to the user/IP bucket. Exceeding any applicable bucket yields a 429 with

@@ -1,7 +1,7 @@
 import { cursorIdSchema, userIdSchema } from '@engram/database';
 import { z } from 'zod';
 
-// A page cursor is either an LTM id cursor (cuid) or a Redis SCAN cursor
+// A page cursor is either an LTM id cursor (cuid) or a Postgres STM cursor
 // (non-negative integer string) used when paging the short-term tier. Accepting
 // both lets `list_memories(type: 'short-term')` page STM through the same tool
 // instead of a bespoke one (WP2 T2/D1).

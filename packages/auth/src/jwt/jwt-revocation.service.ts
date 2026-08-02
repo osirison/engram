@@ -4,7 +4,7 @@
  * JWTs are stateless: once issued, an HS256 token verifies until `exp`
  * (7 days by default) no matter what happens server-side. This service makes
  * individual tokens revocable by recording their `jti` in a denylist store
- * (Redis in the host app) with a TTL equal to the token's *remaining*
+ * (Postgres in the host app) with a TTL equal to the token's *remaining*
  * lifetime — the entry expires exactly when the token itself would, so the
  * denylist never grows beyond the set of still-live revoked tokens.
  *
@@ -22,7 +22,7 @@ const DENYLIST_PREFIX = 'auth:jwt:denylist:';
 
 /**
  * Key/value store backing the `jti` denylist. Structurally a subset of
- * `SessionStore`, so the host's Redis session store satisfies it as-is.
+ * `SessionStore`, so the host's Postgres session store satisfies it as-is.
  * Every write carries an explicit TTL so entries cannot leak.
  */
 export interface JwtDenylistStore {

@@ -210,7 +210,7 @@ export class AuthController {
 
   /**
    * Logout invalidates *both* halves of the interactive credential pair:
-   * the Redis session named by the cookie, and the JWT via the `jti`
+   * the Postgres session named by the cookie, and the JWT via the `jti`
    * denylist (entry TTL = remaining token lifetime). The JWT is found from
    * the session record (which stores the paired `jti`/`exp`) and/or the
    * `Authorization: Bearer` header on the logout request itself.

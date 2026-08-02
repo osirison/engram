@@ -127,7 +127,7 @@ jobs:
       - run: pnpm db:migrate:deploy
       - run: pnpm test
 
-  # ─── smoke: profile-lite (Postgres + encrypted local store) ───────────
+  # ─── smoke: profile-lite (Postgres only) ─────────────────────────────
   smoke-profile-lite:
     name: Smoke (profile=lite)
     runs-on: ubuntu-latest
@@ -149,7 +149,6 @@ jobs:
     env:
       DEPLOYMENT_PROFILE: lite
       DATABASE_URL: postgresql://test:test@localhost:5432/engram_test
-      LOCAL_DATA_DIR: /tmp/engram-lite-smoke
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -159,16 +158,12 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-      - name: Generate encryption key
-        run: echo "LOCAL_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> $GITHUB_ENV
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       - run: pnpm db:migrate:deploy
       - run: pnpm build
       - name: Boot profile-lite
         run: |
-          mkdir -p "$LOCAL_DATA_DIR"
-          chmod 0700 "$LOCAL_DATA_DIR"
           pnpm --filter mcp-server start:prod &
           SERVER_PID=$!
           for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
@@ -193,14 +188,10 @@ jobs:
         run: |
           curl -sf http://127.0.0.1:3000/health/metrics \
             | grep -E '^engram_deployment_profile_info\{profile="lite"\} 1$'
-      - name: Encrypted data dir perms
-        run: |
-          stat -c '%a' "$LOCAL_DATA_DIR" | grep -q '^700$'
       - name: Cleanup
         if: always()
         run: |
           pkill -f 'apps/mcp-server/dist/main.js' || true
-          rm -rf "$LOCAL_DATA_DIR"
 
   # ─── smoke: profile-standard (Postgres only) ──────────────────────────
   smoke-profile-standard:

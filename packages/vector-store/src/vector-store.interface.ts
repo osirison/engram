@@ -78,7 +78,7 @@ export interface VectorSearchResult {
 /**
  * Backend-agnostic vector storage contract.
  *
- * Implementations wrap a concrete engine (Qdrant, pgvector, ...) so the memory
+ * Implementations wrap a concrete engine (pgvector) so the memory
  * layer can perform the vector lifecycle (upsert / delete / search) without
  * depending on a specific database.
  */

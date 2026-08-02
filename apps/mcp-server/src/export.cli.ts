@@ -11,7 +11,7 @@
  * Options:
  *   --user <id>        Owner whose memories to export (required)
  *   --out <dir>        Output directory (default ./engram-export)
- *   --include-stm      Also export short-term (Redis) memories (default off)
+ *   --include-stm      Also export short-term memories (default off)
  *   --tag <t>          Only memories carrying this tag (repeatable)
  *   --scope <s>        Only memories in this scope namespace
  *   --type <t>         Restrict to one tier: short-term | long-term

@@ -1696,7 +1696,7 @@ export class MemoryController {
    * that profile-memory does not advertise tools that depend on
    * external services, and profile-lite keeps the synchronous reindex
    * while hiding the resumable-queue / cancellation tools that rely
-   * on a BullMQ worker.
+   * on the Postgres-backed reindex queue.
    */
   getMcpTools(): Tool[] {
     // Handlers, bound to this controller instance, keyed by tool name. The tool

@@ -215,8 +215,8 @@ export interface ListMemoryOptions {
   tags?: string[];
   search?: string;
   /**
-   * Restrict the listing to a single tier. `'short-term'` queries Redis (STM)
-   * only, paging via its SCAN cursor; `'long-term'` queries Postgres (LTM) only.
+   * Restrict the listing to a single tier. `'short-term'` queries the Postgres STM store
+   * only, paging via its cursor; `'long-term'` queries Postgres (LTM) only.
    * When omitted, both tiers are merged (legacy behaviour — do not build stable
    * pagination on the merge; see `listMemories`).
    */
@@ -456,7 +456,7 @@ export class MemoryService {
     // on every page (its cursor only advances LTM), so any caller that needs
     // stable pagination asks for exactly one tier.
     if (options.type === 'short-term') {
-      // STM only — page through Redis via its SCAN cursor.
+      // STM only — page through the Postgres STM store via its cursor.
       const stm = await this.stm.list(userId, {
         limit,
         cursor: options.cursor,
