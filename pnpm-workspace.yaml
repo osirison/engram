@@ -94,6 +94,16 @@ overrides:
   'brace-expansion@^1': '>=1.1.18 <2'
   'brace-expansion@^2': '>=2.1.4 <3'
   'brace-expansion@^5': '>=5.0.9 <6'
+  # --- 2026-08-05 -----------------------------------------------------------
+  # SSRF / trust-boundary bypass: Address4 decodes leading-zero octets as
+  # decimal ('010.0.0.1' -> 10.0.0.1) while the resolver that later dials the
+  # host reads them as octal, so an allowlist check and the connection it
+  # guards can disagree about which address was meant.
+  # GHSA-mwp4-54f8-5fhr / CVE-2026-69192, fixed in 10.3.1.
+  # Pulled transitively via @modelcontextprotocol/sdk > express-rate-limit on
+  # five workspace paths; nothing depends on it directly. Only 10.x is live, so
+  # the bound is the real major.
+  ip-address: '>=10.3.1 <11'
 
 # Allow openai to use zod v4 (openai declares a peer dep on zod ^3 but only uses
 # it for its optional structured-output helpers, which we don't use).
