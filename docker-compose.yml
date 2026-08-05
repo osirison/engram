@@ -7,7 +7,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-engram}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      # Bound to loopback: a bare '5432:5432' publishes on 0.0.0.0, and Docker's
+      # DNAT traverses FORWARD, bypassing the host firewall zone entirely.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -26,7 +28,8 @@ services:
     container_name: engram-ollama
     profiles: ['ollama']
     ports:
-      - '${OLLAMA_PORT:-11434}:11434'
+      # Loopback only: Ollama has no authentication whatsoever.
+      - '127.0.0.1:${OLLAMA_PORT:-11434}:11434'
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
