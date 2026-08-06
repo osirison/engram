@@ -60,10 +60,10 @@
     "turbo": "^2.9.16",
     "typescript": "^6.0.3"
   },
-  "packageManager": "pnpm@11.5.0",
+  "packageManager": "pnpm@11.8.0",
   "engines": {
     "node": ">=22.13.0",
-    "pnpm": ">=8.0.0"
+    "pnpm": ">=11.8.0"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.8.0",
