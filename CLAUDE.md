@@ -113,7 +113,7 @@ Dependency-free harness for scoring retrieval quality (precision@k, recall@k, MR
 - **Zod for validation** — all MCP tool inputs and DTO boundaries use Zod `.strict()` schemas.
 - **NestJS DI throughout** — inject `PrismaService`, `RedisService`, `EmbeddingsService` (with `@Optional()` where the service may be absent).
 - **Shared behavior in `packages/*`** — do not duplicate cross-cutting logic in the app.
-- **Conventional commits** — `type(scope): summary (#issue)`. Branch names: `feat/mcp-tools-#24`, `fix/health-timeout-#19`.
+- **Conventional commits** — `type(scope): summary (#issue)`. Branch names: `feat/mcp-tools-24`, `fix/health-timeout-19`. **Never put `#` in a branch name.** Worktrees are created at `.worktrees/<branch>`, so a `#` lands in the project path, and Vite/Astro refuse to load a config from such a path — `pnpm build` then fails at `docs#build` alone with "Unable to load your Astro config", which reads as a docs regression rather than a path problem. CI checks out to a clean path and never sees it. Reference the issue in the commit subject instead, where it also drives issue linking.
 - **Postgres is source of truth** — the vector store is a derived index; per-item failures during reindex are counted and skipped without corrupting Postgres.
 - **pgvector Docker** — integration tests and pgvector backend require `pgvector/pgvector:pg16+`; plain `postgres:*-alpine` images lack the extension.
 
