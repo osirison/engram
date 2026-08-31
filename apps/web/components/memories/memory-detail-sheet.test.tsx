@@ -209,7 +209,19 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
   });
 
   it('preserves the operator’s unsaved text after reloading the latest version', async () => {
-    h.refetch.mockResolvedValue({ data: fixture({ content: 'server content', version: 4 }) });
+    // `reloadLatest` stashes the draft, awaits a refetch, and only then replaces
+    // the editor's text. Those are two separate flushes, and between them the
+    // draft string is present TWICE — in the stashed <p> and still in the
+    // textarea. Resolving the refetch by hand pins that interleaving instead of
+    // letting an already-resolved promise collapse it, which is what made this
+    // test pass locally and fail under CI load.
+    let resolveRefetch!: (value: unknown) => void;
+    h.refetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRefetch = resolve;
+        })
+    );
     renderWithClient(<MemoryDetailSheet userId="qp" memoryId="m1" open onOpenChange={vi.fn()} />);
     fireEvent.click(screen.getByText('Edit'));
     const textarea = screen.getByLabelText('Memory content');
@@ -221,10 +233,21 @@ describe('MemoryDetailSheet — version conflict (WP2 T4)', () => {
 
     fireEvent.click(screen.getByText('Reload latest'));
 
+    // Mid-reload: the draft is stashed and the editor has not been replaced yet,
+    // so the text legitimately appears in both nodes.
     await waitFor(() => expect(screen.getByText('Your previous unsaved edit')).toBeInTheDocument());
-    // The stashed draft is shown; the editor now holds the server's latest text.
+    expect(screen.getByLabelText('Memory content')).toHaveValue('my unsaved edit');
+
+    await act(async () => {
+      resolveRefetch({ data: fixture({ content: 'server content', version: 4 }) });
+    });
+
+    // Settled: the editor holds the server's latest text and the stashed draft
+    // is the only remaining copy of what the operator had typed.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Memory content')).toHaveValue('server content')
+    );
     expect(screen.getByText('my unsaved edit')).toBeInTheDocument();
-    expect(screen.getByLabelText('Memory content')).toHaveValue('server content');
   });
 });
 
