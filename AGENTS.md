@@ -103,9 +103,17 @@ Useful branch examples:
 
 ```text
 docs/simplify-onboarding-docs
-feat/mcp-tools-#24
-fix/health-timeout-#19
+feat/mcp-tools-24
+fix/health-timeout-19
 ```
+
+Never put `#` in a branch name. Worktrees live at `.worktrees/<branch>`, so the
+`#` becomes part of the project path, and Vite/Astro refuse to load a config
+from a path containing it: `pnpm build` fails at `docs#build` alone with
+"Unable to load your Astro config", which looks like a docs regression rather
+than a path problem. CI checks out to a clean path, so it only breaks locally.
+Put the issue reference in the commit subject (`type(scope): summary (#issue)`)
+and in the PR body (`Closes #issue`) — those are what actually link the issue.
 
 ## Documentation Rules
 
