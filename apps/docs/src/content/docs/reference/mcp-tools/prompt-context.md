@@ -1,11 +1,11 @@
 ---
 title: "prompt_context"
-description: "Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant."
+description: "Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant. Every response carries retrievalMode: normally \"semantic\", but \"lexical\" when no embedding provider is configured, in which case memories are matched by keyword, minScore is scored on that different scale, and a thin or empty result is not evidence that nothing relevant is stored."
 ---
 
 <!-- AUTO-GENERATED — do not edit by hand. Run `pnpm docs:generate`. -->
 
-Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant.
+Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant. Every response carries retrievalMode: normally "semantic", but "lexical" when no embedding provider is configured, in which case memories are matched by keyword, minScore is scored on that different scale, and a thin or empty result is not evidence that nothing relevant is stored.
 
 **Auth mode:** `identity`  
 **Required scope:** `memories:read`  

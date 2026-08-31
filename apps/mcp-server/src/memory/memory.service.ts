@@ -317,6 +317,8 @@ export interface ReflectResult {
   sourceIds: string[];
   memoryCount: number;
   dateRange: { earliest: string; latest: string } | null;
+  /** How the source memories were retrieved. `lexical` means keyword matching, not meaning. */
+  retrievalMode: RetrievalMode;
 }
 
 export interface ContextBlock {
@@ -325,6 +327,13 @@ export interface ContextBlock {
   memoryCount: number;
   truncated: boolean;
   charCount: number;
+  /**
+   * How the memories were retrieved — present only for query-driven assembly
+   * (`compressContext`). Absent for `loadContext`, which lists by recency and
+   * importance and never runs a semantic search, so it has no mode to report
+   * and cannot degrade.
+   */
+  retrievalMode?: RetrievalMode;
 }
 
 export interface PromptContextBlock {
@@ -336,8 +345,10 @@ export interface PromptContextBlock {
   estimatedTokens: number;
   /** The token budget that was requested */
   tokenBudget: number;
-  /** Total candidates returned by semantic search before minScore filtering */
+  /** Total candidates returned by retrieval (semantic or lexical) before minScore filtering */
   candidatesFound: number;
+  /** How the candidates were retrieved. `lexical` means keyword matching, not meaning. */
+  retrievalMode: RetrievalMode;
 }
 
 export interface IngestConversationResult {
@@ -834,6 +845,61 @@ export class MemoryService {
   }
 
   /**
+   * Query-driven retrieval that degrades to keyword matching instead of
+   * returning nothing when the semantic path is unavailable.
+   *
+   * Every agent-facing verb that retrieves *by query* goes through here, so
+   * they degrade identically and all report which path produced their results.
+   * Before this existed, an unconfigured embedding provider made these verbs
+   * answer "nothing found" — indistinguishable, to the calling agent, from an
+   * empty corpus (issue 288).
+   *
+   * The fallback fires only on genuine unavailability. A healthy search that
+   * matched nothing returns `semantic` with no results, because "no memory
+   * matches this query" is a correct answer; re-running it lexically would
+   * quietly widen every legitimately-empty query.
+   *
+   * Deliberately a private policy of this service rather than a helper in
+   * `@engram/memory-ltm`: whether degrading is *appropriate* is the caller's
+   * decision, not the store's. `forget` is the counter-example — it deletes
+   * everything above a score threshold, and a lexical term-overlap score is not
+   * comparable to a cosine similarity, so it keeps calling `semanticSearch`
+   * directly and does nothing when embeddings are off.
+   */
+  private async retrieveWithFallback(
+    verb: string,
+    userId: string,
+    query: string,
+    searchOptions: {
+      limit?: number;
+      scope?: string;
+      tags?: string[];
+      createdFrom?: Date;
+      createdTo?: Date;
+    },
+  ): Promise<{
+    results: Array<{ memory: Memory; score: number }>;
+    retrievalMode: RetrievalMode;
+  }> {
+    const { results, degraded, reason } = await this.ltm.semanticSearchDetailed(
+      userId,
+      query,
+      searchOptions,
+    );
+    if (!degraded) {
+      return { results, retrievalMode: 'semantic' };
+    }
+
+    this.logger.warn(
+      `${verb} degraded to lexical retrieval for user ${userId} (${reason}); ` +
+        'results are keyword matches, not semantic. Configure an embedding ' +
+        'provider to restore semantic retrieval.',
+    );
+    const lexical = await this.ltm.lexicalSearch(userId, query, searchOptions);
+    return { results: lexical, retrievalMode: 'lexical' };
+  }
+
+  /**
    * Semantic recall - finds the most relevant long-term memories for a query
    * using vector similarity search.
    */
@@ -852,29 +918,8 @@ export class MemoryService {
       createdTo: options.createdTo,
     };
     try {
-      const { results, degraded, reason } =
-        await this.ltm.semanticSearchDetailed(userId, query, searchOptions);
-
-      // Degrade only when the semantic path could not run. A healthy search
-      // that matched nothing is a real answer and must not be re-run
-      // lexically — doing so would quietly widen results for every query that
-      // legitimately has no match.
-      if (!degraded) {
-        this.metricsService?.recordOp(
-          'recall',
-          'ltm',
-          'success',
-          Date.now() - start,
-        );
-        return { results, retrievalMode: 'semantic' };
-      }
-
-      this.logger.warn(
-        `Recall degraded to lexical retrieval for user ${userId} (${reason}); ` +
-          'results are keyword matches, not semantic. Configure an embedding ' +
-          'provider to restore semantic recall.',
-      );
-      const lexical = await this.ltm.lexicalSearch(
+      const { results, retrievalMode } = await this.retrieveWithFallback(
+        'recall',
         userId,
         query,
         searchOptions,
@@ -885,7 +930,7 @@ export class MemoryService {
         'success',
         Date.now() - start,
       );
-      return { results: lexical, retrievalMode: 'lexical' };
+      return { results, retrievalMode };
     } catch (err) {
       this.metricsService?.recordOp(
         'recall',
@@ -1018,21 +1063,28 @@ export class MemoryService {
     scope?: string;
     tags?: string[];
   }): Promise<ReflectResult> {
-    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
-      limit: input.limit,
-      scope: input.scope,
-      tags: input.tags,
-    });
+    const { results: hits, retrievalMode } = await this.retrieveWithFallback(
+      'reflect',
+      input.userId,
+      input.query,
+      { limit: input.limit, scope: input.scope, tags: input.tags },
+    );
 
     const relevant = hits.filter((h) => h.score >= input.minScore);
     if (relevant.length === 0) {
       return {
         query: input.query,
-        summary: 'No relevant memories found for this query.',
+        // `summary` is the field an agent actually reads, so a bare "nothing
+        // found" while degraded reproduces exactly the bug this fixes.
+        summary:
+          retrievalMode === 'lexical'
+            ? 'No memories matched by keyword. Semantic retrieval is unavailable (no embedding provider configured), so this is not evidence that nothing relevant is stored.'
+            : 'No relevant memories found for this query.',
         themes: [],
         sourceIds: [],
         memoryCount: 0,
         dateRange: null,
+        retrievalMode,
       };
     }
 
@@ -1058,6 +1110,7 @@ export class MemoryService {
       sourceIds,
       memoryCount: memories.length,
       dateRange,
+      retrievalMode,
     };
   }
 
@@ -1072,16 +1125,21 @@ export class MemoryService {
     minScore: number;
     scope?: string;
   }): Promise<ContextBlock> {
-    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
-      limit: input.limit,
-      scope: input.scope,
-    });
+    const { results: hits, retrievalMode } = await this.retrieveWithFallback(
+      'compress_context',
+      input.userId,
+      input.query,
+      { limit: input.limit, scope: input.scope },
+    );
 
     const relevant = hits.filter((h) => h.score >= input.minScore);
-    return MemoryService.buildContextBlock(
-      relevant.map((h) => h.memory),
-      input.maxChars,
-    );
+    return {
+      ...MemoryService.buildContextBlock(
+        relevant.map((h) => h.memory),
+        input.maxChars,
+      ),
+      retrievalMode,
+    };
   }
 
   /**
@@ -1101,20 +1159,28 @@ export class MemoryService {
     createdFrom?: Date;
     createdTo?: Date;
   }): Promise<PromptContextBlock> {
-    const hits = await this.ltm.semanticSearch(input.userId, input.query, {
-      limit: input.limit,
-      scope: input.scope,
-      tags: input.tags,
-      createdFrom: input.createdFrom,
-      createdTo: input.createdTo,
-    });
+    const { results: hits, retrievalMode } = await this.retrieveWithFallback(
+      'prompt_context',
+      input.userId,
+      input.query,
+      {
+        limit: input.limit,
+        scope: input.scope,
+        tags: input.tags,
+        createdFrom: input.createdFrom,
+        createdTo: input.createdTo,
+      },
+    );
 
     const relevant = hits.filter((h) => h.score >= input.minScore);
-    return MemoryService.buildTokenBudgetedBlock(
-      relevant.map((h) => h.memory),
-      input.tokenBudget,
-      hits.length,
-    );
+    return {
+      ...MemoryService.buildTokenBudgetedBlock(
+        relevant.map((h) => h.memory),
+        input.tokenBudget,
+        hits.length,
+      ),
+      retrievalMode,
+    };
   }
 
   /**
@@ -1416,11 +1482,14 @@ export class MemoryService {
    * Content is truncated when a single memory would otherwise overflow the budget.
    * The assembled block is guaranteed to satisfy estimatedTokens ≤ tokenBudget.
    */
+  // Returns everything but `retrievalMode`: this builds the block from memories
+  // it is handed and has no idea how they were retrieved. The caller stamps the
+  // provenance, which keeps this a pure formatting helper.
   static buildTokenBudgetedBlock(
     memories: Memory[],
     tokenBudget: number,
     candidatesFound = 0,
-  ): PromptContextBlock {
+  ): Omit<PromptContextBlock, 'retrievalMode'> {
     if (memories.length === 0) {
       const ctx = '(no memories)';
       return {
