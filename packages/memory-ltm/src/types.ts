@@ -115,6 +115,52 @@ export interface SemanticSearchResult {
   score: number;
 }
 
+/**
+ * How a set of recall hits was actually produced.
+ *
+ * `semantic` is the normal path: the query was embedded and matched against the
+ * pgvector index. `lexical` means the semantic path was *unavailable* — no
+ * vector store, no embeddings service, or the provider returned no query
+ * vector — and the results came from a case-insensitive keyword scan instead.
+ *
+ * A `lexical` mode is a statement about retrieval quality, not about the
+ * corpus: matches are term-overlap, not meaning, so a caller that finds nothing
+ * should not conclude the memory does not exist.
+ */
+export type RetrievalMode = 'semantic' | 'lexical';
+
+/** Why the semantic path could not run. Absent when it ran normally. */
+export type SemanticUnavailableReason =
+  | 'no-vector-store'
+  | 'no-embeddings-service'
+  | 'no-query-embedding';
+
+/**
+ * Semantic search plus the one bit of provenance that `SemanticSearchResult[]`
+ * alone cannot express: whether an empty array means "nothing matched" or "the
+ * semantic path never ran".
+ *
+ * This distinction is the whole point. `semanticSearch()` collapses both cases
+ * to `[]`, so a caller cannot tell a genuinely empty corpus from a degraded
+ * deployment. Callers that want to degrade gracefully use this variant and
+ * branch on `degraded`.
+ */
+export interface DetailedSemanticSearchResult {
+  results: SemanticSearchResult[];
+  /** True when the semantic path could not run at all. Never true merely because zero memories matched. */
+  degraded: boolean;
+  /** Present only when `degraded` is true. */
+  reason?: SemanticUnavailableReason;
+}
+
+/**
+ * Options for the lexical fallback scan. A deliberate subset of
+ * `SemanticSearchOptions`: every filter is mirrored so the degraded path
+ * returns the same *set* of eligible memories as the semantic path, but the
+ * ranking-weight knobs are shared rather than duplicated.
+ */
+export type LexicalSearchOptions = Omit<SemanticSearchOptions, never>;
+
 // Options for backfilling / reindexing the vector store from Postgres
 export interface ReindexOptions {
   /** Restrict the reindex to a single user. Omit to reindex every user. */

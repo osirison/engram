@@ -863,7 +863,7 @@ export class MemoryController {
       const validatedInput: RecallToolInput = recallToolSchema.parse(input);
 
       // Run semantic recall using service
-      const results = await this.memoryService.recall(
+      const { results, retrievalMode } = await this.memoryService.recall(
         validatedInput.userId,
         validatedInput.query,
         {
@@ -884,6 +884,15 @@ export class MemoryController {
               {
                 query: validatedInput.query,
                 count: results.length,
+                // Tell the agent how these hits were found. Without this a
+                // degraded deployment is indistinguishable from an empty one.
+                retrievalMode,
+                ...(retrievalMode === 'lexical'
+                  ? {
+                      degradedNotice:
+                        'No embedding provider is configured, so these are keyword matches rather than semantic ones. Absence of a result here does not mean the memory was never stored.',
+                    }
+                  : {}),
                 results: results.map((result) => ({
                   score: result.score,
                   memory: result.memory,
