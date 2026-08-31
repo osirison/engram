@@ -88,6 +88,12 @@ export interface ReflectResult {
   sourceIds: string[];
   memoryCount: number;
   dateRange: { earliest: string; latest: string } | null;
+  /**
+   * How the source memories were retrieved. `lexical` means the server had no
+   * embedding provider and fell back to keyword matching, so a thin or empty
+   * reflection is not evidence that nothing relevant is stored.
+   */
+  retrievalMode?: 'semantic' | 'lexical';
 }
 
 export interface PromptContextInput {

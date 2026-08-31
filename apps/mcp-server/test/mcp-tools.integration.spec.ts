@@ -145,7 +145,22 @@ describe('MCP Tools Integration', () => {
       promote: jest.fn(),
       reindex: jest.fn(),
       semanticSearch: jest.fn().mockResolvedValue([]),
+      // Query-driven verbs call semanticSearchDetailed; its healthy path is
+      // semanticSearch plus `degraded: false`. Delegating keeps every
+      // `semanticSearch.mockResolvedValue(...)` setup in this file working.
+      semanticSearchDetailed: jest.fn(),
+      lexicalSearch: jest.fn().mockResolvedValue([]),
     };
+    (ltmMock.semanticSearchDetailed as unknown as jest.Mock).mockImplementation(
+      async (...args: unknown[]) => ({
+        results: await (
+          ltmMock.semanticSearch as unknown as (
+            ...a: unknown[]
+          ) => Promise<unknown>
+        )(...args),
+        degraded: false,
+      }),
+    );
 
     const queueMock: Partial<jest.Mocked<ReindexQueueService>> = {
       enqueue: jest.fn(),

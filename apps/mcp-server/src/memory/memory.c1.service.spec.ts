@@ -53,6 +53,8 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
     list: jest.fn(),
     promote: jest.fn(),
     semanticSearch: jest.fn(),
+    semanticSearchDetailed: jest.fn(),
+    lexicalSearch: jest.fn(),
     reindex: jest.fn(),
   };
 
@@ -67,6 +69,22 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // The query-driven verbs go through semanticSearchDetailed, whose healthy
+    // path is exactly semanticSearch plus `degraded: false`. Delegating keeps
+    // every existing `semanticSearch.mockResolvedValue(...)` setup and
+    // `toHaveBeenCalledWith` assertion in this file meaningful, so only the
+    // degraded-mode tests below need the new shape.
+    mockLtmService.semanticSearchDetailed.mockImplementation(
+      async (...args: unknown[]) => ({
+        results: await (
+          mockLtmService.semanticSearch as unknown as (
+            ...a: unknown[]
+          ) => Promise<unknown>
+        )(...args),
+        degraded: false,
+      }),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -663,6 +681,213 @@ describe('MemoryService — C1 High-Level Agent UX Methods', () => {
       );
     });
   });
+
+  // ── issue 288 follow-up: the query-driven verbs degrade like recall ───────
+  describe('degraded-mode retrieval across the query-driven verbs', () => {
+    /** Force the semantic path to report itself unavailable. */
+    function degrade(
+      reason:
+        | 'no-vector-store'
+        | 'no-embeddings-service'
+        | 'no-query-embedding' = 'no-embeddings-service',
+    ) {
+      ltmService.semanticSearchDetailed.mockResolvedValue({
+        results: [],
+        degraded: true,
+        reason,
+      });
+    }
+
+    const hit = (id: string, content: string, score: number) => ({
+      memory: makeMemory({ id, content }),
+      score,
+    });
+
+    describe('reflect', () => {
+      it('falls back to lexical hits and flags the mode', async () => {
+        degrade();
+        ltmService.lexicalSearch.mockResolvedValue([
+          hit('m1', 'use pnpm, never npm', 0.9),
+        ]);
+
+        const result = await service.reflect({
+          userId: USER_ID,
+          query: 'package manager',
+          limit: 5,
+          minScore: 0.5,
+        });
+
+        expect(result.retrievalMode).toBe('lexical');
+        expect(result.memoryCount).toBe(1);
+        expect(result.sourceIds).toEqual(['m1']);
+      });
+
+      it('says so in the summary when degraded and nothing matched', async () => {
+        // `summary` is what an agent reads. A bare "no relevant memories" here
+        // is the exact misreading this whole fix exists to prevent.
+        degrade();
+        ltmService.lexicalSearch.mockResolvedValue([]);
+
+        const result = await service.reflect({
+          userId: USER_ID,
+          query: 'anything',
+          limit: 5,
+          minScore: 0.5,
+        });
+
+        expect(result.retrievalMode).toBe('lexical');
+        expect(result.summary).toMatch(/semantic retrieval is unavailable/i);
+        expect(result.summary).not.toBe(
+          'No relevant memories found for this query.',
+        );
+      });
+
+      it('does NOT fall back when a healthy search matched nothing', async () => {
+        ltmService.semanticSearch.mockResolvedValue([]);
+
+        const result = await service.reflect({
+          userId: USER_ID,
+          query: 'anything',
+          limit: 5,
+          minScore: 0.5,
+        });
+
+        expect(result.retrievalMode).toBe('semantic');
+        expect(result.summary).toBe(
+          'No relevant memories found for this query.',
+        );
+        expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('compressContext', () => {
+      it('falls back to lexical hits and flags the mode', async () => {
+        degrade();
+        ltmService.lexicalSearch.mockResolvedValue([
+          hit('m1', 'deploy with docker compose', 0.8),
+        ]);
+
+        const block = await service.compressContext({
+          userId: USER_ID,
+          query: 'deployment',
+          limit: 5,
+          maxChars: 2000,
+          minScore: 0.5,
+        });
+
+        expect(block.retrievalMode).toBe('lexical');
+        expect(block.memoryCount).toBe(1);
+      });
+
+      it('does NOT fall back when a healthy search matched nothing', async () => {
+        ltmService.semanticSearch.mockResolvedValue([]);
+
+        const block = await service.compressContext({
+          userId: USER_ID,
+          query: 'deployment',
+          limit: 5,
+          maxChars: 2000,
+          minScore: 0.5,
+        });
+
+        expect(block.retrievalMode).toBe('semantic');
+        expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('assemblePromptContext', () => {
+      it('falls back to lexical hits and flags the mode', async () => {
+        degrade('no-vector-store');
+        ltmService.lexicalSearch.mockResolvedValue([
+          hit('m1', 'the api key lives in the vault', 0.75),
+        ]);
+
+        const block = await service.assemblePromptContext({
+          userId: USER_ID,
+          query: 'api key',
+          tokenBudget: 500,
+          limit: 5,
+          minScore: 0.5,
+        });
+
+        expect(block.retrievalMode).toBe('lexical');
+        expect(block.memoryCount).toBe(1);
+        expect(block.candidatesFound).toBe(1);
+      });
+
+      it('does NOT fall back when a healthy search matched nothing', async () => {
+        ltmService.semanticSearch.mockResolvedValue([]);
+
+        const block = await service.assemblePromptContext({
+          userId: USER_ID,
+          query: 'api key',
+          tokenBudget: 500,
+          limit: 5,
+          minScore: 0.5,
+        });
+
+        expect(block.retrievalMode).toBe('semantic');
+        expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
+      });
+    });
+
+    it('still applies minScore to lexical results', async () => {
+      // Lexical scores are on a different scale from cosine similarity, but the
+      // caller's filter is still honoured — dropping it silently would flood a
+      // context block far more surprisingly than the scale shift does.
+      degrade();
+      ltmService.lexicalSearch.mockResolvedValue([
+        hit('keep', 'full term coverage', 0.9),
+        hit('drop', 'weak partial match', 0.2),
+      ]);
+
+      const result = await service.reflect({
+        userId: USER_ID,
+        query: 'terms',
+        limit: 5,
+        minScore: 0.5,
+      });
+
+      expect(result.sourceIds).toEqual(['keep']);
+    });
+
+    it('forget does NOT degrade — it deletes on a score threshold', async () => {
+      // Lexical term-overlap scores are not comparable to cosine similarity, so
+      // a fallback here would select a different, unreviewed set to delete.
+      ltmService.semanticSearch.mockResolvedValue([]);
+
+      const result = await service.forget({
+        userId: USER_ID,
+        query: 'anything',
+        limit: 5,
+        confirm: false,
+        minScore: 0.6,
+      });
+
+      expect(result.candidates).toEqual([]);
+      expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
+      expect(ltmService.semanticSearchDetailed).not.toHaveBeenCalled();
+    });
+
+    it('loadContext reports no retrievalMode — it never runs a search', async () => {
+      ltmService.list.mockResolvedValue({
+        items: [],
+        totalCount: 0,
+        hasNextPage: false,
+      } as never);
+
+      const block = await service.loadContext({
+        userId: USER_ID,
+        maxChars: 2000,
+        recentLimit: 5,
+        importantLimit: 5,
+      });
+
+      expect(block.retrievalMode).toBeUndefined();
+      expect(ltmService.semanticSearchDetailed).not.toHaveBeenCalled();
+      expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // ─── C2: Bulk Ingestion ──────────────────────────────────────────────────────
@@ -686,6 +911,8 @@ describe('MemoryService — C2 Bulk Conversation Ingestion', () => {
     list: jest.fn(),
     promote: jest.fn(),
     semanticSearch: jest.fn(),
+    semanticSearchDetailed: jest.fn(),
+    lexicalSearch: jest.fn(),
     reindex: jest.fn(),
   };
 

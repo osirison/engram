@@ -231,14 +231,14 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'reflect',
     description:
-      'Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range. Use it for thematic questions ("what do we know about X?") and periodic reviews where a synthesis beats a raw hit list — recall returns the individual memories instead.',
+      'Synthesise structured insights across all memories semantically relevant to a query. Returns a plain-text summary, extracted themes, source memory IDs, and date range. Use it for thematic questions ("what do we know about X?") and periodic reviews where a synthesis beats a raw hit list — recall returns the individual memories instead. Every response carries retrievalMode: normally "semantic", but "lexical" when no embedding provider is configured, in which case memories are matched by keyword, minScore is scored on that different scale, and a thin or empty result is not evidence that nothing relevant is stored.',
     inputSchema: reflectToolSchema,
     requiredScope: 'memories:read',
   },
   {
     name: 'compress_context',
     description:
-      'Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget. Use it to inject task-specific background under a size limit measured in characters; prompt_context is the token-budgeted variant, and load_context primes a session when there is no query yet.',
+      'Retrieve memories most relevant to a query and format them into a compact, context-window-ready block within a character budget. Use it to inject task-specific background under a size limit measured in characters; prompt_context is the token-budgeted variant, and load_context primes a session when there is no query yet. Every response carries retrievalMode: normally "semantic", but "lexical" when no embedding provider is configured, in which case memories are matched by keyword, minScore is scored on that different scale, and a thin or empty result is not evidence that nothing relevant is stored.',
     inputSchema: compressContextToolSchema,
     requiredScope: 'memories:read',
   },
@@ -259,7 +259,7 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'prompt_context',
     description:
-      'Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant.',
+      'Assemble a token-budgeted context block from memories most relevant to a query. Greedy-packs ranked memories within the token budget (1 token ≈ 4 chars) and returns the formatted block plus token accounting metadata. Use it when filling a fixed token allowance in a prompt template; compress_context is the character-budgeted variant. Every response carries retrievalMode: normally "semantic", but "lexical" when no embedding provider is configured, in which case memories are matched by keyword, minScore is scored on that different scale, and a thin or empty result is not evidence that nothing relevant is stored.',
     inputSchema: promptContextToolSchema,
     requiredScope: 'memories:read',
   },
