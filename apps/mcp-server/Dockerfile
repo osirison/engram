@@ -52,6 +52,15 @@ LABEL org.opencontainers.image.title="engram-mcp-server" \
       org.opencontainers.image.description="ENGRAM MCP memory server" \
       org.opencontainers.image.source="https://github.com/osirison/engram"
 
+# Patch the base image's OS packages. `node:22-alpine` is a floating tag, so it
+# ships whatever Alpine packages were current when that tag was last baked —
+# which lags behind Alpine's security updates. CVE-2026-14456 (OpenSSL DoS via
+# unbounded memory growth in the QUIC server) sat in libcrypto3/libssl3 at
+# 3.5.7-r0 with 3.5.8-r0 already published, and tripped the blocking trivy gate
+# on a PR that changed nothing but lockfiles. Upgrading here keeps the gate
+# tracking Alpine's patch stream instead of the base tag's bake date.
+RUN apk upgrade --no-cache
+
 # Non-root user for least-privilege runtime.
 RUN addgroup -S engram && adduser -S -G engram engram
 
