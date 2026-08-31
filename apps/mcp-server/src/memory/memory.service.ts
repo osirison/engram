@@ -16,6 +16,7 @@ import {
   MemoryLtmService,
   LtmMemoryNotFoundError,
   ImportanceScoringService,
+  type RetrievalMode,
 } from '@engram/memory-ltm';
 import { Memory } from '@engram/database';
 import { MetricsService } from '../metrics/metrics.service';
@@ -156,6 +157,34 @@ type LtmServiceContract = {
       createdTo?: Date;
     },
   ) => Promise<Array<{ memory: Memory; score: number }>>;
+  /** Semantic search that also reports whether the semantic path could run. */
+  semanticSearchDetailed: (
+    userId: string,
+    query: string,
+    options?: {
+      limit?: number;
+      scope?: string;
+      tags?: string[];
+      createdFrom?: Date;
+      createdTo?: Date;
+    },
+  ) => Promise<{
+    results: Array<{ memory: Memory; score: number }>;
+    degraded: boolean;
+    reason?: string;
+  }>;
+  /** Keyword fallback used when the semantic path is unavailable. */
+  lexicalSearch: (
+    userId: string,
+    query: string,
+    options?: {
+      limit?: number;
+      scope?: string;
+      tags?: string[];
+      createdFrom?: Date;
+      createdTo?: Date;
+    },
+  ) => Promise<Array<{ memory: Memory; score: number }>>;
   reindex: (options?: {
     userId?: string;
     batchSize?: number;
@@ -234,6 +263,19 @@ export interface RecallOptions {
 export interface RecallResult {
   memory: Memory;
   score: number;
+}
+
+/**
+ * Recall hits plus how they were produced.
+ *
+ * `retrievalMode` exists so a calling agent can tell "nothing is stored" from
+ * "semantic retrieval is switched off and this is a keyword approximation".
+ * Without it both look like a short result list, and an agent reasonably
+ * concludes the user never told it anything (issue 288).
+ */
+export interface RecallResponse {
+  results: RecallResult[];
+  retrievalMode: RetrievalMode;
 }
 
 export interface PaginatedMemories {
@@ -799,24 +841,51 @@ export class MemoryService {
     userId: string,
     query: string,
     options: RecallOptions = {},
-  ): Promise<RecallResult[]> {
+  ): Promise<RecallResponse> {
     this.logger.debug(`Recalling memories for user: ${userId}`);
     const start = Date.now();
+    const searchOptions = {
+      limit: options.limit,
+      scope: options.scope,
+      tags: options.tags,
+      createdFrom: options.createdFrom,
+      createdTo: options.createdTo,
+    };
     try {
-      const result = await this.ltm.semanticSearch(userId, query, {
-        limit: options.limit,
-        scope: options.scope,
-        tags: options.tags,
-        createdFrom: options.createdFrom,
-        createdTo: options.createdTo,
-      });
+      const { results, degraded, reason } =
+        await this.ltm.semanticSearchDetailed(userId, query, searchOptions);
+
+      // Degrade only when the semantic path could not run. A healthy search
+      // that matched nothing is a real answer and must not be re-run
+      // lexically — doing so would quietly widen results for every query that
+      // legitimately has no match.
+      if (!degraded) {
+        this.metricsService?.recordOp(
+          'recall',
+          'ltm',
+          'success',
+          Date.now() - start,
+        );
+        return { results, retrievalMode: 'semantic' };
+      }
+
+      this.logger.warn(
+        `Recall degraded to lexical retrieval for user ${userId} (${reason}); ` +
+          'results are keyword matches, not semantic. Configure an embedding ' +
+          'provider to restore semantic recall.',
+      );
+      const lexical = await this.ltm.lexicalSearch(
+        userId,
+        query,
+        searchOptions,
+      );
       this.metricsService?.recordOp(
         'recall',
         'ltm',
         'success',
         Date.now() - start,
       );
-      return result;
+      return { results: lexical, retrievalMode: 'lexical' };
     } catch (err) {
       this.metricsService?.recordOp(
         'recall',

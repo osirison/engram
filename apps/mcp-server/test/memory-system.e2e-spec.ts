@@ -129,10 +129,16 @@ suite('Memory System E2E', () => {
 
       // Recall using the same content as the query. With the local embedding
       // provider the vectors are identical, so score should be very close to 1.
-      const results = await memoryService.recall(testUserId, testContent, {
-        limit: 5,
-      });
+      const { results, retrievalMode } = await memoryService.recall(
+        testUserId,
+        testContent,
+        { limit: 5 },
+      );
 
+      // The e2e stack configures a real embedding provider, so this must stay
+      // on the semantic path — a silent fall back to lexical would still pass
+      // the assertions below and hide a broken vector pipeline.
+      expect(retrievalMode).toBe('semantic');
       expect(results.length).toBeGreaterThan(0);
       const top = results[0]!;
       expect(top.memory.content).toBe(testContent);
@@ -141,7 +147,7 @@ suite('Memory System E2E', () => {
     });
 
     it('returns an empty array for a user with no memories', async () => {
-      const results = await memoryService.recall(
+      const { results } = await memoryService.recall(
         'no-memories-user-xyz',
         'anything',
         { limit: 5 },
@@ -151,7 +157,7 @@ suite('Memory System E2E', () => {
 
     it('scopes results to the requesting user', async () => {
       // A different user should not see test user's memories.
-      const results = await memoryService.recall(
+      const { results } = await memoryService.recall(
         'other-user-xyz',
         testContent,
         {

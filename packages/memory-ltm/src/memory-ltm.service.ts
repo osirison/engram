@@ -10,6 +10,7 @@ import {
   type VectorSearchResult,
 } from '@engram/vector-store';
 import { rankResults, DEFAULT_RANKING_WEIGHTS, type RankingWeights } from './rank';
+import { tokenizeQuery, lexicalRelevance } from './lexical';
 import { ImportanceScoringService } from './importance.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
 import { ContradictionDetectionService } from './contradiction-detection.service';
@@ -30,6 +31,8 @@ import {
   LtmEmbeddingUnavailableError,
   SemanticSearchOptions,
   SemanticSearchResult,
+  DetailedSemanticSearchResult,
+  LexicalSearchOptions,
   ReindexOptions,
   ReindexResult,
   DecayPolicyOptions,
@@ -1148,20 +1151,47 @@ export class MemoryLtmService {
     query: string,
     options?: SemanticSearchOptions
   ): Promise<SemanticSearchResult[]> {
+    const { results } = await this.semanticSearchDetailed(userId, query, options);
+    return results;
+  }
+
+  /**
+   * Semantic search that reports whether the semantic path actually ran.
+   *
+   * Identical to {@link semanticSearch} except for the return shape. It exists
+   * because `SemanticSearchResult[]` cannot distinguish "the corpus had no
+   * match" from "embeddings are switched off, so nothing could match" — both
+   * are `[]`. Callers that want to degrade to lexical retrieval branch on
+   * `degraded`; callers that legitimately want semantic-or-nothing keep using
+   * `semanticSearch`.
+   *
+   * `degraded` is set only for genuine unavailability of the semantic path. A
+   * healthy search that simply matched nothing returns `degraded: false` with
+   * an empty `results`, and must never trigger a fallback: "no memories match
+   * this query" is a correct answer, and re-running it lexically would silently
+   * widen the result set.
+   */
+  async semanticSearchDetailed(
+    userId: string,
+    query: string,
+    options?: SemanticSearchOptions
+  ): Promise<DetailedSemanticSearchResult> {
     this.logger.debug(`Semantic search for user: ${userId}`);
 
     if (!this.vectorStore) {
       this.logger.warn('Semantic search requested but no vector store is configured');
-      return [];
+      return { results: [], degraded: true, reason: 'no-vector-store' };
     }
     if (!this.embeddingsService) {
       this.logger.warn('Semantic search requested but no embeddings service is configured');
-      return [];
+      return { results: [], degraded: true, reason: 'no-embeddings-service' };
     }
 
     const trimmedQuery = query?.trim();
     if (!trimmedQuery) {
-      return [];
+      // An empty query is a caller error, not a degraded backend: there is
+      // nothing to fall back to, so this is a normal empty result.
+      return { results: [], degraded: false };
     }
 
     const limit = options?.limit ?? 10;
@@ -1186,8 +1216,10 @@ export class MemoryLtmService {
         .catch(() => null);
       const queryVector = embeddingResult?.embedding ?? [];
       if (queryVector.length === 0) {
+        // Only knowable by trying: `disabled` returns null, and a live provider
+        // can fail per-request. Either way the semantic path did not run.
         this.logger.warn('Semantic search produced no query embedding');
-        return [];
+        return { results: [], degraded: true, reason: 'no-query-embedding' };
       }
 
       const hits = await this.vectorStore.search(
@@ -1205,7 +1237,8 @@ export class MemoryLtmService {
       );
 
       if (hits.length === 0) {
-        return [];
+        // A real search that matched nothing — not degraded.
+        return { results: [], degraded: false };
       }
 
       const ids = hits.map((hit: { id: string }) => hit.id);
@@ -1246,11 +1279,126 @@ export class MemoryLtmService {
       // Re-rank by blended similarity + recency + importance, then trim to requested limit.
       const ranked = rankResults(hydrated, weights, halfLifeDays).slice(0, limit);
       void this.recordAccessMany(ranked.map((result) => result.memory));
-      return ranked;
+      return { results: ranked, degraded: false };
     } catch (error) {
       this.logger.error(`Semantic search failed for user ${userId}: ${error}`);
       throw new LtmDatabaseError(
         'semanticSearch',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  /**
+   * Keyword retrieval over memory content — the degraded-mode counterpart to
+   * {@link semanticSearchDetailed}.
+   *
+   * This exists so a deployment without an embedding backend still answers
+   * recall instead of silently returning nothing (issue 288). `scripts/install.sh`
+   * has always told operators that "memories still store and recall lexically"
+   * when Ollama is absent; this is that promise implemented.
+   *
+   * How it scores
+   * ─────────────
+   * The query is split into distinct terms and each candidate is scored by the
+   * fraction of those terms its content contains. That fraction occupies the
+   * `similarity` slot of the existing blended ranking, so recency and
+   * importance keep their usual influence and scores stay in [0, 1] — the same
+   * range and the same shape as the semantic path.
+   *
+   * What it is not: term overlap is not meaning. A lexical hit set is narrower
+   * and dumber than a semantic one, which is exactly why callers surface
+   * `retrievalMode` rather than passing these results off as equivalent.
+   *
+   * Every filter the semantic path applies is mirrored here — tenant, type,
+   * scope, tags, date bounds, and the superseded exclusion — so degrading
+   * changes retrieval *quality* without widening the set of memories a caller
+   * is allowed to see.
+   */
+  async lexicalSearch(
+    userId: string,
+    query: string,
+    options?: LexicalSearchOptions
+  ): Promise<SemanticSearchResult[]> {
+    this.logger.debug(`Lexical search for user: ${userId}`);
+
+    const terms = tokenizeQuery(query);
+    if (terms.length === 0) {
+      return [];
+    }
+
+    const limit = options?.limit ?? 10;
+    // Mirror the semantic path's over-fetch so ranking has candidates to work with.
+    const fetchLimit = Math.min(limit * 3, 100);
+
+    const rw = options?.rankingWeights;
+    const weights: RankingWeights = {
+      similarity: rw?.similarity ?? DEFAULT_RANKING_WEIGHTS.similarity,
+      recency: rw?.recency ?? DEFAULT_RANKING_WEIGHTS.recency,
+      importance: rw?.importance ?? DEFAULT_RANKING_WEIGHTS.importance,
+    };
+    const rawHalfLife = options?.recencyHalfLifeDays;
+    const halfLifeDays =
+      typeof rawHalfLife === 'number' && Number.isFinite(rawHalfLife) && rawHalfLife > 0
+        ? rawHalfLife
+        : 30;
+
+    try {
+      const where: Record<string, unknown> = {
+        userId,
+        type: MemoryType.LONG_TERM,
+        // Any term may match; the score below rewards candidates matching more.
+        OR: terms.map((term) => ({
+          content: { contains: term, mode: 'insensitive' },
+        })),
+      };
+      if (options?.organizationId) {
+        where.organizationId = options.organizationId;
+      }
+      if (options?.scope) {
+        where.scope = options.scope;
+      }
+      if (options?.tags && options.tags.length > 0) {
+        // `hasEvery`, not `hasSome`: the vector store filters tags with the
+        // Postgres containment operator (`"tags" @> $n`), so the semantic path
+        // requires *all* supplied tags. Matching that exactly keeps the two
+        // paths returning the same eligible set.
+        where.tags = { hasEvery: options.tags };
+      }
+      if (options?.createdFrom || options?.createdTo) {
+        const createdAt: Record<string, Date> = {};
+        if (options.createdFrom) createdAt.gte = options.createdFrom;
+        if (options.createdTo) createdAt.lte = options.createdTo;
+        where.createdAt = createdAt;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = await (this.prisma as any).memory.findMany({
+        where,
+        // Recency-first so the over-fetch window keeps the freshest candidates
+        // when a broad query matches more rows than `fetchLimit`.
+        orderBy: { createdAt: 'desc' },
+        take: fetchLimit,
+      });
+
+      const includeSuperseded = options?.includeSuperseded === true;
+      const candidates: SemanticSearchResult[] = (rows as PrismaMemory[])
+        .map((row) => ({
+          memory: this.mapToLtmMemory(row),
+          score: lexicalRelevance(row.content, terms),
+        }))
+        .filter(
+          (result: SemanticSearchResult) =>
+            includeSuperseded || !this.isSuperseded(result.memory.metadata)
+        );
+
+      const ranked = rankResults(candidates, weights, halfLifeDays).slice(0, limit);
+      void this.recordAccessMany(ranked.map((result) => result.memory));
+      return ranked;
+    } catch (error) {
+      this.logger.error(`Lexical search failed for user ${userId}: ${error}`);
+      throw new LtmDatabaseError(
+        'lexicalSearch',
         error instanceof Error ? error.message : String(error)
       );
     }

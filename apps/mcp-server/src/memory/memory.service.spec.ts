@@ -68,6 +68,8 @@ describe('MemoryService', () => {
       promote: jest.fn(),
       reembed: jest.fn(),
       semanticSearch: jest.fn(),
+      semanticSearchDetailed: jest.fn(),
+      lexicalSearch: jest.fn(),
       reindex: jest.fn(),
     };
 
@@ -809,9 +811,16 @@ describe('MemoryService', () => {
   });
 
   describe('recall', () => {
+    /** Semantic path available and healthy. */
+    const semanticOk = (results: unknown[]) =>
+      ltmService.semanticSearchDetailed.mockResolvedValue({
+        results,
+        degraded: false,
+      } as never);
+
     it('should delegate semantic recall to the LTM service', async () => {
       const semanticResult = [{ memory: mockLtmMemory, score: 0.87 }];
-      ltmService.semanticSearch.mockResolvedValue(semanticResult);
+      semanticOk(semanticResult);
 
       const result = await service.recall('user-1', 'find my notes', {
         limit: 5,
@@ -819,21 +828,29 @@ describe('MemoryService', () => {
         tags: ['notes'],
       });
 
-      expect(result).toEqual(semanticResult);
-      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+      expect(result.results).toEqual(semanticResult);
+      expect(result.retrievalMode).toBe('semantic');
+      expect(ltmService.semanticSearchDetailed).toHaveBeenCalledWith(
         'user-1',
         'find my notes',
-        { limit: 5, scope: 'project-a', tags: ['notes'] },
+        {
+          limit: 5,
+          scope: 'project-a',
+          tags: ['notes'],
+          createdFrom: undefined,
+          createdTo: undefined,
+        },
       );
+      expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
     });
 
     it('should default options when none are provided', async () => {
-      ltmService.semanticSearch.mockResolvedValue([]);
+      semanticOk([]);
 
       const result = await service.recall('user-1', 'query');
 
-      expect(result).toEqual([]);
-      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+      expect(result.results).toEqual([]);
+      expect(ltmService.semanticSearchDetailed).toHaveBeenCalledWith(
         'user-1',
         'query',
         {
@@ -849,11 +866,11 @@ describe('MemoryService', () => {
     it('should forward date-range filters to the LTM service', async () => {
       const createdFrom = new Date('2025-01-01T00:00:00Z');
       const createdTo = new Date('2025-06-01T00:00:00Z');
-      ltmService.semanticSearch.mockResolvedValue([]);
+      semanticOk([]);
 
       await service.recall('user-1', 'query', { createdFrom, createdTo });
 
-      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+      expect(ltmService.semanticSearchDetailed).toHaveBeenCalledWith(
         'user-1',
         'query',
         expect.objectContaining({ createdFrom, createdTo }),
@@ -863,11 +880,11 @@ describe('MemoryService', () => {
     it('does not opt into superseded results — recall inherits the safe default', async () => {
       // The recall surface (recall/reflect/forget/compressContext) must never
       // pass includeSuperseded, so a contradicted/stale fact stays out of recall.
-      ltmService.semanticSearch.mockResolvedValue([]);
+      semanticOk([]);
 
       await service.recall('user-1', 'query');
 
-      expect(ltmService.semanticSearch).toHaveBeenCalledWith(
+      expect(ltmService.semanticSearchDetailed).toHaveBeenCalledWith(
         'user-1',
         'query',
         expect.not.objectContaining({ includeSuperseded: true }),
@@ -895,18 +912,70 @@ describe('MemoryService', () => {
         { memory: mockLtmMemory, score: 0.87 },
         contradicted,
       ];
-      ltmService.semanticSearch.mockResolvedValue(semanticResult);
+      semanticOk(semanticResult);
 
-      const result = await service.recall('user-1', 'query');
+      const { results } = await service.recall('user-1', 'query');
 
-      expect(result).toHaveLength(2);
-      expect(result[1]?.memory.metadata).toEqual(
+      expect(results).toHaveLength(2);
+      expect(results[1]?.memory.metadata).toEqual(
         expect.objectContaining({
           status: 'contradicted',
           contradictionWith: mockLtmMemory.id,
           contradictionReason: 'negation asymmetry',
         }),
       );
+    });
+
+    // ── issue 288: degraded-mode fallback ───────────────────────────────────
+    describe('lexical fallback when the semantic path is unavailable', () => {
+      const lexicalHit = [{ memory: mockLtmMemory, score: 0.5 }];
+
+      it.each([
+        'no-vector-store',
+        'no-embeddings-service',
+        'no-query-embedding',
+      ] as const)(
+        'falls back to lexical search and flags the mode (%s)',
+        async (reason) => {
+          ltmService.semanticSearchDetailed.mockResolvedValue({
+            results: [],
+            degraded: true,
+            reason,
+          });
+          ltmService.lexicalSearch.mockResolvedValue(lexicalHit);
+
+          const result = await service.recall(
+            'user-1',
+            'which package manager',
+            {
+              limit: 5,
+              scope: 'project-a',
+            },
+          );
+
+          expect(result.retrievalMode).toBe('lexical');
+          expect(result.results).toEqual(lexicalHit);
+          // The fallback must inherit the caller's filters verbatim, or the
+          // degraded path would return a different eligible set.
+          expect(ltmService.lexicalSearch).toHaveBeenCalledWith(
+            'user-1',
+            'which package manager',
+            expect.objectContaining({ limit: 5, scope: 'project-a' }),
+          );
+        },
+      );
+
+      it('does NOT fall back when a healthy semantic search simply matched nothing', async () => {
+        // The regression this guards: treating "no hits" as "degraded" would
+        // silently widen every genuinely-empty query into a keyword scan.
+        semanticOk([]);
+
+        const result = await service.recall('user-1', 'nothing matches this');
+
+        expect(result.retrievalMode).toBe('semantic');
+        expect(result.results).toEqual([]);
+        expect(ltmService.lexicalSearch).not.toHaveBeenCalled();
+      });
     });
   });
 

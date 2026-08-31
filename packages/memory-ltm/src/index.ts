@@ -28,6 +28,10 @@ export type {
   LtmConfig,
   SemanticSearchOptions,
   SemanticSearchResult,
+  DetailedSemanticSearchResult,
+  LexicalSearchOptions,
+  RetrievalMode,
+  SemanticUnavailableReason,
   ReindexOptions,
   ReindexProgress,
   ReindexResult,
@@ -64,3 +68,6 @@ export { validateCreateLtmMemory, validateUpdateLtmMemory, validateLtmQueryOptio
 // Relevance ranking
 export { rankResults, DEFAULT_RANKING_WEIGHTS } from './rank';
 export type { RankingWeights } from './rank';
+
+// Lexical (degraded-mode) matching
+export { tokenizeQuery, lexicalRelevance } from './lexical';

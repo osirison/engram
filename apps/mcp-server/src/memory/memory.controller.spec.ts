@@ -114,7 +114,9 @@ describe('MemoryController', () => {
       jest.clearAllMocks();
       process.env.MCP_ADMIN_TOKEN = 'test-admin-token-12345';
       svc = {
-        recall: jest.fn().mockResolvedValue([]),
+        recall: jest
+          .fn()
+          .mockResolvedValue({ results: [], retrievalMode: 'semantic' }),
         remember: jest.fn().mockResolvedValue({
           memory: { id: 'm1' },
           resolvedType: 'long-term',
@@ -211,12 +213,15 @@ describe('MemoryController', () => {
   describe('recall', () => {
     it('should validate input, delegate to the service, and shape the result', async () => {
       const userId = 'clm0000000000000000000000';
-      mockMemoryService.recall.mockResolvedValue([
-        {
-          score: 0.92,
-          memory: { id: 'ltm-1', userId, content: 'hello world' },
-        },
-      ]);
+      mockMemoryService.recall.mockResolvedValue({
+        results: [
+          {
+            score: 0.92,
+            memory: { id: 'ltm-1', userId, content: 'hello world' },
+          },
+        ],
+        retrievalMode: 'semantic',
+      });
 
       const response = await controller.recall({
         userId,
@@ -237,17 +242,57 @@ describe('MemoryController', () => {
       const payload = parseResponsePayload<{
         query: string;
         count: number;
+        retrievalMode: string;
+        degradedNotice?: string;
         results: Array<{ score: number; memory: { id: string } }>;
       }>(response);
       expect(payload.query).toBe('hello');
       expect(payload.count).toBe(1);
+      expect(payload.retrievalMode).toBe('semantic');
+      // No notice on the healthy path — it would be noise in every response.
+      expect(payload.degradedNotice).toBeUndefined();
       expect(payload.results[0]!.score).toBe(0.92);
       expect(payload.results[0]!.memory.id).toBe('ltm-1');
     });
 
+    it('surfaces retrievalMode and a notice when recall degrades to lexical (issue 288)', async () => {
+      // The agent-visible half of the fix: without these fields a degraded
+      // deployment looks exactly like an empty one, and the agent concludes
+      // "nothing was ever stored".
+      const userId = 'clm0000000000000000000000';
+      mockMemoryService.recall.mockResolvedValue({
+        results: [
+          {
+            score: 0.5,
+            memory: { id: 'ltm-9', userId, content: 'use pnpm, never npm' },
+          },
+        ],
+        retrievalMode: 'lexical',
+      });
+
+      const response = await controller.recall({
+        userId,
+        query: 'which package manager',
+      });
+
+      const payload = parseResponsePayload<{
+        count: number;
+        retrievalMode: string;
+        degradedNotice?: string;
+        results: Array<{ memory: { id: string } }>;
+      }>(response);
+      expect(payload.retrievalMode).toBe('lexical');
+      expect(payload.degradedNotice).toMatch(/keyword matches/i);
+      expect(payload.count).toBe(1);
+      expect(payload.results[0]!.memory.id).toBe('ltm-9');
+    });
+
     it('should pass date-range filters to the service', async () => {
       const userId = 'clm0000000000000000000000';
-      mockMemoryService.recall.mockResolvedValue([]);
+      mockMemoryService.recall.mockResolvedValue({
+        results: [],
+        retrievalMode: 'semantic',
+      });
 
       await controller.recall({
         userId,
