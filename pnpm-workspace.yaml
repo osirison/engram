@@ -17,7 +17,11 @@ minimumReleaseAgeExclude:
   - recharts@3.9.1
 
 overrides:
-  multer: '>=2.2.0 <3'
+  # DoS via three separate vectors: crafted multipart field names, a file
+  # descriptor leak on aborted uploads, and oversized array indices in field
+  # names. GHSA-wc9g-mqfw-jrwm / GHSA-qfvm-cv95-jqjf / GHSA-535w-7cp7-47q4,
+  # fixed in 2.3.0. Pulled by @nestjs/platform-express; only 2.x is live.
+  multer: '>=2.3.0 <3'
   form-data: '>=4.0.6 <5'
   # Pin to the patched 6.x line: the unbounded '>=6.27.0' pulled undici 8.x into
   # @qdrant/js-client-rest (which needs ^6.24.0), breaking its REST transport
@@ -40,8 +44,11 @@ overrides:
   vite: '>=8.0.16 <9'
   # Patched 3.1.x line for GHSA-4c8g-83qw-93j6 / CVE-2026-13676 / CVE-2026-16221
   # (host confusion + policy-bypass via improper Unicode hostname handling).
-  # Pulled transitively by ajv (^3). Kept in 3.x for ajv compatibility.
-  fast-uri: '>=3.1.4 <4'
+  # Raised again to 3.1.6 for four more host-confusion/SSRF advisories in the
+  # same hostname-parsing code (GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc,
+  # GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp). Pulled transitively by ajv (^3).
+  # Kept in 3.x for ajv compatibility.
+  fast-uri: '>=3.1.6 <4'
   # Patched 2.9+ for CVE-2026-59892 (DoS via malformed HTTP header decoding in
   # the Jaeger propagator), pulled transitively by @opentelemetry/sdk-node. The
   # rest of the @opentelemetry/* 2.x STABLE family is aligned to the same line
@@ -74,26 +81,33 @@ overrides:
   # DoS via infinite loop in .proto option parsing. Held in 7.x — 8.x is a major
   # and @grpc/proto-loader (via @opentelemetry) still expects ^7.
   protobufjs: '>=7.6.5 <8'
-  # `removeScripts` left some executable scripts intact. Pinned by Astro, which
-  # depends on an exact-ish range, so the floor has to be forced here.
-  svgo: '>=4.0.2 <5'
+  # `removeScripts` left some executable scripts intact; a follow-up bypass via
+  # namespaced and control-character attribute names (GHSA-w27v-7q3p-w38r) was
+  # fixed in 4.1.0. Pinned by Astro, which depends on an exact-ish range, so the
+  # floor has to be forced here.
+  svgo: '>=4.1.0 <5'
   # record() issue paths could make flatten() throw for inherited Object keys.
   valibot: '>=1.4.2 <2'
   # DoS when an invalid `limit` value is supplied. Pulled by express 5.
   body-parser: '>=2.3.0 <3'
   # Inherited libvips CVEs. Also a direct dependency of apps/docs (bumped there
   # too); this covers the copy Next.js pulls into apps/web.
+  # Raised again to 0.35.4 for inherited libheif CVEs (GHSA-rgj7-g3m4-5g8c,
+  # wrapping GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545).
   # Bounded at <1, NOT <0.36 — sharp is the exception to the rule above. It does
   # not backport to old minor lines: 0.34.5 was left vulnerable with no 0.34.6,
   # and the fix required crossing 0.34 -> 0.35. A `<0.36` bound would therefore
   # pin us below the next fix instead of ahead of it.
-  sharp: '>=0.35.0 <1'
+  sharp: '>=0.35.4 <1'
   # Quadratic-complexity DoS via YAML merge-key chains. Both live majors are
   # affected and each has its own patch, so each line is raised in place rather
   # than collapsed: `@istanbuljs/load-nyc-config` needs js-yaml 3.x, whose
   # safeLoad/safeDump were removed in 4.
-  'js-yaml@^3': '>=3.15.1 <4'
-  'js-yaml@^4': '>=4.3.1 <5'
+  # Raised again for GHSA-2883-xcg3-v3hh: the merge-key cap did not count empty
+  # merge sources, leaving the same CPU-exhaustion path open. Fixed in 3.15.2
+  # and 4.3.2.
+  'js-yaml@^3': '>=3.15.2 <4'
+  'js-yaml@^4': '>=4.3.2 <5'
   # DoS via exponential-time and unbounded brace expansion. Same shape: every
   # live major is affected and separately patched. Collapsing them is not an
   # option — minimatch 3.x/9.x `require()` this package, and 5.x is ESM-only, so
@@ -127,6 +141,24 @@ overrides:
   # bad id. GHSA-2v37-7h3g-55p8, fixed in 3.3.18.
   # Pulled only by postcss (^3), and 3.x is the only major in the tree.
   nanoid: '>=3.3.18 <4'
+  # --- 2026-09-16 advisory sweep ---------------------------------------------
+  # Two advisories: unbounded memory growth from a query-result cache with no
+  # eviction (OOM under load), and a crash / prototype write when a project
+  # supplies custom stats via browserslist-stats.json (normalizeStats trusts
+  # the shape of untrusted JSON). GHSA-c83g-rgw3-j3cx / GHSA-73wf-gq98-2v4g,
+  # fixed in 4.28.7. Pulled transitively by webpack (via @nestjs/cli) and
+  # Babel/Jest; nothing depends on it directly. Only 4.x is live.
+  browserslist: '>=4.28.7 <5'
+  # Auth-plugin downgrade: a malicious or compromised server can force the
+  # client down to mysql_clear_password, sending credentials in plaintext.
+  # GHSA-3f6p-5ww8-9rcr, fixed in 3.22.0. Pulled transitively by prisma (an
+  # optional driver dependency); nothing in the workspace uses MySQL. Only 3.x
+  # is live.
+  mysql2: '>=3.22.0 <4'
+  # DoS via malformed TOML documents. GHSA-7w5x-hrqm-74c2, fixed in 1.7.1.
+  # Pulled transitively by @astrojs/internal-helpers (Astro/Starlight, via
+  # apps/docs); nothing depends on it directly. Only 1.x is live.
+  smol-toml: '>=1.7.1 <2'
 
 # Allow openai to use zod v4 (openai declares a peer dep on zod ^3 but only uses
 # it for its optional structured-output helpers, which we don't use).
